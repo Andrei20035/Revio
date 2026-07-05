@@ -143,7 +143,7 @@ fun PodiumUserCard(
                     )
                     Spacer(Modifier.width(3.dp))
                     Text(
-                        text = "${entry.streakDays} Days",
+                        text = "${entry.streakDays} ${if (entry.streakDays == 1) "Day" else "Days"}",
                         color = StreakTextColor,
                         fontSize = 10.sp,
                         lineHeight = 10.sp

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -28,6 +29,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.example.carspotter.R
+import com.example.carspotter.core.ui.scaling.actScaled
+import com.example.carspotter.core.ui.scaling.actScaledText
 import com.example.carspotter.core.util.toRelativeTime
 import com.example.carspotter.features.activity.model.ActivityItem
 
@@ -41,11 +44,11 @@ fun CommentActivityCard(item: ActivityItem.CommentItem, modifier: Modifier = Mod
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(97.dp)
+            .heightIn(min = 97.dp.actScaled())
             .clip(CardShape)
             .border(1.dp, CardBorder, CardShape)
             .background(CardFill)
-            .padding(horizontal = 12.dp),
+            .padding(horizontal = 20.dp.actScaled(), vertical = 12.dp.actScaled()),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AsyncImage(
@@ -56,14 +59,14 @@ fun CommentActivityCard(item: ActivityItem.CommentItem, modifier: Modifier = Mod
             fallback = painterResource(R.drawable.profile_picture),
             error = painterResource(R.drawable.profile_picture),
             modifier = Modifier
-                .size(37.dp)
+                .size(37.dp.actScaled())
                 .clip(CircleShape),
         )
 
         Column(
             modifier = Modifier
                 .weight(1f)
-                .padding(horizontal = 10.dp),
+                .padding(horizontal = 10.dp.actScaled()),
         ) {
             Text(
                 text = buildAnnotatedString {
@@ -73,14 +76,16 @@ fun CommentActivityCard(item: ActivityItem.CommentItem, modifier: Modifier = Mod
                     append(" commented: \"${item.commentText}\"")
                 },
                 color = Color.White,
-                fontSize = 14.sp,
+                fontSize = 14.sp.actScaledText(),
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = item.createdAt.toRelativeTime(),
                 color = TimestampColor,
-                fontSize = 13.3.sp,
+                fontSize = 13.3.sp.actScaledText(),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
 
@@ -89,8 +94,8 @@ fun CommentActivityCard(item: ActivityItem.CommentItem, modifier: Modifier = Mod
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier
-                .width(36.dp)
-                .height(45.dp)
+                .width(36.dp.actScaled())
+                .height(45.dp.actScaled())
                 .clip(RoundedCornerShape(2.dp)),
         )
     }

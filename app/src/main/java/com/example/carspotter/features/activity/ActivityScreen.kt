@@ -18,6 +18,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -35,6 +36,10 @@ import com.example.carspotter.core.navigation.Screen
 import com.example.carspotter.core.ui.components.AppScreenBackground
 import com.example.carspotter.core.ui.components.FeedNavItem
 import com.example.carspotter.core.ui.components.FloatingBottomNav
+import com.example.carspotter.core.ui.scaling.LocalActivityScale
+import com.example.carspotter.core.ui.scaling.actScaled
+import com.example.carspotter.core.ui.scaling.actScaledText
+import com.example.carspotter.core.ui.scaling.rememberActivityScale
 import com.example.carspotter.core.ui.theme.Poppins
 import com.example.carspotter.features.activity.components.CommentActivityCard
 import com.example.carspotter.features.activity.components.LeaderboardUpCard
@@ -61,22 +66,31 @@ fun ActivityScreen(
                 profilePictureUrl = uiState.currentUser?.profilePicturePath,
                 onHome = {
                     navController.navigate(Screen.Feed.route) {
-                        popUpTo(Screen.Feed.route) { inclusive = true }
+                        popUpTo(Screen.Feed.route) {
+                            saveState = true
+                        }
                         launchSingleTop = true
+                        restoreState = true
                     }
                 },
                 onLeaderboard = {
                     navController.navigate(Screen.Leaderboard.route) {
-                        popUpTo(Screen.Feed.route)
+                        popUpTo(Screen.Feed.route) {
+                            saveState = true
+                        }
                         launchSingleTop = true
+                        restoreState = true
                     }
                 },
                 onPlus = openPostCreation,
                 onActivity = { /* already here */ },
                 onProfile = {
                     navController.navigate(Screen.Profile.route) {
-                        popUpTo(Screen.Feed.route)
+                        popUpTo(Screen.Feed.route) {
+                            saveState = true
+                        }
                         launchSingleTop = true
+                        restoreState = true
                     }
                 },
                 hazeState = hazeState,
@@ -110,63 +124,72 @@ fun ActivityScreen(
                 }
             }
             else -> {
-                PullToRefreshBox(
-                    isRefreshing = uiState.isRefreshing,
-                    onRefresh = { viewModel.refresh() },
-                    modifier = Modifier.fillMaxSize().hazeSource(hazeState),
-                ) {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = 140.dp, top = 13.dp, start = 16.dp, end = 16.dp),
+                CompositionLocalProvider(LocalActivityScale provides rememberActivityScale()) {
+                    PullToRefreshBox(
+                        isRefreshing = uiState.isRefreshing,
+                        onRefresh = { viewModel.refresh() },
+                        modifier = Modifier.fillMaxSize().hazeSource(hazeState),
                     ) {
-                        item {
-                            Text(
-                                text = "Activity",
-                                color = Color.White,
-                                fontFamily = Poppins,
-                                fontWeight = FontWeight.Medium,
-                                fontSize = 35.sp,
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                        }
-
-                        item {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                            ) {
-                                StatCard(
-                                    title = "Weekly SpotScore",
-                                    value = uiState.weeklySpotScore,
-                                    isWeeklyScore = true,
-                                )
-                                StatCard(
-                                    title = "Today's Interactions",
-                                    value = uiState.todayInteractions,
-                                    isWeeklyScore = false,
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(16.dp))
-                        }
-
-                        if (uiState.isEmpty) {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(
+                                bottom = 140.dp,
+                                top = 13.dp.actScaled(),
+                                start = 10.dp.actScaled(),
+                                end = 10.dp.actScaled(),
+                            ),
+                        ) {
                             item {
                                 Text(
-                                    text = "No activity yet.",
-                                    color = Color(0xFF9D9D9D),
-                                    modifier = Modifier.padding(vertical = 24.dp),
+                                    text = "Activity",
+                                    color = Color.White,
+                                    fontFamily = Poppins,
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 35.sp.actScaledText(),
                                 )
+                                Spacer(modifier = Modifier.height(16.dp.actScaled()))
                             }
-                        } else {
-                            items(uiState.items, key = { it.id }) { activityItem ->
-                                Column {
-                                    when (activityItem) {
-                                        is ActivityItem.LikeItem -> LikeActivityCard(activityItem)
-                                        is ActivityItem.CommentItem -> CommentActivityCard(activityItem)
-                                        is ActivityItem.LeaderboardUpItem -> LeaderboardUpCard(activityItem)
-                                        is ActivityItem.StreakItem -> StreakCard(activityItem)
+
+                            item {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(14.dp.actScaled()),
+                                ) {
+                                    StatCard(
+                                        modifier = Modifier.weight(1f),
+                                        title = "Weekly SpotScore",
+                                        value = uiState.weeklySpotScore,
+                                        isWeeklyScore = true,
+                                    )
+                                    StatCard(
+                                        modifier = Modifier.weight(1f),
+                                        title = "Today's Interactions",
+                                        value = uiState.todayInteractions,
+                                        isWeeklyScore = false,
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(16.dp.actScaled()))
+                            }
+
+                            if (uiState.isEmpty) {
+                                item {
+                                    Text(
+                                        text = "No activity yet.",
+                                        color = Color(0xFF9D9D9D),
+                                        modifier = Modifier.padding(vertical = 24.dp),
+                                    )
+                                }
+                            } else {
+                                items(uiState.items, key = { it.id }) { activityItem ->
+                                    Column {
+                                        when (activityItem) {
+                                            is ActivityItem.LikeItem -> LikeActivityCard(activityItem)
+                                            is ActivityItem.CommentItem -> CommentActivityCard(activityItem)
+                                            is ActivityItem.LeaderboardUpItem -> LeaderboardUpCard(activityItem)
+                                            is ActivityItem.StreakItem -> StreakCard(activityItem)
+                                        }
+                                        Spacer(modifier = Modifier.height(12.dp.actScaled()))
                                     }
-                                    Spacer(modifier = Modifier.height(10.dp))
                                 }
                             }
                         }

@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
@@ -49,7 +50,7 @@ private const val MaxScale = 1.15f
 
 // Reference dimensions at 1.0× (Pixel 9 Pro, 402dp screen width).
 private val RefSideMargin = 20.dp
-private val RefNavBarHeight = 64.dp
+private val RefNavBarHeight = 60.dp
 private val RefInnerPadding = 27.dp
 private val RefCornerRadius = 32.dp
 private val RefIconSize = 32.dp
@@ -117,6 +118,17 @@ fun FloatingBottomNav(
             )
             .border(width = 1.dp, color = NavBarBorder, shape = navBarShape)
             .height(RefNavBarHeight * scale)
+            // Consume every pointer event over the pill's bounds so taps on gaps/background
+            // don't fall through to whatever is rendered behind this foreground overlay.
+            // Children (icons) still get first crack at Main-pass events, so their clicks work.
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        event.changes.forEach { it.consume() }
+                    }
+                }
+            }
             // Inner padding tuned so the five slots land on the Figma icon centers.
             .padding(horizontal = RefInnerPadding * scale),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -138,7 +150,7 @@ fun FloatingBottomNav(
         NavIcon(
             res = if (selected == FeedNavItem.Activity) R.drawable.activity_selected else R.drawable.activity,
             contentDescription = "Activity",
-            size = RefIconSize * scale,
+            size = (RefIconSize - 2.dp) * scale,
             onClick = onActivity,
         )
         ProfileTab(
@@ -157,19 +169,25 @@ private fun NavIcon(
     size: Dp,
     onClick: () -> Unit,
 ) {
-    Image(
-        painter = painterResource(res),
-        contentDescription = contentDescription,
-        // Fit keeps each glyph's intrinsic aspect ratio (e.g. the 21×27 flame) inside the slot.
-        contentScale = ContentScale.Fit,
+    Box(
         modifier = Modifier
-            .size(size)
+            .size(40.dp)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = onClick,
             ),
-    )
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(
+            painter = painterResource(res),
+            contentDescription = contentDescription,
+            // Fit keeps each glyph's intrinsic aspect ratio (e.g. the 21×27 flame) inside the slot.
+            contentScale = ContentScale.Fit,
+            modifier = Modifier
+                .size(size)
+        )
+    }
 }
 
 /**

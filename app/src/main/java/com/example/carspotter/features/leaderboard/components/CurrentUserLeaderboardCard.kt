@@ -114,7 +114,7 @@ fun CurrentUserLeaderboardCard(
                 )
                 Spacer(Modifier.width(3.dp))
                 Text(
-                    text = "${standing.entry.streakDays} Days",
+                    text = "${standing.entry.streakDays} ${if (standing.entry.streakDays == 1) "Day" else "Days"}",
                     color = StreakTextColor,
                     fontSize = 12.sp,
                 )

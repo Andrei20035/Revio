@@ -36,9 +36,12 @@ fun RankMovementIndicator(
         RankMovement.DOWN -> ColorDown
         RankMovement.KEEP -> ColorKeep
     }
+
+    val placeLabel = if (placesMoved == 1) "Place" else "Places"
+
     val label = when (movement) {
-        RankMovement.UP   -> "$placesMoved Places"
-        RankMovement.DOWN -> "$placesMoved Places"
+        RankMovement.UP   -> "$placesMoved $placeLabel"
+        RankMovement.DOWN -> "$placesMoved $placeLabel"
         RankMovement.KEEP -> ""
     }
 

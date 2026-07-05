@@ -128,7 +128,7 @@ class FeedViewModel @Inject constructor(
             _uiState.update { it.copy(reportDialog = dialog.copy(isSubmitting = true)) }
 
             val message = when (reportRepository.reportPost(dialog.postId, dialog.reason)) {
-                is ApiResult.Success -> "Report submitted. Thanks for helping keep CarSpotter accurate."
+                is ApiResult.Success -> "Report submitted. Thanks for helping keep Revio accurate."
                 is ApiResult.Error -> "Couldn't submit your report. Please try again."
             }
             _uiState.update { it.copy(reportDialog = null, userMessage = message) }

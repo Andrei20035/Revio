@@ -16,7 +16,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
-val AppBackground = Color(0xFF05071B)
+val AppBackground = Color(0xFF030310)
 
 /**
  * Dark navy background shared across all main app screens (Feed, Leaderboard, etc.).

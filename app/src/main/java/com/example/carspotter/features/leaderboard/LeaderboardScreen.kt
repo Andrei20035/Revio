@@ -60,22 +60,31 @@ fun LeaderboardScreen(
                 profilePictureUrl = uiState.currentUser?.entry?.avatarUrl,
                 onHome = {
                     navController.navigate(Screen.Feed.route) {
-                        popUpTo(Screen.Feed.route) { inclusive = true }
+                        popUpTo(Screen.Feed.route) {
+                            saveState = true
+                        }
                         launchSingleTop = true
+                        restoreState = true
                     }
                 },
                 onLeaderboard = { /* already here */ },
                 onPlus = openPostCreation,
                 onActivity = {
                     navController.navigate(Screen.Activity.route) {
-                        popUpTo(Screen.Feed.route)
+                        popUpTo(Screen.Feed.route) {
+                            saveState = true
+                        }
                         launchSingleTop = true
+                        restoreState = true
                     }
                 },
                 onProfile = {
                     navController.navigate(Screen.Profile.route) {
-                        popUpTo(Screen.Feed.route)
+                        popUpTo(Screen.Feed.route) {
+                            saveState = true
+                        }
                         launchSingleTop = true
+                        restoreState = true
                     }
                 },
                 hazeState = hazeState,

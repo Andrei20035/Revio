@@ -2,11 +2,6 @@ package com.example.carspotter.features.feed
 
 import android.content.Context
 import android.content.Intent
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -47,22 +42,18 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -74,6 +65,9 @@ import com.example.carspotter.core.ui.components.AppScreenBackground
 import com.example.carspotter.core.ui.components.CustomSnackbar
 import com.example.carspotter.core.ui.components.FeedNavItem
 import com.example.carspotter.core.ui.components.FloatingBottomNav
+import com.example.carspotter.core.ui.components.LikeIcon
+import com.example.carspotter.core.ui.components.formatCount
+import com.example.carspotter.core.ui.components.interactionCountWidth
 import com.example.carspotter.core.ui.theme.Poppins
 import com.example.carspotter.data.model.FeedPost
 import com.example.carspotter.data.model.ReportReason
@@ -94,7 +88,6 @@ import com.example.carspotter.core.ui.scaling.scaled
 import com.example.carspotter.core.ui.scaling.scaledText
 import com.example.carspotter.core.ui.scaling.scaledV
 import kotlinx.coroutines.delay
-import java.util.Locale
 
 private val FeedAccent = Color(0xFF34D7C4)
 // Discreet dark placeholder shown behind a post image while it loads.
@@ -203,18 +196,32 @@ fun FeedScreen(
                 onHome = { /* already on feed */ },
                 onLeaderboard = {
                     navController.navigate(Screen.Leaderboard.route) {
-                        popUpTo(Screen.Feed.route)
+                        popUpTo(Screen.Feed.route) {
+                            saveState = true
+                        }
                         launchSingleTop = true
+                        restoreState = true
                     }
                 },
                 onPlus = openPostCreation,
                 onActivity = {
                     navController.navigate(Screen.Activity.route) {
-                        popUpTo(Screen.Feed.route)
+                        popUpTo(Screen.Feed.route) {
+                            saveState = true
+                        }
                         launchSingleTop = true
+                        restoreState = true
                     }
                 },
-                onProfile = { navController.navigate(Screen.Profile.route) },
+                onProfile = {
+                    navController.navigate(Screen.Profile.route) {
+                        popUpTo(Screen.Feed.route) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
                 hazeState = hazeState,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -387,7 +394,7 @@ private fun FeedPostCard(
         ) {
             InteractionItem(count = post.likeCount, onClick = onLikeToggle) {
                 // Icon is driven by this post's own server-backed liked state — never hardcoded.
-                LikeIcon(liked = post.likedByCurrentUser)
+                LikeIcon(liked = post.likedByCurrentUser, size = RefLikeIconSize.scaled())
             }
             Spacer(modifier = Modifier.width(RefEngagementGroupSpacing.scaled()))
             InteractionItem(count = post.commentCount, onClick = onOpenComments) {
@@ -452,57 +459,6 @@ private fun InteractionItem(
             )
         }
     }
-}
-
-/**
- * Adaptive width for a count slot, sized to the widest string the count can format to in each
- * magnitude band (matching [formatCount]). Small counts get a compact slot — no large empty gap —
- * while larger counts expand in controlled steps so the layout never visibly jumps on a 0↔1 change.
- */
-private fun interactionCountWidth(count: Long, scale: Float): Dp = when {
-    count < 10 -> 16.dp * scale       // "0".."9"
-    count < 100 -> 24.dp * scale      // "10".."99"
-    count < 1_000 -> 32.dp * scale    // "100".."999"
-    count < 10_000 -> 40.dp * scale   // "1K".."9.9K"
-    count < 100_000 -> 48.dp * scale  // "10K".."99.9K"
-    else -> 56.dp * scale             // "100K"+, "1M"+
-}
-
-/**
- * Like icon. Shows `like_selected` when liked, `like` otherwise. On a like (false→true) it plays a
- * subtle pop — a quick scale-up that springs back — for premium tactile feedback. Unliking does not
- * animate, and the initial liked state on first composition is not animated. The tap is handled by
- * the enclosing [InteractionItem].
- */
-@Composable
-private fun LikeIcon(
-    liked: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    val scale = remember { Animatable(1f) }
-    var initialized by remember { mutableStateOf(false) }
-
-    LaunchedEffect(liked) {
-        if (!initialized) {
-            initialized = true
-            return@LaunchedEffect
-        }
-        if (liked) {
-            scale.animateTo(1.22f, animationSpec = tween(durationMillis = 110, easing = FastOutSlowInEasing))
-            scale.animateTo(1f, animationSpec = spring(dampingRatio = 0.42f, stiffness = Spring.StiffnessMedium))
-        }
-    }
-
-    Image(
-        painter = painterResource(if (liked) R.drawable.like_selected else R.drawable.like),
-        contentDescription = if (liked) "Unlike" else "Like",
-        modifier = modifier
-            .size(RefLikeIconSize.scaled())
-            .graphicsLayer {
-                scaleX = scale.value
-                scaleY = scale.value
-            },
-    )
 }
 
 /** Post author's avatar — the real profile picture, falling back to the placeholder. */
@@ -645,14 +601,3 @@ private fun sharePost(context: Context, post: FeedPost) {
     context.startActivity(Intent.createChooser(sendIntent, "Share post"))
 }
 
-/** Compact engagement count: 1200 → "1.2K", 1_000_000 → "1M", 341 → "341". */
-private fun formatCount(value: Long): String = when {
-    value >= 1_000_000 -> trimZero(value / 1_000_000.0) + "M"
-    value >= 1_000 -> trimZero(value / 1_000.0) + "K"
-    else -> value.toString()
-}
-
-private fun trimZero(v: Double): String {
-    val s = String.format(Locale.US, "%.1f", v)
-    return if (s.endsWith(".0")) s.dropLast(2) else s
-}

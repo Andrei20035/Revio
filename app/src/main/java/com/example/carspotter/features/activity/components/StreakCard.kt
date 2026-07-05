@@ -18,9 +18,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.carspotter.R
+import com.example.carspotter.core.ui.scaling.actScaled
+import com.example.carspotter.core.ui.scaling.actScaledText
 import com.example.carspotter.core.util.toRelativeTime
 import com.example.carspotter.features.activity.model.ActivityItem
 
@@ -34,36 +37,40 @@ fun StreakCard(item: ActivityItem.StreakItem, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(75.dp)
+            .height(75.dp.actScaled())
             .clip(CardShape)
             .border(1.dp, StreakOrange, CardShape)
             .background(CardFill)
-            .padding(horizontal = 12.dp),
+            .padding(horizontal = 20.dp.actScaled()),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Image(
             painter = painterResource(R.drawable.fire),
             contentDescription = null,
             modifier = Modifier
-                .width(20.dp)
-                .height(24.dp),
+                .width(20.dp.actScaled())
+                .height(24.dp.actScaled()),
         )
 
         Column(
             modifier = Modifier
                 .weight(1f)
-                .padding(horizontal = 10.dp),
+                .padding(horizontal = 10.dp.actScaled()),
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
                 text = "You reached a ${item.streakDays} day streak.",
                 color = Color.White,
-                fontSize = 14.sp,
+                fontSize = 14.sp.actScaledText(),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = item.createdAt.toRelativeTime(),
                 color = TimestampColor,
-                fontSize = 13.3.sp,
+                fontSize = 13.3.sp.actScaledText(),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }

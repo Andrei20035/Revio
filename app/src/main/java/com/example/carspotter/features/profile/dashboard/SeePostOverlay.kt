@@ -43,6 +43,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -57,15 +58,16 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
 import com.example.carspotter.R
+import com.example.carspotter.core.ui.components.LikeIcon
+import com.example.carspotter.core.ui.components.formatCount
+import com.example.carspotter.core.ui.components.interactionCountWidth
 import com.example.carspotter.core.ui.theme.Poppins
 import com.example.carspotter.core.util.toPostDate
 import com.example.carspotter.data.model.FeedPost
-import java.util.Locale
 
 private val OverlayMenuSurface = Color(0xFF1B1F33)
 private val OverlayMenuBorder = Color(0x1FFFFFFF)
 private val OverlayMenuDanger = Color(0xFFFF5A5F)
-private val OverlayMenuDivider = Color(0x14FFFFFF)
 
 @Composable
 fun SeePostOverlay(
@@ -170,6 +172,7 @@ fun SeePostOverlay(
                     error = painterResource(R.drawable.profile_picture),
                 )
 
+                Spacer(modifier = Modifier.height(10.dp))
                 // Like + comment row
                 Row(
                     horizontalArrangement = Arrangement.Center,
@@ -184,23 +187,21 @@ fun SeePostOverlay(
                         ),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Image(
-                            painter = painterResource(
-                                if (post.likedByCurrentUser) R.drawable.like_selected else R.drawable.like
-                            ),
-                            contentDescription = if (post.likedByCurrentUser) "Unlike" else "Like",
-                            modifier = Modifier.size(26.dp),
-                        )
+                        LikeIcon(liked = post.likedByCurrentUser, size = 26.dp)
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = formatCount(post.likeCount),
-                            color = Color.White,
-                            fontWeight = FontWeight.Medium,
-                            fontSize = 14.sp,
-                        )
+                        Box(modifier = Modifier.width(interactionCountWidth(post.likeCount, scale = 1f))) {
+                            Text(
+                                text = formatCount(post.likeCount),
+                                color = Color.White,
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 14.sp,
+                                maxLines = 1,
+                                style = TextStyle(fontFeatureSettings = "tnum"),
+                            )
+                        }
                     }
 
-                    Spacer(modifier = Modifier.width(20.dp))
+                    Spacer(modifier = Modifier.width(40.dp))
 
                     // Comment
                     Row(
@@ -217,12 +218,16 @@ fun SeePostOverlay(
                             modifier = Modifier.size(26.dp),
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = formatCount(post.commentCount),
-                            color = Color.White,
-                            fontWeight = FontWeight.Medium,
-                            fontSize = 14.sp,
-                        )
+                        Box(modifier = Modifier.width(interactionCountWidth(post.commentCount, scale = 1f))) {
+                            Text(
+                                text = formatCount(post.commentCount),
+                                color = Color.White,
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 14.sp,
+                                maxLines = 1,
+                                style = TextStyle(fontFeatureSettings = "tnum"),
+                            )
+                        }
                     }
                 }
             }
@@ -403,19 +408,5 @@ private fun PostDeleteMenu(
                 }
             }
         }
-    }
-}
-
-private fun formatCount(value: Long): String = when {
-    value < 1_000 -> value.toString()
-    value < 1_000_000 -> {
-        val v = value / 1_000.0
-        val s = String.format(Locale.US, "%.1f", v)
-        "${s.trimEnd('0').trimEnd('.')}K"
-    }
-    else -> {
-        val v = value / 1_000_000.0
-        val s = String.format(Locale.US, "%.1f", v)
-        "${s.trimEnd('0').trimEnd('.')}M"
     }
 }

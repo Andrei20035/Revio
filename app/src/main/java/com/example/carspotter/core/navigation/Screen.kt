@@ -9,7 +9,6 @@ sealed class Screen(val route: String) {
     object Feed : Screen("feed")
     object Settings : Screen("settings")
     object Map : Screen("map")
-    object Home : Screen("home")
     object Profile : Screen("profile") {
         const val ARG_USER_ID = "userId"
         const val FOREIGN_ROUTE = "profile/{$ARG_USER_ID}"

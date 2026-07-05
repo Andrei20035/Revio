@@ -14,7 +14,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -45,9 +47,9 @@ import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -57,6 +59,7 @@ import androidx.navigation.NavController
 import coil3.compose.AsyncImage
 import com.example.carspotter.R
 import com.example.carspotter.core.navigation.Screen
+import com.example.carspotter.core.ui.components.AppScreenBackground
 import com.example.carspotter.core.ui.components.FeedNavItem
 import com.example.carspotter.core.ui.components.FloatingBottomNav
 import com.example.carspotter.core.ui.components.shimmer
@@ -74,13 +77,16 @@ import com.example.carspotter.features.feed.components.CommentsSheet
 import com.example.carspotter.features.feed.components.rememberPostCreationLauncher
 
 // Figma tokens — ProfileDashboardScreen (node 790:1216, frame 402×874dp)
-private val DarkBackground     = Color(0xFF05071B)   // gradient end; used as solid fallback
 private val CardSurface        = Color(0xFF131929)   // tile / button background (unchanged)
 private val StatsCardSurface   = Color(0xFF1C1C1C)   // Figma StatsCard fill
 private val StatsCardBorder    = Color(0xFF545454)   // Figma StatsCard border 1dp
 private val TextMuted          = Color(0xFF707070)   // Figma location / label color
 private val ProfileAccent      = Color(0xFF34D7C4)
 private val BadgeBackground    = Color(0xFF242424)   // Figma Early Spotter badge fill
+
+// Reference dimensions for bottom clearance (Pixel 9 Pro baseline), matching FeedScreen's pattern.
+private val RefNavBarHeight = 64.dp
+private val RefNavBottomPadding = 16.dp
 
 private enum class TileState { Loading, Success, Error }
 
@@ -122,24 +128,81 @@ fun ProfileDashboardScreen(
         LocalProfileDashScale provides rememberProfileDashScale(),
         LocalProfileDashVSpacingScale provides rememberProfileDashVSpacingScale(),
     ) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colorStops = arrayOf(
-                        0.00f to Color(0xFF000000),
-                        0.40f to DarkBackground,
-                    )
+    AppScreenBackground(
+        foreground = {
+            if (uiState.isOwnProfile) {
+                FloatingBottomNav(
+                    selected = FeedNavItem.Profile,
+                    profilePictureUrl = uiState.user?.profilePicturePath,
+                    hazeState = hazeState,
+                    onHome = {
+                        navController.navigate(Screen.Feed.route) {
+                            popUpTo(Screen.Feed.route) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                    onLeaderboard = {
+                        navController.navigate(Screen.Leaderboard.route) {
+                            popUpTo(Screen.Feed.route) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                    onPlus = openPostCreation,
+                    onActivity = {
+                        navController.navigate(Screen.Activity.route) {
+                            popUpTo(Screen.Feed.route) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                    onProfile = { /* already here */ },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                        .padding(bottom = 16.dp),
                 )
-            )
+            }
+
+            // One-shot feedback — auto-dismisses after a short delay.
+            uiState.userMessage?.let { message ->
+                LaunchedEffect(message) {
+                    delay(3000)
+                    viewModel.consumeUserMessage()
+                }
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                        .padding(bottom = 96.dp),
+                ) {
+                    CustomSnackbar(message = message)
+                }
+            }
+        },
     ) {
+        val navInsetDp = with(LocalDensity.current) {
+            WindowInsets.navigationBars.getBottom(this).toDp()
+        }
+        val bottomClearance = if (uiState.isOwnProfile) {
+            navInsetDp + RefNavBarHeight.dashScaled() + RefNavBottomPadding.dashScaled()
+        } else {
+            navInsetDp
+        }
+
         LazyVerticalGrid(
             state = gridState,
             columns = GridCells.Fixed(3),
-            horizontalArrangement = Arrangement.spacedBy(6.dp.dashScaled()),
-            verticalArrangement = Arrangement.spacedBy(7.dp.dashScaledV()),
-            contentPadding = PaddingValues(bottom = 120.dp, start = 10.dp, end = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp.dashScaled()),
+            verticalArrangement = Arrangement.spacedBy(4.dp.dashScaledV()),
+            contentPadding = PaddingValues(bottom = bottomClearance, start = 10.dp, end = 10.dp),
             modifier = Modifier.fillMaxSize().hazeSource(hazeState),
         ) {
             // ── Header: profile row ──────────────────────────────────────
@@ -229,42 +292,6 @@ fun ProfileDashboardScreen(
             }
         }
 
-        if (uiState.isOwnProfile) {
-            // Bottom scrim behind the nav bar
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .height(146.dp)
-                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black)))
-            )
-
-            FloatingBottomNav(
-                selected = FeedNavItem.Profile,
-                profilePictureUrl = uiState.user?.profilePicturePath,
-                hazeState = hazeState,
-                onHome = {
-                    navController.navigate(Screen.Feed.route) {
-                        popUpTo(Screen.Feed.route) { inclusive = true }
-                        launchSingleTop = true
-                    }
-                },
-                onLeaderboard = {
-                    navController.navigate(Screen.Leaderboard.route) {
-                        popUpTo(Screen.Feed.route)
-                        launchSingleTop = true
-                    }
-                },
-                onPlus = openPostCreation,
-                onActivity = { /* TODO */ },
-                onProfile = { /* already here */ },
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
-                    .padding(bottom = 16.dp),
-            )
-        }
-
         // See-post overlay — shown when a grid image is tapped.
         uiState.selectedPost?.let { post ->
             SeePostOverlay(
@@ -279,22 +306,6 @@ fun ProfileDashboardScreen(
                 onDismissDeleteConfirm = { viewModel.dismissDeleteConfirm() },
                 onDismiss = { viewModel.clearSelectedPost() },
             )
-        }
-
-        // One-shot feedback — auto-dismisses after a short delay.
-        uiState.userMessage?.let { message ->
-            LaunchedEffect(message) {
-                delay(3000)
-                viewModel.consumeUserMessage()
-            }
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
-                    .padding(bottom = 96.dp),
-            ) {
-                CustomSnackbar(message = message)
-            }
         }
 
         // Early Spotter info overlay — opened from the badge pill.
@@ -339,7 +350,7 @@ private fun ProfilePostTile(
     Box(
         modifier = Modifier
             .aspectRatio(121f / 154f)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(8.dp))
             .background(CardSurface)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
@@ -456,7 +467,8 @@ private fun ProfileHeaderSection(
 
         Box(
             modifier = Modifier
-                .size(38.dp.dashScaled())
+                .align(Alignment.Top)
+                .size(43.dp.dashScaled())
                 .clip(CircleShape)
                 .background(CardSurface),
             contentAlignment = Alignment.Center,
@@ -467,7 +479,7 @@ private fun ProfileHeaderSection(
                         painter = painterResource(R.drawable.settings),
                         contentDescription = "Settings",
                         tint = Color.White,
-                        modifier = Modifier.size(22.dp),
+                        modifier = Modifier.size(27.dp),
                     )
                 }
             } else {
@@ -476,7 +488,7 @@ private fun ProfileHeaderSection(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Back",
                         tint = Color.White,
-                        modifier = Modifier.size(22.dp),
+                        modifier = Modifier.size(27.dp),
                     )
                 }
             }
@@ -523,7 +535,7 @@ private fun StatsCard(uiState: ProfileDashboardUiState) {
             .border(1.dp, StatsCardBorder, RoundedCornerShape(cardRadius))
             .clip(RoundedCornerShape(cardRadius))
             .background(StatsCardSurface)
-            .height(72.dp.dashScaled()),
+            .height(77.dp.dashScaled()),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -565,16 +577,16 @@ private fun StatSkeletonItem() {
 @Composable
 private fun StatItem(label: String, value: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(text = label, color = TextMuted, fontSize = 16.sp.dashScaledText())
+        Text(text = label, color = TextMuted, fontSize = 16.sp.dashScaledText(), lineHeight = 16.sp.dashScaledText())
         Spacer(modifier = Modifier.height(4.dp.dashScaledV()))
-        Text(text = value, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp.dashScaledText())
+        Text(text = value, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp.dashScaledText(), lineHeight = 20.sp.dashScaledText())
     }
 }
 
 @Composable
 private fun StreakItem(days: Int) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(text = "Streak", color = TextMuted, fontSize = 16.sp.dashScaledText())
+        Text(text = "Streak", color = TextMuted, fontSize = 16.sp.dashScaledText(), lineHeight = 16.sp.dashScaledText())
         Spacer(modifier = Modifier.height(4.dp.dashScaledV()))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Image(
@@ -584,10 +596,11 @@ private fun StreakItem(days: Int) {
             )
             Spacer(modifier = Modifier.width(3.dp.dashScaled()))
             Text(
-                text = "$days Days",
+                text = "$days ${if (days == 1) "Day" else "Days"}",
                 color = Color.White,
                 fontWeight = FontWeight.Bold,
                 fontSize = 20.sp.dashScaledText(),
+                lineHeight = 20.sp.dashScaledText()
             )
         }
     }
