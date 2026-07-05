@@ -66,6 +66,7 @@ import com.example.carspotter.core.ui.components.CustomSnackbar
 import com.example.carspotter.core.ui.components.FeedNavItem
 import com.example.carspotter.core.ui.components.FloatingBottomNav
 import com.example.carspotter.core.ui.components.LikeIcon
+import com.example.carspotter.core.ui.components.StateMessage
 import com.example.carspotter.core.ui.components.formatCount
 import com.example.carspotter.core.ui.components.interactionCountWidth
 import com.example.carspotter.core.ui.theme.Poppins
@@ -275,18 +276,30 @@ fun FeedScreen(
                     }
 
                     uiState.isEmpty && uiState.errorMessage != null -> item(key = "error") {
-                        FeedMessage(
+                        StateMessage(
                             title = "Couldn't load the feed",
                             subtitle = uiState.errorMessage,
                             actionLabel = "Retry",
                             onAction = { viewModel.retry() },
+                            accentColor = FeedAccent,
+                            verticalPadding = RefFeedMessagePaddingV.scaled(),
+                            titleFontSize = RefFeedMessageTitleFontSize.scaledText(),
+                            subtitleFontSize = RefFeedMessageSubtitleFontSize.scaledText(),
+                            titleSubtitleSpacing = RefFeedMessageTitleSubtitleSpacing.scaled(),
+                            actionSpacing = RefFeedMessageActionSpacing.scaled(),
                         )
                     }
 
                     uiState.isEmpty -> item(key = "empty") {
-                        FeedMessage(
+                        StateMessage(
                             title = "No spots yet",
                             subtitle = "Be the first to share a find.",
+                            accentColor = FeedAccent,
+                            verticalPadding = RefFeedMessagePaddingV.scaled(),
+                            titleFontSize = RefFeedMessageTitleFontSize.scaledText(),
+                            subtitleFontSize = RefFeedMessageSubtitleFontSize.scaledText(),
+                            titleSubtitleSpacing = RefFeedMessageTitleSubtitleSpacing.scaled(),
+                            actionSpacing = RefFeedMessageActionSpacing.scaled(),
                         )
                     }
 
@@ -515,33 +528,6 @@ private fun AuthorAvatar(url: String?, username: String, isEarlySpotter: Boolean
                         .size(avatarSize, avatarSize * (41f / 37f))
                         .offset(y = avatarSize * ((41f / 37f - 1f) / 2f)),
                 )
-            }
-        }
-    }
-}
-
-@Composable
-private fun FeedMessage(
-    title: String,
-    subtitle: String? = null,
-    actionLabel: String? = null,
-    onAction: (() -> Unit)? = null,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = RefFeedMessagePaddingV.scaled()),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(title, color = Color.White, fontSize = RefFeedMessageTitleFontSize.scaledText(), fontWeight = FontWeight.SemiBold)
-        if (subtitle != null) {
-            Spacer(modifier = Modifier.height(RefFeedMessageTitleSubtitleSpacing.scaled()))
-            Text(subtitle, color = Color.White.copy(alpha = 0.7f), fontSize = RefFeedMessageSubtitleFontSize.scaledText())
-        }
-        if (actionLabel != null && onAction != null) {
-            Spacer(modifier = Modifier.height(RefFeedMessageActionSpacing.scaled()))
-            TextButton(onClick = onAction) {
-                Text(actionLabel, color = FeedAccent, fontWeight = FontWeight.SemiBold)
             }
         }
     }

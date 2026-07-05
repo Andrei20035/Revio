@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
@@ -36,6 +35,7 @@ import com.example.carspotter.core.navigation.Screen
 import com.example.carspotter.core.ui.components.AppScreenBackground
 import com.example.carspotter.core.ui.components.FeedNavItem
 import com.example.carspotter.core.ui.components.FloatingBottomNav
+import com.example.carspotter.core.ui.components.StateMessage
 import com.example.carspotter.core.ui.scaling.LocalActivityScale
 import com.example.carspotter.core.ui.scaling.actScaled
 import com.example.carspotter.core.ui.scaling.actScaledText
@@ -109,19 +109,13 @@ fun ActivityScreen(
                 )
             }
             uiState.errorMessage != null -> {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
+                StateMessage(
+                    title = "Couldn't load your activity",
+                    subtitle = uiState.errorMessage,
+                    actionLabel = "Retry",
+                    onAction = { viewModel.retry() },
                     modifier = Modifier.align(Alignment.Center),
-                ) {
-                    Text(
-                        text = "Error: ${uiState.errorMessage}",
-                        color = Color.Red,
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Button(onClick = { viewModel.retry() }) {
-                        Text(text = "Retry")
-                    }
-                }
+                )
             }
             else -> {
                 CompositionLocalProvider(LocalActivityScale provides rememberActivityScale()) {
@@ -173,10 +167,10 @@ fun ActivityScreen(
 
                             if (uiState.isEmpty) {
                                 item {
-                                    Text(
-                                        text = "No activity yet.",
-                                        color = Color(0xFF9D9D9D),
-                                        modifier = Modifier.padding(vertical = 24.dp),
+                                    StateMessage(
+                                        title = "No activity yet",
+                                        subtitle = "Likes, comments, and streaks will show up here.",
+                                        verticalPadding = 24.dp,
                                     )
                                 }
                             } else {

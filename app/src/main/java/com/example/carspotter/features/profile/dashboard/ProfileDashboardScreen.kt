@@ -33,7 +33,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -62,6 +61,7 @@ import com.example.carspotter.core.navigation.Screen
 import com.example.carspotter.core.ui.components.AppScreenBackground
 import com.example.carspotter.core.ui.components.FeedNavItem
 import com.example.carspotter.core.ui.components.FloatingBottomNav
+import com.example.carspotter.core.ui.components.StateMessage
 import com.example.carspotter.core.ui.components.shimmer
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
@@ -227,38 +227,24 @@ fun ProfileDashboardScreen(
                 }
 
                 uiState.errorMessage != null && uiState.isEmpty -> item(span = { GridItemSpan(maxLineSpan) }) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 48.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                "Couldn't load your posts",
-                                color = Color.White.copy(alpha = 0.7f),
-                                fontSize = 13.sp,
-                            )
-                            TextButton(onClick = { viewModel.retry() }) {
-                                Text(
-                                    "Retry",
-                                    color = ProfileAccent,
-                                    fontWeight = FontWeight.SemiBold,
-                                )
-                            }
-                        }
-                    }
+                    StateMessage(
+                        title = "Couldn't load your posts",
+                        actionLabel = "Retry",
+                        onAction = { viewModel.retry() },
+                        accentColor = ProfileAccent,
+                        verticalPadding = 48.dp,
+                        titleFontSize = 13.sp,
+                    )
                 }
 
                 uiState.isEmpty && !uiState.isLoadingUser -> item(span = { GridItemSpan(maxLineSpan) }) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 48.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text("No spots yet", color = TextMuted, fontSize = 15.sp)
-                    }
+                    StateMessage(
+                        title = "No spots yet",
+                        subtitle = "Spots you post will show up here.",
+                        titleColor = TextMuted,
+                        verticalPadding = 48.dp,
+                        titleFontSize = 15.sp,
+                    )
                 }
 
                 else -> {

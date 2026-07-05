@@ -1,18 +1,13 @@
 package com.example.carspotter.features.leaderboard
 
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -30,6 +25,7 @@ import com.example.carspotter.core.navigation.Screen
 import com.example.carspotter.core.ui.components.AppScreenBackground
 import com.example.carspotter.core.ui.components.FeedNavItem
 import com.example.carspotter.core.ui.components.FloatingBottomNav
+import com.example.carspotter.core.ui.components.StateMessage
 import com.example.carspotter.features.feed.components.rememberPostCreationLauncher
 import com.example.carspotter.features.leaderboard.components.CurrentUserLeaderboardCard
 import com.example.carspotter.features.leaderboard.components.LeaderboardUserRow
@@ -103,19 +99,20 @@ fun LeaderboardScreen(
                 )
             }
             uiState.errorMessage != null -> {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
+                StateMessage(
+                    title = "Couldn't load the leaderboard",
+                    subtitle = uiState.errorMessage,
+                    actionLabel = "Retry",
+                    onAction = { viewModel.retry() },
                     modifier = Modifier.align(Alignment.Center),
-                ) {
-                    Text(
-                        text = "Error: ${uiState.errorMessage}",
-                        color = Color.Red,
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Button(onClick = { viewModel.retry() }) {
-                        Text(text = "Retry")
-                    }
-                }
+                )
+            }
+            uiState.podium.isEmpty() && uiState.rest.isEmpty() -> {
+                StateMessage(
+                    title = "No leaderboard yet",
+                    subtitle = "Rankings will appear once spotters start earning points.",
+                    modifier = Modifier.align(Alignment.Center),
+                )
             }
             else -> {
                 PullToRefreshBox(

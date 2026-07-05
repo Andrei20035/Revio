@@ -33,7 +33,6 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -51,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.example.carspotter.R
+import com.example.carspotter.core.ui.components.StateMessage
 import com.example.carspotter.core.ui.theme.Poppins
 import com.example.carspotter.core.util.toRelativeTime
 import com.example.carspotter.data.model.Comment
@@ -148,20 +148,29 @@ fun CommentsSheet(
                         }
 
                         state.errorMessage != null && state.comments.isEmpty() -> CenteredBox {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("Couldn't load comments", color = TextSecondary, fontSize = RefErrorFontSize.scaled())
-                                TextButton(onClick = onRetry) {
-                                    Text("Retry", color = SheetAccent, fontWeight = FontWeight.SemiBold)
-                                }
-                            }
+                            StateMessage(
+                                title = "Couldn't load comments",
+                                actionLabel = "Retry",
+                                onAction = onRetry,
+                                accentColor = SheetAccent,
+                                verticalPadding = 0.dp,
+                                titleColor = TextSecondary,
+                                titleFontSize = RefErrorFontSize.scaled(),
+                            )
                         }
 
                         state.comments.isEmpty() -> CenteredBox {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("No comments yet", color = TextSecondary, fontSize = RefEmptyTitleFontSize.scaled())
-                                Spacer(modifier = Modifier.height(RefEmptyTitleSubtitleSpacing.scaled()))
-                                Text("Be the first to comment.", color = TextTertiary, fontSize = RefEmptySubtitleFontSize.scaled())
-                            }
+                            StateMessage(
+                                title = "No comments yet",
+                                subtitle = "Be the first to comment.",
+                                accentColor = SheetAccent,
+                                verticalPadding = 0.dp,
+                                titleColor = TextSecondary,
+                                subtitleColor = TextTertiary,
+                                titleFontSize = RefEmptyTitleFontSize.scaled(),
+                                subtitleFontSize = RefEmptySubtitleFontSize.scaled(),
+                                titleSubtitleSpacing = RefEmptyTitleSubtitleSpacing.scaled(),
+                            )
                         }
 
                         else -> LazyColumn(
