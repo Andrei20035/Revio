@@ -26,6 +26,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -33,7 +34,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -46,10 +46,13 @@ import androidx.navigation.NavController
 import coil3.compose.AsyncImage
 import com.example.carspotter.R
 import com.example.carspotter.core.navigation.Screen
+import com.example.carspotter.core.ui.components.AppScreenBackground
+import com.example.carspotter.core.ui.scaling.LocalActivityScale
+import com.example.carspotter.core.ui.scaling.actScaled
+import com.example.carspotter.core.ui.scaling.actScaledText
+import com.example.carspotter.core.ui.scaling.rememberActivityScale
 import com.example.carspotter.core.ui.theme.Poppins
 
-private val BgTop = Color.Black
-private val BgBottom = Color(0xFF080C30)
 private val CardBg = Color(0x3DD9D9D9)          // rgba(217,217,217,0.24)
 private val SectionLabelColor = Color(0xFF8D8D8D)
 private val ItemTextColor = Color.White
@@ -70,20 +73,17 @@ fun SettingsScreen(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(BgTop, BgBottom))),
-    ) {
+    AppScreenBackground {
+        CompositionLocalProvider(LocalActivityScale provides rememberActivityScale()) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .statusBarsPadding()
-                .padding(horizontal = 17.dp),
+                .padding(horizontal = 10.dp.actScaled()),
         ) {
             // ── Top bar ──────────────────────────────────────────────────────
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(8.dp.actScaled()))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -93,28 +93,28 @@ fun SettingsScreen(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Back",
                         tint = Color.White,
-                        modifier = Modifier.size(28.dp),
+                        modifier = Modifier.size(28.dp.actScaled()),
                     )
                 }
-                Spacer(modifier = Modifier.width(4.dp))
+                Spacer(modifier = Modifier.width(4.dp.actScaled()))
                 Text(
                     text = "Settings",
                     color = Color.White,
                     fontFamily = Poppins,
                     fontWeight = FontWeight.Medium,
-                    fontSize = 24.sp,
+                    fontSize = 35.sp.actScaledText(),
                 )
             }
 
             // ── Profile card ─────────────────────────────────────────────────
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(20.dp.actScaled()))
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(122.dp)
+                    .height(122.dp.actScaled())
                     .clip(RoundedCornerShape(21.dp))
                     .background(CardBg)
-                    .padding(horizontal = 16.dp),
+                    .padding(horizontal = 16.dp.actScaled()),
                 contentAlignment = Alignment.CenterStart,
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -126,7 +126,7 @@ fun SettingsScreen(
                             contentDescription = "Avatar",
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
-                                .size(88.dp)
+                                .size(88.dp.actScaled())
                                 .clip(CircleShape),
                         )
                     } else {
@@ -135,7 +135,7 @@ fun SettingsScreen(
                             contentDescription = "Avatar",
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
-                                .size(88.dp)
+                                .size(88.dp.actScaled())
                                 .clip(CircleShape),
                             placeholder = painterResource(R.drawable.profile_picture),
                             fallback = painterResource(R.drawable.profile_picture),
@@ -143,45 +143,32 @@ fun SettingsScreen(
                         )
                     }
 
-                    Spacer(modifier = Modifier.width(14.dp))
+                    Spacer(modifier = Modifier.width(14.dp.actScaled()))
 
                     Column {
                         Text(
-                            text = uiState.user?.username ?: "",
+                            text = uiState.user?.fullName ?: "",
                             color = Color.White,
                             fontFamily = FontFamily.Default,
                             fontWeight = FontWeight.SemiBold,
-                            fontSize = 22.sp,
+                            fontSize = 22.sp.actScaledText(),
                         )
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(21.dp))
-                                .background(Color(0x80D9D9D9))
-                                .border(1.dp, Color(0xE3FFFFFF), RoundedCornerShape(21.dp))
-                                .clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null,
-                                    onClick = { navController.navigate(Screen.EditProfile.route) },
-                                )
-                                .padding(horizontal = 16.dp, vertical = 6.dp),
-                        ) {
-                            Text(
-                                text = "Edit Profile",
-                                color = Color.White,
-                                fontFamily = FontFamily.Default,
-                                fontWeight = FontWeight.Medium,
-                                fontSize = 15.sp,
-                            )
-                        }
+                        Spacer(modifier = Modifier.height(10.dp.actScaled()))
+                        Text(
+                            text = uiState.user?.username?.let { "@$it" } ?: "",
+                            color = Color(0xFFA9A9A9),
+                            fontFamily = FontFamily.Default,
+                            fontWeight = FontWeight.Normal,
+                            fontSize = 20.sp.actScaledText(),
+                        )
                     }
                 }
             }
 
             // ── Account section ──────────────────────────────────────────────
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(24.dp.actScaled()))
             SectionLabel("Account")
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(8.dp.actScaled()))
             SettingsRow(
                 iconRes = R.drawable.user_icon,
                 label = "Personal info",
@@ -191,9 +178,9 @@ fun SettingsScreen(
             )
 
             // ── Security section ─────────────────────────────────────────────
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(24.dp.actScaled()))
             SectionLabel("Security")
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(8.dp.actScaled()))
             SettingsRow(
                 iconRes = R.drawable.change_password,
                 label = "Change password",
@@ -203,9 +190,9 @@ fun SettingsScreen(
             )
 
             // ── Others section ───────────────────────────────────────────────
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(24.dp.actScaled()))
             SectionLabel("Others")
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(8.dp.actScaled()))
             SettingsRow(
                 iconRes = R.drawable.privacy_policy,
                 label = "Privacy Policy",
@@ -228,7 +215,7 @@ fun SettingsScreen(
             )
 
             // ── Log out ──────────────────────────────────────────────────────
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(modifier = Modifier.height(28.dp.actScaled()))
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -243,31 +230,37 @@ fun SettingsScreen(
                 Image(
                     painter = painterResource(R.drawable.logout),
                     contentDescription = null,
-                    modifier = Modifier.size(30.dp),
+                    modifier = Modifier.size(30.dp.actScaled()),
                 )
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(8.dp.actScaled()))
                 Text(
                     text = if (uiState.isLoggingOut) "Logging out…" else "Log out",
                     color = LogoutRed,
                     fontFamily = FontFamily.Default,
                     fontWeight = FontWeight.Medium,
-                    fontSize = 16.sp,
+                    fontSize = 16.sp.actScaledText(),
                 )
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(32.dp.actScaled()))
+        }
         }
     }
 }
 
+
 @Composable
-private fun SectionLabel(text: String) {
+private fun SectionLabel(
+    text: String,
+    modifier: Modifier = Modifier
+) {
     Text(
         text = text,
+        modifier = modifier.padding(start = 10.dp),
         color = SectionLabelColor,
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Medium,
-        fontSize = 15.sp,
+        fontSize = 15.sp.actScaledText(),
     )
 }
 
@@ -290,7 +283,7 @@ private fun SettingsRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(60.dp)
+            .height(60.dp.actScaled())
             .clip(shape)
             .background(CardBg)
             .clickable(
@@ -298,21 +291,21 @@ private fun SettingsRow(
                 indication = null,
                 onClick = onClick,
             )
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = 16.dp.actScaled()),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Image(
             painter = painterResource(iconRes),
             contentDescription = null,
-            modifier = Modifier.size(30.dp),
+            modifier = Modifier.size(30.dp.actScaled()),
         )
-        Spacer(modifier = Modifier.width(16.dp))
+        Spacer(modifier = Modifier.width(16.dp.actScaled()))
         Text(
             text = label,
             color = ItemTextColor,
             fontFamily = FontFamily.Default,
             fontWeight = FontWeight.Medium,
-            fontSize = 16.sp,
+            fontSize = 16.sp.actScaledText(),
         )
     }
 }

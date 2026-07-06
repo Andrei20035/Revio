@@ -18,6 +18,7 @@ interface UserRepository {
     suspend fun getAllUsers(): ApiResult<List<User>>
     suspend fun getUsersByUsername(username: String): ApiResult<List<User>>
     suspend fun createUser(request: CreateUserRequest): ApiResult<CreateUserResponse>
+    suspend fun updateUser(request: UpdateUserRequest): ApiResult<User>
     suspend fun updateProfilePicture(request: UpdateProfilePictureRequest): ApiResult<User>
     suspend fun uploadProfilePicture(imageBytes: ByteArray, mimeType: String): ApiResult<User>
     suspend fun deleteCurrentUser(): ApiResult<Unit>
@@ -66,6 +67,10 @@ class UserRepositoryImpl @Inject constructor(
 
     override suspend fun createUser(request: CreateUserRequest): ApiResult<CreateUserResponse> {
         return safeApiCall { userApi.createUser(request)}
+    }
+
+    override suspend fun updateUser(request: UpdateUserRequest): ApiResult<User> {
+        return safeApiCall { userApi.updateUser(request) }
     }
 
     override suspend fun updateProfilePicture(request: UpdateProfilePictureRequest): ApiResult<User> {

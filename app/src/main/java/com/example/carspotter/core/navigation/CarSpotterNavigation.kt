@@ -16,6 +16,7 @@ import com.example.carspotter.features.profile.customization.ProfileCustomizatio
 import com.example.carspotter.features.leaderboard.LeaderboardScreen
 import com.example.carspotter.features.settings.PlaceholderScreen
 import com.example.carspotter.features.settings.SettingsScreen
+import com.example.carspotter.features.settings.personalinfo.PersonalInfoScreen
 
 @Composable
 fun CarSpotterNavigation(
@@ -111,7 +112,7 @@ fun CarSpotterNavigation(
         }
 
         composable(Screen.PersonalInfo.route) {
-            PlaceholderScreen(title = "Personal info", navController = navController)
+            PersonalInfoScreen(navController = navController)
         }
 
         composable(Screen.ChangePassword.route) {

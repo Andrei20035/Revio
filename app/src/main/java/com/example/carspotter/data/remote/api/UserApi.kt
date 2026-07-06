@@ -30,6 +30,11 @@ interface UserApi {
         @Body createUserRequest: CreateUserRequest
     ): Response<CreateUserResponse>
 
+    @PATCH("users/me")
+    suspend fun updateUser(
+        @Body updateUserRequest: UpdateUserRequest
+    ): Response<User>
+
     @PATCH("users/me/profile-picture")
     suspend fun updateProfilePicture(
         @Body updateProfilePictureRequest: UpdateProfilePictureRequest
