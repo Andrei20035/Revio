@@ -15,11 +15,11 @@ kotlin {
 }
 
 android {
-    namespace = "com.example.carspotter"
+    namespace = "com.revio.app"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.carspotter"
+        applicationId = "com.revio.app"
         minSdk = 26
         targetSdk = 35
         versionCode = 1

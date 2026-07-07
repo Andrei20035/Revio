@@ -23,6 +23,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "CarSpotter"
+rootProject.name = "Revio"
 include(":app")
  

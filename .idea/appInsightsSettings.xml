@@ -36,8 +36,8 @@
             <InsightsFilterSettings>
               <option name="connection">
                 <ConnectionSetting>
-                  <option name="appId" value="com.example.carspotter" />
-                  <option name="mobileSdkAppId" value="1:711742765995:android:0bed7a79d066376f3bb0ee" />
+                  <option name="appId" value="com.revio.app" />
+                  <option name="mobileSdkAppId" value="1:711742765995:android:41bd0bcb176b2d963bb0ee" />
                   <option name="projectId" value="carspotter-f2b68" />
                   <option name="projectNumber" value="711742765995" />
                 </ConnectionSetting>
