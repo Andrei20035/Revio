@@ -1,6 +1,6 @@
-# 📸 CarSpotter
+# 📸 Revio
 
-**CarSpotter** is a full-stack social media platform for car enthusiasts to discover, share, and compete through real-world supercar sightings.
+**Revio** is a full-stack social media platform for car enthusiasts to discover, share, and compete through real-world supercar sightings.
 
 Built with a modern Android client (Jetpack Compose) and a custom Ktor backend, the project demonstrates scalable architecture, secure authentication, cloud storage integration, and clean separation of concerns.
 
@@ -8,7 +8,7 @@ Built with a modern Android client (Jetpack Compose) and a custom Ktor backend, 
 
 ## 🧠 Architecture Overview
 
-CarSpotter follows a modular, layered architecture designed for scalability and maintainability.
+Revio follows a modular, layered architecture designed for scalability and maintainability.
 
 ### System Components
 
