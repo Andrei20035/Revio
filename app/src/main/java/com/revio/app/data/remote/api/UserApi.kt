@@ -25,6 +25,11 @@ interface UserApi {
         @Path("username") username: String
     ): Response<List<User>>
 
+    @GET("users/username-available")
+    suspend fun checkUsernameAvailability(
+        @Query("username") username: String
+    ): Response<UsernameAvailabilityResponse>
+
     @POST("users")
     suspend fun createUser(
         @Body createUserRequest: CreateUserRequest

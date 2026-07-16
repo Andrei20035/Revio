@@ -3,6 +3,7 @@ package com.revio.app.data.model
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.UUID
 
@@ -81,5 +82,17 @@ class UserDeserializationTest {
     fun `JSON fara streakDays - profilePicturePath null by default`() {
         val user = json.decodeFromString<User>(baseJson)
         assertNull(user.profilePicturePath)
+    }
+
+    @Test
+    fun `JSON fara canChange - toate default true, next-change timestamps null`() {
+        val user = json.decodeFromString<User>(baseJson)
+        assertTrue(user.canChangeFullName)
+        assertTrue(user.canChangeCountry)
+        assertTrue(user.canChangeBirthDate)
+        assertTrue(user.canChangeUsername)
+        assertTrue(user.canChangePhoneNumber)
+        assertNull(user.nextUsernameChangeAt)
+        assertNull(user.nextPhoneNumberChangeAt)
     }
 }

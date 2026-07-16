@@ -4,6 +4,7 @@ import com.revio.app.core.network.ApiResult
 import com.revio.app.data.model.User
 import com.revio.app.data.remote.api.UserApi
 import com.revio.app.data.remote.dto.user.UpdateUserRequest
+import com.revio.app.data.remote.dto.user.UsernameAvailabilityResponse
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
@@ -123,5 +124,28 @@ class UserRepositoryImplTest {
             "Username may contain only lowercase letters, digits, dot, and underscore",
             (result as ApiResult.Error).message,
         )
+    }
+
+    @Test
+    fun `checkUsernameAvailability success returneaza ApiResult Success cu raspunsul serverului`() = runTest {
+        coEvery { api.checkUsernameAvailability("bob") } returns
+            Response.success(UsernameAvailabilityResponse(available = true, normalized = "bob"))
+
+        val result = repository.checkUsernameAvailability("bob")
+
+        assertTrue(result is ApiResult.Success)
+        val data = (result as ApiResult.Success).data
+        assertTrue(data.available)
+        assertEquals("bob", data.normalized)
+    }
+
+    @Test
+    fun `checkUsernameAvailability eroare de retea returneaza ApiResult Error cu prefixul Network error`() = runTest {
+        coEvery { api.checkUsernameAvailability("bob") } throws IOException("Connection refused")
+
+        val result = repository.checkUsernameAvailability("bob")
+
+        assertTrue(result is ApiResult.Error)
+        assertTrue((result as ApiResult.Error).message.startsWith("Network error"))
     }
 }

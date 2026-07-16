@@ -3,6 +3,7 @@ package com.revio.app.features.settings.personalinfo
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,6 +21,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -35,7 +38,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,8 +56,11 @@ import com.revio.app.core.ui.components.AppScreenBackground
 import com.revio.app.core.ui.scaling.LocalActivityScale
 import com.revio.app.core.ui.scaling.actScaled
 import com.revio.app.core.ui.scaling.actScaledText
+import com.revio.app.core.ui.scaling.profileScaledV
 import com.revio.app.core.ui.scaling.rememberActivityScale
 import com.revio.app.core.ui.theme.Poppins
+import com.revio.app.core.ui.theme.ProfileFieldErrorColor
+import com.revio.app.core.ui.theme.ProfileFieldHintColor
 import com.revio.app.features.profile.components.BirthDateField
 import com.revio.app.features.profile.components.CountryDropdown
 import com.revio.app.features.profile.components.EditableImageContainer
@@ -63,6 +68,10 @@ import com.revio.app.features.profile.components.ImageTransformState
 import com.revio.app.features.profile.components.LabeledTextField
 import com.revio.app.features.profile.components.PinchHintOverlay
 import kotlinx.coroutines.delay
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 @Composable
 fun PersonalInfoScreen(
@@ -70,8 +79,9 @@ fun PersonalInfoScreen(
     viewModel: PersonalInfoViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val confirmedOneTimeFields = remember { mutableStateListOf<PersonalInfoField>() }
-    var confirmDialogField by remember { mutableStateOf<PersonalInfoField?>(null) }
+    var lockedDialogField by remember { mutableStateOf<PersonalInfoField?>(null) }
+    var infoDialogField by remember { mutableStateOf<PersonalInfoField?>(null) }
+    var showPermanentConfirmDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(uiState.saveSuccess) {
         if (uiState.saveSuccess) {
@@ -79,14 +89,14 @@ fun PersonalInfoScreen(
         }
     }
 
-    AppScreenBackground {
+    AppScreenBackground(showBottomScrim = false) {
         CompositionLocalProvider(LocalActivityScale provides rememberActivityScale()) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
                     .statusBarsPadding()
-                    .padding(horizontal = 20.dp.actScaled()),
+                    .padding(horizontal = 10.dp.actScaled()),
             ) {
                 // ── Top bar ──────────────────────────────────────────────
                 Spacer(modifier = Modifier.height(8.dp.actScaled()))
@@ -108,7 +118,7 @@ fun PersonalInfoScreen(
                         color = Color.White,
                         fontFamily = Poppins,
                         fontWeight = FontWeight.Medium,
-                        fontSize = 29.sp.actScaledText(),
+                        fontSize = 25.sp.actScaledText(),
                     )
                 }
 
@@ -127,77 +137,124 @@ fun PersonalInfoScreen(
                 // ── Fields ───────────────────────────────────────────────
                 Spacer(modifier = Modifier.height(28.dp.actScaled()))
 
-                OneTimeFieldGuard(
-                    isConfirmed = PersonalInfoField.FULL_NAME in confirmedOneTimeFields,
-                    onRequestConfirm = { confirmDialogField = PersonalInfoField.FULL_NAME },
-                ) {
-                    LabeledTextField(
-                        label = "Full name",
-                        value = uiState.fullName,
-                        onValueChange = viewModel::onFullNameChanged,
-                        placeholderText = "Full name",
-                    )
-                }
-                FieldWarning(
-                    text = "Can be changed only once",
-                    error = uiState.fieldErrors[PersonalInfoField.FULL_NAME],
+                val fullNameLocked = uiState.canChange[PersonalInfoField.FULL_NAME] == false
+                LabeledTextField(
+                    label = "Full name",
+                    value = uiState.fullName,
+                    onValueChange = viewModel::onFullNameChanged,
+                    placeholderText = "Full name",
+                    enabled = !fullNameLocked,
+                    isError = uiState.fieldErrors[PersonalInfoField.FULL_NAME] != null,
+                    accentFocus = true,
+                    onLockedClick = { lockedDialogField = PersonalInfoField.FULL_NAME },
+                    trailingContent = {
+                        FieldTrailingIcon(
+                            locked = fullNameLocked,
+                            onInfoClick = { infoDialogField = PersonalInfoField.FULL_NAME },
+                        )
+                    },
                 )
+                uiState.fieldErrors[PersonalInfoField.FULL_NAME]?.let {
+                    FieldWarning(text = it, isError = true)
+                }
+                Spacer(Modifier.height(23.dp.profileScaledV()))
 
+                val usernameLocked = uiState.canChange[PersonalInfoField.USERNAME] == false
                 LabeledTextField(
                     label = "Username",
                     value = uiState.username,
                     onValueChange = viewModel::onUsernameChanged,
                     placeholderText = "Username",
+                    enabled = !usernameLocked,
+                    isError = uiState.fieldErrors[PersonalInfoField.USERNAME] != null ||
+                        uiState.usernameCheck is UsernameCheckState.Taken ||
+                        uiState.usernameCheck is UsernameCheckState.Invalid,
+                    accentFocus = true,
+                    onLockedClick = { lockedDialogField = PersonalInfoField.USERNAME },
+                    trailingContent = {
+                        FieldTrailingIcon(
+                            locked = usernameLocked,
+                            onInfoClick = { infoDialogField = PersonalInfoField.USERNAME },
+                        )
+                    },
                 )
-                FieldWarning(
-                    text = "Can be changed once a month",
-                    error = uiState.fieldErrors[PersonalInfoField.USERNAME],
-                )
-
-                OneTimeFieldGuard(
-                    isConfirmed = PersonalInfoField.COUNTRY in confirmedOneTimeFields,
-                    onRequestConfirm = { confirmDialogField = PersonalInfoField.COUNTRY },
-                ) {
-                    CountryDropdown(
-                        selectedCountry = uiState.country,
-                        onCountrySelected = { viewModel.onCountryChanged(it.name) },
-                    )
+                usernameStatusText(uiState)?.let { (text, isErr) ->
+                    FieldWarning(text = text, isError = isErr)
+                } ?: run {
+                    Spacer(Modifier.height(23.dp.profileScaledV()))
                 }
-                FieldWarning(
-                    text = "Can be changed only once",
-                    error = uiState.fieldErrors[PersonalInfoField.COUNTRY],
+
+
+                val countryLocked = uiState.canChange[PersonalInfoField.COUNTRY] == false
+                CountryDropdown(
+                    selectedCountry = uiState.country,
+                    onCountrySelected = { viewModel.onCountryChanged(it.name) },
+                    enabled = !countryLocked,
+                    isError = uiState.fieldErrors[PersonalInfoField.COUNTRY] != null,
+                    accentFocus = true,
+                    onLockedClick = { lockedDialogField = PersonalInfoField.COUNTRY },
+                    trailingContent = {
+                        FieldTrailingIcon(
+                            locked = countryLocked,
+                            onInfoClick = { infoDialogField = PersonalInfoField.COUNTRY },
+                        )
+                    },
                 )
+                uiState.fieldErrors[PersonalInfoField.COUNTRY]?.let {
+                    FieldWarning(text = it, isError = true)
+                } ?: run {
+                    Spacer(Modifier.height(23.dp.profileScaledV()))
+                }
 
                 Spacer(modifier = Modifier.height(4.dp.actScaled()))
-                OneTimeFieldGuard(
-                    isConfirmed = PersonalInfoField.BIRTH_DATE in confirmedOneTimeFields,
-                    onRequestConfirm = { confirmDialogField = PersonalInfoField.BIRTH_DATE },
-                ) {
-                    BirthDateField(
-                        birthDate = uiState.birthDate,
-                        onBirthDateChanged = viewModel::onBirthDateChanged,
-                    )
-                }
-                FieldWarning(
-                    text = "Can be changed only once",
-                    error = uiState.fieldErrors[PersonalInfoField.BIRTH_DATE],
+                val birthDateLocked = uiState.canChange[PersonalInfoField.BIRTH_DATE] == false
+                BirthDateField(
+                    birthDate = uiState.birthDate,
+                    onBirthDateChanged = viewModel::onBirthDateChanged,
+                    enabled = !birthDateLocked,
+                    isError = uiState.fieldErrors[PersonalInfoField.BIRTH_DATE] != null,
+                    accentFocus = true,
+                    onLockedClick = { lockedDialogField = PersonalInfoField.BIRTH_DATE },
+                    trailingContent = {
+                        FieldTrailingIcon(
+                            locked = birthDateLocked,
+                            onInfoClick = { infoDialogField = PersonalInfoField.BIRTH_DATE },
+                        )
+                    },
                 )
+                uiState.fieldErrors[PersonalInfoField.BIRTH_DATE]?.let {
+                    FieldWarning(text = it, isError = true)
+                } ?: run {
+                    Spacer(Modifier.height(23.dp.profileScaledV()))
+                }
 
+                val phoneLocked = uiState.canChange[PersonalInfoField.PHONE_NUMBER] == false
                 LabeledTextField(
                     label = "Phone number",
                     value = uiState.phoneNumber,
                     onValueChange = viewModel::onPhoneNumberChanged,
                     placeholderText = "Phone number",
+                    enabled = !phoneLocked,
+                    isError = uiState.fieldErrors[PersonalInfoField.PHONE_NUMBER] != null,
+                    accentFocus = true,
+                    onLockedClick = { lockedDialogField = PersonalInfoField.PHONE_NUMBER },
+                    trailingContent = {
+                        FieldTrailingIcon(
+                            locked = phoneLocked,
+                            onInfoClick = { infoDialogField = PersonalInfoField.PHONE_NUMBER },
+                        )
+                    },
                 )
-                FieldWarning(
-                    text = "Can be changed once a month",
-                    error = uiState.fieldErrors[PersonalInfoField.PHONE_NUMBER],
-                )
+                uiState.fieldErrors[PersonalInfoField.PHONE_NUMBER]?.let {
+                    FieldWarning(text = it, isError = true)
+                } ?: run {
+                    Spacer(Modifier.height(23.dp.profileScaledV()))
+                }
 
                 uiState.generalError?.let {
                     Text(
                         text = it,
-                        color = Color(0xFFF93939),
+                        color = ProfileFieldErrorColor,
                         fontSize = 13.sp.actScaledText(),
                         modifier = Modifier.padding(bottom = 12.dp.actScaled()),
                     )
@@ -206,8 +263,14 @@ fun PersonalInfoScreen(
                 // ── Save ─────────────────────────────────────────────────
                 Spacer(modifier = Modifier.height(8.dp.actScaled()))
                 Button(
-                    onClick = viewModel::onSave,
-                    enabled = !uiState.isSaving,
+                    onClick = {
+                        if (uiState.pendingPermanentFields.isNotEmpty()) {
+                            showPermanentConfirmDialog = true
+                        } else {
+                            viewModel.onSave()
+                        }
+                    },
+                    enabled = !uiState.isSaveBlocked,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(54.dp.actScaled()),
@@ -245,60 +308,146 @@ fun PersonalInfoScreen(
         }
     }
 
-    confirmDialogField?.let { field ->
-        OneTimeChangeConfirmDialog(
+    lockedDialogField?.let { field ->
+        LockedFieldDialog(
             field = field,
+            unlockAt = uiState.unlockAt[field],
+            onDismiss = { lockedDialogField = null },
+        )
+    }
+
+    infoDialogField?.let { field ->
+        FieldRuleInfoDialog(
+            field = field,
+            onDismiss = { infoDialogField = null },
+        )
+    }
+
+    if (showPermanentConfirmDialog) {
+        PermanentChangeConfirmDialog(
+            fields = uiState.pendingPermanentFields,
             onConfirm = {
-                confirmedOneTimeFields.add(field)
-                confirmDialogField = null
+                showPermanentConfirmDialog = false
+                viewModel.onSave()
             },
-            onDismiss = { confirmDialogField = null },
+            onDismiss = { showPermanentConfirmDialog = false },
+        )
+    }
+}
+
+private fun usernameStatusText(uiState: PersonalInfoUiState): Pair<String, Boolean>? {
+    uiState.fieldErrors[PersonalInfoField.USERNAME]?.let { return it to true }
+    return when (val check = uiState.usernameCheck) {
+        is UsernameCheckState.Invalid -> check.reason to true
+        UsernameCheckState.Checking -> "Checking availability…" to false
+        UsernameCheckState.Available -> "Username is available" to false
+        UsernameCheckState.Taken -> "Username is already taken" to true
+        UsernameCheckState.NetworkError -> "Couldn't verify availability — will check again on save" to false
+        UsernameCheckState.Idle, UsernameCheckState.Unchanged -> null
+    }
+}
+
+private fun fieldLowerName(field: PersonalInfoField): String = when (field) {
+    PersonalInfoField.FULL_NAME -> "full name"
+    PersonalInfoField.COUNTRY -> "country"
+    PersonalInfoField.BIRTH_DATE -> "date of birth"
+    PersonalInfoField.USERNAME -> "username"
+    PersonalInfoField.PHONE_NUMBER -> "phone number"
+}
+
+private fun fieldTitleName(field: PersonalInfoField): String = when (field) {
+    PersonalInfoField.FULL_NAME -> "Full name"
+    PersonalInfoField.COUNTRY -> "Country"
+    PersonalInfoField.BIRTH_DATE -> "Date of birth"
+    PersonalInfoField.USERNAME -> "Username"
+    PersonalInfoField.PHONE_NUMBER -> "Phone number"
+}
+
+private fun isCooldownField(field: PersonalInfoField): Boolean =
+    field == PersonalInfoField.USERNAME || field == PersonalInfoField.PHONE_NUMBER
+
+@Composable
+private fun FieldTrailingIcon(locked: Boolean, onInfoClick: (() -> Unit)?) {
+    if (locked) {
+        Icon(
+            imageVector = Icons.Default.Lock,
+            contentDescription = "Locked",
+            tint = ProfileFieldHintColor,
+            modifier = Modifier.size(18.dp.actScaled()),
+        )
+    } else if (onInfoClick != null) {
+        Icon(
+            imageVector = Icons.Outlined.Info,
+            contentDescription = "Change rules",
+            tint = ProfileFieldHintColor,
+            modifier = Modifier
+                .size(18.dp.actScaled())
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onInfoClick,
+                ),
         )
     }
 }
 
 @Composable
-private fun OneTimeFieldGuard(
-    isConfirmed: Boolean,
-    onRequestConfirm: () -> Unit,
-    content: @Composable () -> Unit,
-) {
-    Box(modifier = Modifier.fillMaxWidth()) {
-        content()
-        if (!isConfirmed) {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .clickable(
-                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                        indication = null,
-                        onClick = onRequestConfirm,
-                    ),
-            )
-        }
-    }
-}
-
-@Composable
-private fun OneTimeChangeConfirmDialog(
+private fun LockedFieldDialog(
     field: PersonalInfoField,
-    onConfirm: () -> Unit,
+    unlockAt: Instant?,
     onDismiss: () -> Unit,
 ) {
-    val fieldName = when (field) {
-        PersonalInfoField.FULL_NAME -> "full name"
-        PersonalInfoField.COUNTRY -> "country"
-        PersonalInfoField.BIRTH_DATE -> "date of birth"
-        PersonalInfoField.USERNAME -> "username"
-        PersonalInfoField.PHONE_NUMBER -> "phone number"
+    val message = if (isCooldownField(field) && unlockAt != null) {
+        val date = unlockAt.atZone(ZoneId.systemDefault()).toLocalDate()
+            .format(DateTimeFormatter.ofPattern("dd/MM/yyyy", Locale.ENGLISH))
+        "You can change your ${fieldLowerName(field)} again on $date."
+    } else {
+        "You've already changed your ${fieldLowerName(field)}. This can only be done once."
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Permanent change") },
-        text = {
-            Text("You can only change your $fieldName once. This action cannot be undone. Continue?")
+        title = { Text("Field locked") },
+        text = { Text(message) },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Got it") }
         },
+    )
+}
+
+@Composable
+private fun FieldRuleInfoDialog(
+    field: PersonalInfoField,
+    onDismiss: () -> Unit,
+) {
+    val message = if (isCooldownField(field)) {
+        "Your ${fieldLowerName(field)} can be changed once every 30 days."
+    } else {
+        "Your ${fieldLowerName(field)} can only be changed once."
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Change rules") },
+        text = { Text(message) },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Got it") }
+        },
+    )
+}
+
+@Composable
+private fun PermanentChangeConfirmDialog(
+    fields: Set<PersonalInfoField>,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val names = fields.sortedBy { it.ordinal }.joinToString(", ") { fieldTitleName(it) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Permanent changes") },
+        text = { Text("These changes are permanent and can't be undone: $names.") },
         confirmButton = {
             TextButton(onClick = onConfirm) { Text("Continue") }
         },
@@ -445,11 +594,11 @@ private fun ProfileAvatar(
 }
 
 @Composable
-private fun FieldWarning(text: String, error: String?) {
+private fun FieldWarning(text: String, isError: Boolean) {
     Text(
-        text = error ?: text,
-        color = if (error != null) Color(0xFFF93939) else Color(0xFF8D8D8D),
-        fontSize = 12.5.sp.actScaledText(),
+        text = text,
+        color = if (isError) ProfileFieldErrorColor else ProfileFieldHintColor,
+        fontSize = 12.sp.actScaledText(),
         modifier = Modifier.padding(start = 8.dp, bottom = 14.dp),
     )
 }

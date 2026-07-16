@@ -65,6 +65,12 @@ import androidx.compose.ui.window.Popup
 import com.revio.app.core.ui.scaling.profileScaled
 import com.revio.app.core.ui.scaling.profileScaledText
 import com.revio.app.core.ui.scaling.profileScaledV
+import com.revio.app.core.ui.theme.ProfileAccentGold
+import com.revio.app.core.ui.theme.ProfileFieldErrorColor
+import com.revio.app.core.ui.theme.ProfileFieldFocused
+import com.revio.app.core.ui.theme.ProfileFieldLocked
+import com.revio.app.core.ui.theme.ProfileFieldLockedTextColor
+import com.revio.app.core.ui.theme.ProfileFieldNeutral
 import kotlinx.coroutines.delay
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
@@ -595,11 +601,16 @@ fun LabeledTextField(
     value: String,
     onValueChange: (String) -> Unit,
     placeholderText: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    isError: Boolean = false,
+    accentFocus: Boolean = false,
+    onLockedClick: (() -> Unit)? = null,
+    trailingContent: (@Composable () -> Unit)? = null,
 ) {
     Text(
         text = label,
-        color = Color(0xFFDFA3A3),
+        color = ProfileFieldNeutral,
         fontSize = 14.5.sp.profileScaledText(),
         fontWeight = FontWeight.Medium,
         modifier = Modifier
@@ -607,36 +618,62 @@ fun LabeledTextField(
             .padding(bottom = 8.dp, start = 8.dp)
     )
 
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        placeholder = {
-            Text(
-                text = placeholderText,
-                style = profileFieldTextStyle(
-                    fontSize = 15.sp.profileScaledText(),
-                    color = Color(0xFF434343).copy(alpha = 0.5f),
-                ),
-            )
-        },
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(bottom = 23.dp.profileScaledV())
-            .height(54.dp.profileScaled()),
-        shape = RoundedCornerShape(13.dp),
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = Color.Transparent,
-            unfocusedBorderColor = Color.Transparent,
-            focusedContainerColor = Color(0xFFD9D9D9),
-            unfocusedContainerColor = Color(0xFFD9D9D9)
-        ),
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(
-            keyboardType = KeyboardType.Email,
-            imeAction = ImeAction.Next
-        ),
-        textStyle = profileFieldTextStyle(fontSize = 15.sp.profileScaledText())
-    )
+//            .padding(bottom = 23.dp.profileScaledV())
+    ) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            enabled = enabled,
+            isError = isError,
+            placeholder = {
+                Text(
+                    text = placeholderText,
+                    style = profileFieldTextStyle(
+                        fontSize = 15.sp.profileScaledText(),
+                        color = Color(0xFF434343).copy(alpha = 0.5f),
+                    ),
+                )
+            },
+            trailingIcon = trailingContent,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(54.dp.profileScaled()),
+            shape = RoundedCornerShape(13.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = if (accentFocus) ProfileAccentGold else Color.Transparent,
+                unfocusedBorderColor = Color.Transparent,
+                disabledBorderColor = Color.Transparent,
+                errorBorderColor = ProfileFieldErrorColor,
+                focusedContainerColor = if (accentFocus) ProfileFieldFocused else ProfileFieldNeutral,
+                unfocusedContainerColor = ProfileFieldNeutral,
+                disabledContainerColor = ProfileFieldLocked,
+                errorContainerColor = ProfileFieldNeutral,
+                disabledTextColor = ProfileFieldLockedTextColor,
+                cursorColor = if (accentFocus) ProfileAccentGold else Color.Unspecified,
+            ),
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Email,
+                imeAction = ImeAction.Next
+            ),
+            textStyle = profileFieldTextStyle(fontSize = 15.sp.profileScaledText())
+        )
+
+        if (!enabled && onLockedClick != null) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onLockedClick,
+                    )
+            )
+        }
+    }
 }
 
 
@@ -644,7 +681,12 @@ fun LabeledTextField(
 fun BirthDateField(
     birthDate: LocalDate?,
     onBirthDateChanged: (LocalDate) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    isError: Boolean = false,
+    accentFocus: Boolean = false,
+    onLockedClick: (() -> Unit)? = null,
+    trailingContent: (@Composable () -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val interactionSource = remember { MutableInteractionSource() }
@@ -662,10 +704,11 @@ fun BirthDateField(
         )
     }
 
-    LaunchedEffect(interactionSource) {
+    LaunchedEffect(interactionSource, enabled) {
+        if (!enabled) return@LaunchedEffect
         interactionSource.interactions.collect { interaction ->
             when (interaction) {
-                is PressInteraction.Press -> {
+                is PressInteraction.Release -> {
                     datePickerDialog.show()
                 }
             }
@@ -675,7 +718,7 @@ fun BirthDateField(
     Column(modifier = modifier) {
         Text(
             text = "Birthdate",
-            color = Color(0xFFDFA3A3),
+            color = ProfileFieldNeutral,
             fontSize = 14.5.sp.profileScaledText(),
             fontWeight = FontWeight.Medium,
             modifier = Modifier
@@ -683,40 +726,63 @@ fun BirthDateField(
                 .padding(bottom = 8.dp, start = 8.dp)
         )
 
-        OutlinedTextField(
-            value = birthDate?.format(
-                DateTimeFormatter.ofPattern(
-                    "dd/MM/yyyy",
-                    Locale.ENGLISH
-                )
-            ) ?: "",
-            placeholder = {
-                Text(
-                    text = "01/12/2002",
-                    style = profileFieldTextStyle(
-                        fontSize = 15.5.sp.profileScaledText(),
-                        color = Color(0xFF434343).copy(alpha = 0.5f),
-                    ),
-                )
-            },
-            onValueChange = {},
-            interactionSource = interactionSource,
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 23.dp.profileScaledV())
-                .height(54.dp.profileScaled()),
-            readOnly = true,
-            shape = RoundedCornerShape(13.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Color.Transparent,
-                unfocusedBorderColor = Color.Transparent,
-                focusedContainerColor = Color(0xFFD9D9D9),
-                unfocusedContainerColor = Color(0xFFD9D9D9),
-                disabledContainerColor = Color(0xFFD9D9D9)
-            ),
-            singleLine = true,
-            textStyle = profileFieldTextStyle(fontSize = 15.5.sp.profileScaledText()),
-        )
+        ) {
+            OutlinedTextField(
+                value = birthDate?.format(
+                    DateTimeFormatter.ofPattern(
+                        "dd/MM/yyyy",
+                        Locale.ENGLISH
+                    )
+                ) ?: "",
+                placeholder = {
+                    Text(
+                        text = "01/12/2002",
+                        style = profileFieldTextStyle(
+                            fontSize = 15.5.sp.profileScaledText(),
+                            color = Color(0xFF434343).copy(alpha = 0.5f),
+                        ),
+                    )
+                },
+                onValueChange = {},
+                interactionSource = interactionSource,
+                enabled = enabled,
+                isError = isError,
+                trailingIcon = trailingContent,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(54.dp.profileScaled()),
+                readOnly = true,
+                shape = RoundedCornerShape(13.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = if (accentFocus) ProfileAccentGold else Color.Transparent,
+                    unfocusedBorderColor = Color.Transparent,
+                    disabledBorderColor = Color.Transparent,
+                    errorBorderColor = ProfileFieldErrorColor,
+                    focusedContainerColor = if (accentFocus) ProfileFieldFocused else ProfileFieldNeutral,
+                    unfocusedContainerColor = ProfileFieldNeutral,
+                    disabledContainerColor = ProfileFieldLocked,
+                    errorContainerColor = ProfileFieldNeutral,
+                    disabledTextColor = ProfileFieldLockedTextColor,
+                ),
+                singleLine = true,
+                textStyle = profileFieldTextStyle(fontSize = 15.5.sp.profileScaledText()),
+            )
+
+            if (!enabled && onLockedClick != null) {
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onLockedClick,
+                        )
+                )
+            }
+        }
     }
 }
 
@@ -724,7 +790,12 @@ fun BirthDateField(
 fun CountryDropdown(
     selectedCountry: String,
     onCountrySelected: (CountryItem) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    isError: Boolean = false,
+    accentFocus: Boolean = false,
+    onLockedClick: (() -> Unit)? = null,
+    trailingContent: (@Composable () -> Unit)? = null,
 ) {
     var countries by remember { mutableStateOf<List<CountryItem>?>(null) }
     var expanded by remember { mutableStateOf(false) }
@@ -747,7 +818,8 @@ fun CountryDropdown(
         }
     }
 
-    LaunchedEffect(interactionSource) {
+    LaunchedEffect(interactionSource, enabled) {
+        if (!enabled) return@LaunchedEffect
         interactionSource.interactions.collect { interaction ->
             when (interaction) {
                 is PressInteraction.Press -> {
@@ -762,7 +834,7 @@ fun CountryDropdown(
     Column(modifier = modifier) {
         Text(
             text = "Country",
-            color = Color(0xFFDFA3A3),
+            color = ProfileFieldNeutral,
             fontSize = 14.5.sp.profileScaledText(),
             fontWeight = FontWeight.Medium,
             modifier = Modifier
@@ -778,18 +850,25 @@ fun CountryDropdown(
                 value = if (selectedCountry.isBlank()) "" else "$flag  $selectedCountry",
                 onValueChange = {},
                 readOnly = true,
+                enabled = enabled,
+                isError = isError,
                 interactionSource = interactionSource,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(54.dp.profileScaled()),
                 shape = RoundedCornerShape(13.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color.Transparent,
+                    focusedBorderColor = if (accentFocus) ProfileAccentGold else Color.Transparent,
                     unfocusedBorderColor = Color.Transparent,
-                    focusedContainerColor = Color(0xFFD9D9D9),
-                    unfocusedContainerColor = Color(0xFFD9D9D9)
+                    disabledBorderColor = Color.Transparent,
+                    errorBorderColor = ProfileFieldErrorColor,
+                    focusedContainerColor = if (accentFocus) ProfileFieldFocused else ProfileFieldNeutral,
+                    unfocusedContainerColor = ProfileFieldNeutral,
+                    disabledContainerColor = ProfileFieldLocked,
+                    errorContainerColor = ProfileFieldNeutral,
+                    disabledTextColor = ProfileFieldLockedTextColor,
                 ),
-                trailingIcon = {
+                trailingIcon = trailingContent ?: {
                     Image(
                         painter = painterResource(id = R.drawable.arrow_square_down),
                         contentDescription = "Drop down",
@@ -800,6 +879,17 @@ fun CountryDropdown(
                 textStyle = profileFieldTextStyle(fontSize = 15.5.sp.profileScaledText()),
             )
 
+            if (!enabled && onLockedClick != null) {
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onLockedClick,
+                        )
+                )
+            }
         }
     }
     if (expanded) {

@@ -17,6 +17,7 @@ interface UserRepository {
     suspend fun getCurrentUser(): ApiResult<User>
     suspend fun getAllUsers(): ApiResult<List<User>>
     suspend fun getUsersByUsername(username: String): ApiResult<List<User>>
+    suspend fun checkUsernameAvailability(username: String): ApiResult<UsernameAvailabilityResponse>
     suspend fun createUser(request: CreateUserRequest): ApiResult<CreateUserResponse>
     suspend fun updateUser(request: UpdateUserRequest): ApiResult<User>
     suspend fun updateProfilePicture(request: UpdateProfilePictureRequest): ApiResult<User>
@@ -63,6 +64,10 @@ class UserRepositoryImpl @Inject constructor(
         } catch (exception: Exception) {
             ApiResult.Error(exception.message ?: "Failed to check username availability")
         }
+    }
+
+    override suspend fun checkUsernameAvailability(username: String): ApiResult<UsernameAvailabilityResponse> {
+        return safeApiCall { userApi.checkUsernameAvailability(username) }
     }
 
     override suspend fun createUser(request: CreateUserRequest): ApiResult<CreateUserResponse> {

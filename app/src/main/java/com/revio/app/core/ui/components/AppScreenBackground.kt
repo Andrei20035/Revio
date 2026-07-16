@@ -32,10 +32,14 @@ val AppBackground = Color(0xFF030310)
  *
  * The nav must live in [foreground], not in [content]; otherwise the bottom scrim
  * would draw on top of it.
+ *
+ * [showBottomScrim] lets screens without a floating nav (e.g. plain forms) opt
+ * out of the bottom fade, since there's nothing for it to ground.
  */
 @Composable
 fun AppScreenBackground(
     modifier: Modifier = Modifier,
+    showBottomScrim: Boolean = true,
     foreground: @Composable BoxScope.() -> Unit = {},
     content: @Composable BoxScope.() -> Unit,
 ) {
@@ -58,13 +62,15 @@ fun AppScreenBackground(
 
         // Bottom fade — fades the content out near the bottom edge. Drawn after
         // content() but BEFORE foreground(), so it never covers the nav bar.
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .height(146.dp)
-                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black)))
-        )
+        if (showBottomScrim) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(146.dp)
+                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black)))
+            )
+        }
 
         // Foreground — floating nav + overlays. Always above the fade.
         foreground()

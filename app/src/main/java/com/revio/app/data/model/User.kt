@@ -30,6 +30,15 @@ data class User(
     val createdAt: Instant? = null,
     @Serializable(with = InstantSerializer::class)
     val updatedAt: Instant? = null,
+    val canChangeFullName: Boolean = true,
+    val canChangeCountry: Boolean = true,
+    val canChangeBirthDate: Boolean = true,
+    val canChangeUsername: Boolean = true,
+    val canChangePhoneNumber: Boolean = true,
+    @Serializable(with = InstantSerializer::class)
+    val nextUsernameChangeAt: Instant? = null,
+    @Serializable(with = InstantSerializer::class)
+    val nextPhoneNumberChangeAt: Instant? = null,
 ) {
     val showEarlySpotter: Boolean get() = isEarlySpotter && earlySpotterNumber != null
 }
