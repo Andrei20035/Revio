@@ -1,12 +1,15 @@
 package com.revio.app.data.repository
 
 import com.revio.app.core.network.ApiResult
+import com.revio.app.data.local.auth.AuthTokens
+import com.revio.app.data.local.auth.TokenStore
 import com.revio.app.data.local.preferences.UserPreferences
 import com.revio.app.data.model.AuthProvider
 import com.revio.app.data.remote.api.AuthApi
 import com.revio.app.data.remote.dto.auth.AuthRequest
 import com.revio.app.data.remote.dto.auth.AuthResponse
 import com.revio.app.data.remote.dto.auth.OnboardingStep
+import com.revio.app.data.remote.dto.auth.UpdatePasswordRequest
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -124,5 +127,40 @@ class AuthRepositoryImplTest {
 
         assertTrue(result is ApiResult.Error)
         coVerify(exactly = 0) { userPreferences.clearAuthData() }
+    }
+
+    @Test
+    fun `updatePassword salveaza token-urile rotite in TokenStore la succes`() = runTest {
+        val tokenStore: TokenStore = mockk(relaxed = true)
+        val repoWithTokenStore = AuthRepositoryImpl(authApi, userPreferences, tokenStore)
+        coEvery { authApi.updatePassword(UpdatePasswordRequest("OldPass1!", "NewPass1!")) } returns
+            Response.success(
+                AuthResponse(
+                    accessToken = "rotated-access-token",
+                    refreshToken = "rotated-refresh-token",
+                    onboardingStep = OnboardingStep.COMPLETED,
+                ),
+            )
+
+        val result = repoWithTokenStore.updatePassword("OldPass1!", "NewPass1!")
+
+        assertTrue(result is ApiResult.Success)
+        coVerify(exactly = 1) {
+            tokenStore.save(AuthTokens("rotated-access-token", "rotated-refresh-token"))
+        }
+    }
+
+    @Test
+    fun `updatePassword NU salveaza token-uri daca serverul intoarce eroare`() = runTest {
+        val tokenStore: TokenStore = mockk(relaxed = true)
+        val repoWithTokenStore = AuthRepositoryImpl(authApi, userPreferences, tokenStore)
+        val errorBody = """{"error":{"code":"INVALID_CURRENT_PASSWORD","message":"Invalid current password"}}"""
+            .toResponseBody("application/json".toMediaType())
+        coEvery { authApi.updatePassword(any()) } returns Response.error(400, errorBody)
+
+        val result = repoWithTokenStore.updatePassword("WrongPass1!", "NewPass1!")
+
+        assertTrue(result is ApiResult.Error)
+        coVerify(exactly = 0) { tokenStore.save(any()) }
     }
 }

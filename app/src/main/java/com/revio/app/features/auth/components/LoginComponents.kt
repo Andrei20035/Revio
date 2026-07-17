@@ -133,7 +133,7 @@ fun PasswordField(
                 IconButton(onClick = onTogglePasswordVisibility) {
                     Icon(
                         painter = painterResource(
-                            id = if (isPasswordVisible) R.drawable.visibility_off_24px else R.drawable.visibility_24px
+                            id = if (isPasswordVisible) R.drawable.visibility_24px else R.drawable.visibility_off_24px
                         ),
                         contentDescription = if (isPasswordVisible) "Hide password" else "Show password",
                         modifier = Modifier.size(24.dp),

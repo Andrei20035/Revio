@@ -17,6 +17,7 @@ import com.revio.app.features.leaderboard.LeaderboardScreen
 import com.revio.app.features.settings.PlaceholderScreen
 import com.revio.app.features.settings.SettingsScreen
 import com.revio.app.features.settings.personalinfo.PersonalInfoScreen
+import com.revio.app.features.settings.changepassword.ChangePasswordScreen
 
 @Composable
 fun RevioNavigation(
@@ -116,7 +117,7 @@ fun RevioNavigation(
         }
 
         composable(Screen.ChangePassword.route) {
-            PlaceholderScreen(title = "Change password", navController = navController)
+            ChangePasswordScreen(navController = navController)
         }
 
         composable(Screen.PrivacyPolicy.route) {

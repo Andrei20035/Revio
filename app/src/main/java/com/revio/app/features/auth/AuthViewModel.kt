@@ -100,7 +100,7 @@ class AuthViewModel @Inject constructor(
         if (!isValidEmail(email)) { setError("Invalid email format"); return }
         if (password != confirm) { setError("Passwords do not match"); return }
         if (!isValidPassword(password)) {
-            setError("Password must be at least 8 characters and include uppercase, lowercase, number and symbol")
+            setError("8+ characters with uppercase, lowercase, number, and symbol.")
             return
         }
 
