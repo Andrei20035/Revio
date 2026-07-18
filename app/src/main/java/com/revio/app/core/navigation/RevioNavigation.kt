@@ -1,5 +1,10 @@
 package com.revio.app.core.navigation
 
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.runtime.Composable
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -24,9 +29,56 @@ fun RevioNavigation(
     navController: NavHostController,
     startDestination: String,
     ) {
+    val instantDestinationRoutes = setOf(
+        Screen.Feed.route,
+        Screen.Leaderboard.route,
+        Screen.Activity.route,
+        Screen.Profile.route,
+    )
+
     NavHost(
         navController = navController,
-        startDestination = startDestination
+        startDestination = startDestination,
+        enterTransition = {
+            if (targetState.destination.route in instantDestinationRoutes) {
+                EnterTransition.None
+            } else {
+                slideInHorizontally(
+                    initialOffsetX = { fullWidth -> fullWidth },
+                    animationSpec = tween(250),
+                )
+            }
+        },
+        exitTransition = {
+            if (targetState.destination.route in instantDestinationRoutes) {
+                ExitTransition.None
+            } else {
+                slideOutHorizontally(
+                    targetOffsetX = { fullWidth -> -fullWidth },
+                    animationSpec = tween(250),
+                )
+            }
+        },
+        popEnterTransition = {
+            if (targetState.destination.route in instantDestinationRoutes) {
+                EnterTransition.None
+            } else {
+                slideInHorizontally(
+                    initialOffsetX = { fullWidth -> -fullWidth },
+                    animationSpec = tween(250),
+                )
+            }
+        },
+        popExitTransition = {
+            if (targetState.destination.route in instantDestinationRoutes) {
+                ExitTransition.None
+            } else {
+                slideOutHorizontally(
+                    targetOffsetX = { fullWidth -> fullWidth },
+                    animationSpec = tween(250),
+                )
+            }
+        },
     ) {
         composable(Screen.Onboarding.route) {
             OnboardingScreen(
@@ -113,7 +165,10 @@ fun RevioNavigation(
         }
 
         composable(Screen.PersonalInfo.route) {
-            PersonalInfoScreen(navController = navController)
+            PersonalInfoScreen(
+                navController = navController,
+                isNavTransitionRunning = transition.isRunning,
+            )
         }
 
         composable(Screen.ChangePassword.route) {

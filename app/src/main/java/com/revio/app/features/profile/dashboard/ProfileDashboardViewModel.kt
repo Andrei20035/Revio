@@ -13,6 +13,7 @@ import com.revio.app.data.repository.PostRepository
 import com.revio.app.data.repository.UserRepository
 import com.revio.app.features.feed.CommentsSheetState
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -51,6 +52,7 @@ class ProfileDashboardViewModel @Inject constructor(
     private fun loadCurrentUser() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoadingUser = true) }
+//            delay(2500) // TEMP: simulates a slow server for manual lag testing — remove after testing.
             when (val result = userRepository.getCurrentUser()) {
                 is ApiResult.Success -> {
                     _uiState.update {
@@ -135,6 +137,7 @@ class ProfileDashboardViewModel @Inject constructor(
             }
 
             val cursor = if (reset) null else _uiState.value.nextCursor
+//            delay(2500) // TEMP: simulates a slow server for manual lag testing — remove after testing.
 
             when (val result = postRepository.getUserPosts(userId, PAGE_SIZE, cursor)) {
                 is ApiResult.Success -> _uiState.update { state ->

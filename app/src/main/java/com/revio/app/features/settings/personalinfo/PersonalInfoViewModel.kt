@@ -25,6 +25,8 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private const val MIN_USERNAME_LENGTH = 3
@@ -51,6 +53,7 @@ class PersonalInfoViewModel @Inject constructor(
     val uiState: StateFlow<PersonalInfoUiState> = _uiState.asStateFlow()
 
     private val usernameQueryFlow = MutableStateFlow<String?>(null)
+    private var loadCurrentUserJob: Job? = null
 
     init {
         loadCurrentUser()
@@ -58,8 +61,11 @@ class PersonalInfoViewModel @Inject constructor(
     }
 
     private fun loadCurrentUser() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
+        if (loadCurrentUserJob?.isActive == true) return
+
+        loadCurrentUserJob = viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, generalError = null) }
+//            delay(2500) // TEMP: simulates a slow server for manual lag testing — remove after testing.
             when (val result = userRepository.getCurrentUser()) {
                 is ApiResult.Success -> _uiState.update {
                     it.copy(
@@ -82,6 +88,10 @@ class PersonalInfoViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    fun retryLoadCurrentUser() {
+        loadCurrentUser()
     }
 
     private fun refreshEligibility() {

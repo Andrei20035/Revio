@@ -101,7 +101,7 @@ fun SettingsScreen(
                     color = Color.White,
                     fontFamily = Poppins,
                     fontWeight = FontWeight.Medium,
-                    fontSize = 35.sp.actScaledText(),
+                    fontSize = 25.sp.actScaledText(),
                 )
             }
 

@@ -44,7 +44,7 @@ data class PersonalInfoUiState(
     val isPositioningImage: Boolean = false,
     val isUploadingImage: Boolean = false,
 
-    val isLoading: Boolean = false,
+    val isLoading: Boolean = true,
     val isSaving: Boolean = false,
     val saveSuccess: Boolean = false,
 

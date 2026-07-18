@@ -54,6 +54,7 @@ import coil3.compose.AsyncImage
 import com.revio.app.R
 import com.revio.app.core.ui.components.AppScreenBackground
 import com.revio.app.core.ui.scaling.LocalActivityScale
+import com.revio.app.core.ui.scaling.LocalProfileScale
 import com.revio.app.core.ui.scaling.actScaled
 import com.revio.app.core.ui.scaling.actScaledText
 import com.revio.app.core.ui.scaling.profileScaledV
@@ -76,12 +77,21 @@ import java.util.Locale
 @Composable
 fun PersonalInfoScreen(
     navController: NavController,
+    isNavTransitionRunning: Boolean = false,
     viewModel: PersonalInfoViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var lockedDialogField by remember { mutableStateOf<PersonalInfoField?>(null) }
     var infoDialogField by remember { mutableStateOf<PersonalInfoField?>(null) }
     var showPermanentConfirmDialog by remember { mutableStateOf(false) }
+
+    // Avoid composing the (heavier) form while the nav slide-in animation is still
+    // running, so the first composition of its fields doesn't compete with the
+    // animation's frames. This does not delay the loading spinner itself.
+    var navTransitionFinished by remember { mutableStateOf(!isNavTransitionRunning) }
+    LaunchedEffect(isNavTransitionRunning) {
+        if (!isNavTransitionRunning) navTransitionFinished = true
+    }
 
     LaunchedEffect(uiState.saveSuccess) {
         if (uiState.saveSuccess) {
@@ -90,215 +100,41 @@ fun PersonalInfoScreen(
     }
 
     AppScreenBackground(showBottomScrim = false) {
-        CompositionLocalProvider(LocalActivityScale provides rememberActivityScale()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .statusBarsPadding()
-                    .padding(horizontal = 10.dp.actScaled()),
-            ) {
-                // ── Top bar ──────────────────────────────────────────────
-                Spacer(modifier = Modifier.height(8.dp.actScaled()))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = Color.White,
-                            modifier = Modifier.size(28.dp.actScaled()),
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(4.dp.actScaled()))
-                    Text(
-                        text = "Personal info",
-                        color = Color.White,
-                        fontFamily = Poppins,
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 25.sp.actScaledText(),
-                    )
-                }
-
-                // ── Avatar ───────────────────────────────────────────────
-                Spacer(modifier = Modifier.height(24.dp.actScaled()))
-                Box(
-                    modifier = Modifier.fillMaxWidth(),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    ProfileAvatar(
-                        uiState = uiState,
-                        onImagePicked = viewModel::onImagePicked,
-                    )
-                }
-
-                // ── Fields ───────────────────────────────────────────────
-                Spacer(modifier = Modifier.height(28.dp.actScaled()))
-
-                val fullNameLocked = uiState.canChange[PersonalInfoField.FULL_NAME] == false
-                LabeledTextField(
-                    label = "Full name",
-                    value = uiState.fullName,
-                    onValueChange = viewModel::onFullNameChanged,
-                    placeholderText = "Full name",
-                    enabled = !fullNameLocked,
-                    isError = uiState.fieldErrors[PersonalInfoField.FULL_NAME] != null,
-                    accentFocus = true,
-                    onLockedClick = { lockedDialogField = PersonalInfoField.FULL_NAME },
-                    trailingContent = {
-                        FieldTrailingIcon(
-                            locked = fullNameLocked,
-                            onInfoClick = { infoDialogField = PersonalInfoField.FULL_NAME },
-                        )
-                    },
+        val activityScale = rememberActivityScale()
+        CompositionLocalProvider(
+            LocalActivityScale provides activityScale,
+            // The shared profile fields use profileScaled() for their height. Keep that
+            // scale in sync with the settings screens, where fields use actScaled().
+            LocalProfileScale provides activityScale,
+        ) {
+            when {
+                uiState.isLoading || !navTransitionFinished -> PersonalInfoLoadingContent(
+                    onBack = { navController.popBackStack() },
                 )
-                uiState.fieldErrors[PersonalInfoField.FULL_NAME]?.let {
-                    FieldWarning(text = it, isError = true)
-                }
-                Spacer(Modifier.height(23.dp.profileScaledV()))
 
-                val usernameLocked = uiState.canChange[PersonalInfoField.USERNAME] == false
-                LabeledTextField(
-                    label = "Username",
-                    value = uiState.username,
-                    onValueChange = viewModel::onUsernameChanged,
-                    placeholderText = "Username",
-                    enabled = !usernameLocked,
-                    isError = uiState.fieldErrors[PersonalInfoField.USERNAME] != null ||
-                        uiState.usernameCheck is UsernameCheckState.Taken ||
-                        uiState.usernameCheck is UsernameCheckState.Invalid,
-                    accentFocus = true,
-                    onLockedClick = { lockedDialogField = PersonalInfoField.USERNAME },
-                    trailingContent = {
-                        FieldTrailingIcon(
-                            locked = usernameLocked,
-                            onInfoClick = { infoDialogField = PersonalInfoField.USERNAME },
-                        )
-                    },
+                uiState.user == null -> PersonalInfoLoadErrorContent(
+                    message = uiState.generalError ?: "Couldn't load your personal information.",
+                    onBack = { navController.popBackStack() },
+                    onRetry = viewModel::retryLoadCurrentUser,
                 )
-                usernameStatusText(uiState)?.let { (text, isErr) ->
-                    FieldWarning(text = text, isError = isErr)
-                } ?: run {
-                    Spacer(Modifier.height(23.dp.profileScaledV()))
-                }
 
-
-                val countryLocked = uiState.canChange[PersonalInfoField.COUNTRY] == false
-                CountryDropdown(
-                    selectedCountry = uiState.country,
-                    onCountrySelected = { viewModel.onCountryChanged(it.name) },
-                    enabled = !countryLocked,
-                    isError = uiState.fieldErrors[PersonalInfoField.COUNTRY] != null,
-                    accentFocus = true,
-                    onLockedClick = { lockedDialogField = PersonalInfoField.COUNTRY },
-                    trailingContent = {
-                        FieldTrailingIcon(
-                            locked = countryLocked,
-                            onInfoClick = { infoDialogField = PersonalInfoField.COUNTRY },
-                        )
-                    },
-                )
-                uiState.fieldErrors[PersonalInfoField.COUNTRY]?.let {
-                    FieldWarning(text = it, isError = true)
-                } ?: run {
-                    Spacer(Modifier.height(23.dp.profileScaledV()))
-                }
-
-                Spacer(modifier = Modifier.height(4.dp.actScaled()))
-                val birthDateLocked = uiState.canChange[PersonalInfoField.BIRTH_DATE] == false
-                BirthDateField(
-                    birthDate = uiState.birthDate,
+                else -> PersonalInfoForm(
+                    uiState = uiState,
+                    onBack = { navController.popBackStack() },
+                    onImagePicked = viewModel::onImagePicked,
+                    onFullNameChanged = viewModel::onFullNameChanged,
+                    onUsernameChanged = viewModel::onUsernameChanged,
+                    onCountryChanged = viewModel::onCountryChanged,
                     onBirthDateChanged = viewModel::onBirthDateChanged,
-                    enabled = !birthDateLocked,
-                    isError = uiState.fieldErrors[PersonalInfoField.BIRTH_DATE] != null,
-                    accentFocus = true,
-                    onLockedClick = { lockedDialogField = PersonalInfoField.BIRTH_DATE },
-                    trailingContent = {
-                        FieldTrailingIcon(
-                            locked = birthDateLocked,
-                            onInfoClick = { infoDialogField = PersonalInfoField.BIRTH_DATE },
-                        )
-                    },
+                    onPhoneNumberChanged = viewModel::onPhoneNumberChanged,
+                    onSave = viewModel::onSave,
+                    onLockedClick = { lockedDialogField = it },
+                    onInfoClick = { infoDialogField = it },
+                    onPermanentChangesRequested = { showPermanentConfirmDialog = true },
                 )
-                uiState.fieldErrors[PersonalInfoField.BIRTH_DATE]?.let {
-                    FieldWarning(text = it, isError = true)
-                } ?: run {
-                    Spacer(Modifier.height(23.dp.profileScaledV()))
-                }
-
-                val phoneLocked = uiState.canChange[PersonalInfoField.PHONE_NUMBER] == false
-                LabeledTextField(
-                    label = "Phone number",
-                    value = uiState.phoneNumber,
-                    onValueChange = viewModel::onPhoneNumberChanged,
-                    placeholderText = "Phone number",
-                    enabled = !phoneLocked,
-                    isError = uiState.fieldErrors[PersonalInfoField.PHONE_NUMBER] != null,
-                    accentFocus = true,
-                    onLockedClick = { lockedDialogField = PersonalInfoField.PHONE_NUMBER },
-                    trailingContent = {
-                        FieldTrailingIcon(
-                            locked = phoneLocked,
-                            onInfoClick = { infoDialogField = PersonalInfoField.PHONE_NUMBER },
-                        )
-                    },
-                )
-                uiState.fieldErrors[PersonalInfoField.PHONE_NUMBER]?.let {
-                    FieldWarning(text = it, isError = true)
-                } ?: run {
-                    Spacer(Modifier.height(23.dp.profileScaledV()))
-                }
-
-                uiState.generalError?.let {
-                    Text(
-                        text = it,
-                        color = ProfileFieldErrorColor,
-                        fontSize = 13.sp.actScaledText(),
-                        modifier = Modifier.padding(bottom = 12.dp.actScaled()),
-                    )
-                }
-
-                // ── Save ─────────────────────────────────────────────────
-                Spacer(modifier = Modifier.height(8.dp.actScaled()))
-                Button(
-                    onClick = {
-                        if (uiState.pendingPermanentFields.isNotEmpty()) {
-                            showPermanentConfirmDialog = true
-                        } else {
-                            viewModel.onSave()
-                        }
-                    },
-                    enabled = !uiState.isSaveBlocked,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(54.dp.actScaled()),
-                    shape = RoundedCornerShape(33.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFF0AB25),
-                        disabledContainerColor = Color(0xFFF0AB25).copy(alpha = 0.7f),
-                    ),
-                ) {
-                    if (uiState.isSaving) {
-                        CircularProgressIndicator(
-                            color = Color.Black,
-                            modifier = Modifier.size(22.dp.actScaled()),
-                        )
-                    } else {
-                        Text(
-                            text = "Save",
-                            color = Color.Black,
-                            fontSize = 18.sp.actScaledText(),
-                            fontWeight = FontWeight.Medium,
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(32.dp.actScaled()))
             }
 
-            if (uiState.isPositioningImage) {
+            if (!uiState.isLoading && uiState.user != null && uiState.isPositioningImage) {
                 ImagePositioningOverlay(
                     uiState = uiState,
                     onTransformChanged = viewModel::onTransformChanged,
@@ -331,6 +167,312 @@ fun PersonalInfoScreen(
                 viewModel.onSave()
             },
             onDismiss = { showPermanentConfirmDialog = false },
+        )
+    }
+}
+
+@Composable
+private fun PersonalInfoForm(
+    uiState: PersonalInfoUiState,
+    onBack: () -> Unit,
+    onImagePicked: (android.net.Uri) -> Unit,
+    onFullNameChanged: (String) -> Unit,
+    onUsernameChanged: (String) -> Unit,
+    onCountryChanged: (String) -> Unit,
+    onBirthDateChanged: (java.time.LocalDate) -> Unit,
+    onPhoneNumberChanged: (String) -> Unit,
+    onSave: () -> Unit,
+    onLockedClick: (PersonalInfoField) -> Unit,
+    onInfoClick: (PersonalInfoField) -> Unit,
+    onPermanentChangesRequested: () -> Unit,
+) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .statusBarsPadding()
+                    .padding(horizontal = 10.dp.actScaled()),
+            ) {
+                // ── Top bar ──────────────────────────────────────────────
+                Spacer(modifier = Modifier.height(8.dp.actScaled()))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = Color.White,
+                            modifier = Modifier.size(28.dp.actScaled()),
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(4.dp.actScaled()))
+                    Text(
+                        text = "Personal info",
+                        color = Color.White,
+                        fontFamily = Poppins,
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 25.sp.actScaledText(),
+                    )
+                }
+
+                // ── Avatar ───────────────────────────────────────────────
+                Spacer(modifier = Modifier.height(24.dp.actScaled()))
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    ProfileAvatar(
+                        uiState = uiState,
+                        onImagePicked = onImagePicked,
+                    )
+                }
+
+                // ── Fields ───────────────────────────────────────────────
+                Spacer(modifier = Modifier.height(28.dp.actScaled()))
+
+                val fullNameLocked = uiState.canChange[PersonalInfoField.FULL_NAME] == false
+                LabeledTextField(
+                    label = "Full name",
+                    value = uiState.fullName,
+                    onValueChange = onFullNameChanged,
+                    placeholderText = "Full name",
+                    enabled = !fullNameLocked,
+                    isError = uiState.fieldErrors[PersonalInfoField.FULL_NAME] != null,
+                    accentFocus = true,
+                    onLockedClick = { onLockedClick(PersonalInfoField.FULL_NAME) },
+                    trailingContent = {
+                        FieldTrailingIcon(
+                            locked = fullNameLocked,
+                            onInfoClick = { onInfoClick(PersonalInfoField.FULL_NAME) },
+                        )
+                    },
+                )
+                uiState.fieldErrors[PersonalInfoField.FULL_NAME]?.let {
+                    FieldWarning(text = it, isError = true)
+                }
+                Spacer(Modifier.height(23.dp.profileScaledV()))
+
+                val usernameLocked = uiState.canChange[PersonalInfoField.USERNAME] == false
+                LabeledTextField(
+                    label = "Username",
+                    value = uiState.username,
+                    onValueChange = onUsernameChanged,
+                    placeholderText = "Username",
+                    enabled = !usernameLocked,
+                    isError = uiState.fieldErrors[PersonalInfoField.USERNAME] != null ||
+                        uiState.usernameCheck is UsernameCheckState.Taken ||
+                        uiState.usernameCheck is UsernameCheckState.Invalid,
+                    accentFocus = true,
+                    onLockedClick = { onLockedClick(PersonalInfoField.USERNAME) },
+                    trailingContent = {
+                        FieldTrailingIcon(
+                            locked = usernameLocked,
+                            onInfoClick = { onInfoClick(PersonalInfoField.USERNAME) },
+                        )
+                    },
+                )
+                usernameStatusText(uiState)?.let { (text, isErr) ->
+                    FieldWarning(text = text, isError = isErr)
+                } ?: run {
+                    Spacer(Modifier.height(23.dp.profileScaledV()))
+                }
+
+
+                val countryLocked = uiState.canChange[PersonalInfoField.COUNTRY] == false
+                CountryDropdown(
+                    selectedCountry = uiState.country,
+                    onCountrySelected = { onCountryChanged(it.name) },
+                    enabled = !countryLocked,
+                    isError = uiState.fieldErrors[PersonalInfoField.COUNTRY] != null,
+                    accentFocus = true,
+                    onLockedClick = { onLockedClick(PersonalInfoField.COUNTRY) },
+                    trailingContent = {
+                        FieldTrailingIcon(
+                            locked = countryLocked,
+                            onInfoClick = { onInfoClick(PersonalInfoField.COUNTRY) },
+                        )
+                    },
+                )
+                uiState.fieldErrors[PersonalInfoField.COUNTRY]?.let {
+                    FieldWarning(text = it, isError = true)
+                } ?: run {
+                    Spacer(Modifier.height(23.dp.profileScaledV()))
+                }
+
+                Spacer(modifier = Modifier.height(4.dp.actScaled()))
+                val birthDateLocked = uiState.canChange[PersonalInfoField.BIRTH_DATE] == false
+                BirthDateField(
+                    birthDate = uiState.birthDate,
+                    onBirthDateChanged = onBirthDateChanged,
+                    enabled = !birthDateLocked,
+                    isError = uiState.fieldErrors[PersonalInfoField.BIRTH_DATE] != null,
+                    accentFocus = true,
+                    onLockedClick = { onLockedClick(PersonalInfoField.BIRTH_DATE) },
+                    trailingContent = {
+                        FieldTrailingIcon(
+                            locked = birthDateLocked,
+                            onInfoClick = { onInfoClick(PersonalInfoField.BIRTH_DATE) },
+                        )
+                    },
+                )
+                uiState.fieldErrors[PersonalInfoField.BIRTH_DATE]?.let {
+                    FieldWarning(text = it, isError = true)
+                } ?: run {
+                    Spacer(Modifier.height(23.dp.profileScaledV()))
+                }
+
+                val phoneLocked = uiState.canChange[PersonalInfoField.PHONE_NUMBER] == false
+                LabeledTextField(
+                    label = "Phone number",
+                    value = uiState.phoneNumber,
+                    onValueChange = onPhoneNumberChanged,
+                    placeholderText = "Phone number",
+                    enabled = !phoneLocked,
+                    isError = uiState.fieldErrors[PersonalInfoField.PHONE_NUMBER] != null,
+                    accentFocus = true,
+                    onLockedClick = { onLockedClick(PersonalInfoField.PHONE_NUMBER) },
+                    trailingContent = {
+                        FieldTrailingIcon(
+                            locked = phoneLocked,
+                            onInfoClick = { onInfoClick(PersonalInfoField.PHONE_NUMBER) },
+                        )
+                    },
+                )
+                uiState.fieldErrors[PersonalInfoField.PHONE_NUMBER]?.let {
+                    FieldWarning(text = it, isError = true)
+                } ?: run {
+                    Spacer(Modifier.height(23.dp.profileScaledV()))
+                }
+
+                uiState.generalError?.let {
+                    Text(
+                        text = it,
+                        color = ProfileFieldErrorColor,
+                        fontSize = 13.sp.actScaledText(),
+                        modifier = Modifier.padding(bottom = 12.dp.actScaled()),
+                    )
+                }
+
+                // ── Save ─────────────────────────────────────────────────
+                Spacer(modifier = Modifier.height(8.dp.actScaled()))
+                Button(
+                    onClick = {
+                        if (uiState.pendingPermanentFields.isNotEmpty()) {
+                            onPermanentChangesRequested()
+                        } else {
+                            onSave()
+                        }
+                    },
+                    enabled = !uiState.isSaveBlocked,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(54.dp.actScaled()),
+                    shape = RoundedCornerShape(33.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFF0AB25),
+                        disabledContainerColor = Color(0xFFF0AB25).copy(alpha = 0.7f),
+                    ),
+                ) {
+                    if (uiState.isSaving) {
+                        CircularProgressIndicator(
+                            color = Color.Black,
+                            modifier = Modifier.size(22.dp.actScaled()),
+                        )
+                    } else {
+                        Text(
+                            text = "Save",
+                            color = Color.Black,
+                            fontSize = 18.sp.actScaledText(),
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(32.dp.actScaled()))
+            }
+
+}
+
+@Composable
+private fun PersonalInfoLoadingContent(onBack: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .padding(horizontal = 10.dp.actScaled()),
+    ) {
+        PersonalInfoTopBar(onBack = onBack)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            contentAlignment = Alignment.Center,
+        ) {
+            CircularProgressIndicator(color = Color.White)
+        }
+    }
+}
+
+@Composable
+private fun PersonalInfoLoadErrorContent(
+    message: String,
+    onBack: () -> Unit,
+    onRetry: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .padding(horizontal = 10.dp.actScaled()),
+    ) {
+        PersonalInfoTopBar(onBack = onBack)
+        Column(
+            modifier = Modifier.weight(1f),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+        ) {
+            Text(
+                text = message,
+                color = ProfileFieldErrorColor,
+                fontSize = 14.sp.actScaledText(),
+                modifier = Modifier.padding(horizontal = 24.dp.actScaled()),
+            )
+            Button(
+                onClick = onRetry,
+                modifier = Modifier.padding(top = 20.dp.actScaled()),
+                shape = RoundedCornerShape(33.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF0AB25)),
+            ) {
+                Text(text = "Retry", color = Color.Black, fontWeight = FontWeight.Medium)
+            }
+        }
+    }
+}
+
+@Composable
+private fun PersonalInfoTopBar(onBack: () -> Unit) {
+    Spacer(modifier = Modifier.height(8.dp.actScaled()))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = onBack) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Back",
+                tint = Color.White,
+                modifier = Modifier.size(28.dp.actScaled()),
+            )
+        }
+        Spacer(modifier = Modifier.width(4.dp.actScaled()))
+        Text(
+            text = "Personal info",
+            color = Color.White,
+            fontFamily = Poppins,
+            fontWeight = FontWeight.Medium,
+            fontSize = 25.sp.actScaledText(),
         )
     }
 }

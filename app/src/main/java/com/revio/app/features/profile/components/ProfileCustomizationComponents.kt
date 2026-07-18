@@ -2,7 +2,6 @@ package com.revio.app.features.profile.components
 
 import android.app.DatePickerDialog
 import android.net.Uri
-import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -691,25 +690,23 @@ fun BirthDateField(
     val context = LocalContext.current
     val interactionSource = remember { MutableInteractionSource() }
 
-
-    val datePickerDialog = remember {
-        DatePickerDialog(
-            context,
-            { _, year, month, dayOfMonth ->
-                onBirthDateChanged(LocalDate.of(year, month + 1, dayOfMonth))
-            },
-            birthDate?.year ?: 2000,
-            birthDate?.monthValue?.minus(1) ?: 0,
-            birthDate?.dayOfMonth ?: 1
-        )
-    }
+    var datePickerDialog by remember { mutableStateOf<DatePickerDialog?>(null) }
 
     LaunchedEffect(interactionSource, enabled) {
         if (!enabled) return@LaunchedEffect
         interactionSource.interactions.collect { interaction ->
             when (interaction) {
                 is PressInteraction.Release -> {
-                    datePickerDialog.show()
+                    val dialog = datePickerDialog ?: DatePickerDialog(
+                        context,
+                        { _, year, month, dayOfMonth ->
+                            onBirthDateChanged(LocalDate.of(year, month + 1, dayOfMonth))
+                        },
+                        birthDate?.year ?: 2000,
+                        birthDate?.monthValue?.minus(1) ?: 0,
+                        birthDate?.dayOfMonth ?: 1
+                    ).also { datePickerDialog = it }
+                    dialog.show()
                 }
             }
         }
@@ -822,8 +819,9 @@ fun CountryDropdown(
         if (!enabled) return@LaunchedEffect
         interactionSource.interactions.collect { interaction ->
             when (interaction) {
-                is PressInteraction.Press -> {
-                    Log.d("CountryDropdown", "TextField clicked, expanded: $expanded")
+                // A scroll cancels the press interaction, so open the menu only
+                // after a completed tap instead of when the finger first touches.
+                is PressInteraction.Release -> {
                     expanded = !expanded
                 }
             }

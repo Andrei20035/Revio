@@ -374,26 +374,30 @@ private fun ProfileHeaderSection(
         // Avatar — Figma: 121×121dp circular
         val avatarUrl = uiState.user?.profilePicturePath
         if (avatarUrl.isNullOrBlank()) {
-            Image(
-                painter = painterResource(R.drawable.profile_picture),
-                contentDescription = "Avatar",
-                contentScale = ContentScale.Crop,
+            Box(
                 modifier = Modifier
                     .size(121.dp.dashScaled())
-                    .clip(CircleShape),
+                    .shimmer(CircleShape),
             )
         } else {
-            AsyncImage(
-                model = avatarUrl,
-                contentDescription = "Avatar",
-                contentScale = ContentScale.Crop,
+            var avatarState by remember(avatarUrl) { mutableStateOf(TileState.Loading) }
+            Box(
                 modifier = Modifier
                     .size(121.dp.dashScaled())
                     .clip(CircleShape),
-                placeholder = painterResource(R.drawable.profile_picture),
-                fallback = painterResource(R.drawable.profile_picture),
-                error = painterResource(R.drawable.profile_picture),
-            )
+            ) {
+                AsyncImage(
+                    model = avatarUrl,
+                    contentDescription = "Avatar",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                    onSuccess = { avatarState = TileState.Success },
+                    onError = { avatarState = TileState.Error },
+                )
+                if (avatarState != TileState.Success) {
+                    Box(Modifier.matchParentSize().shimmer(CircleShape))
+                }
+            }
         }
 
         Spacer(modifier = Modifier.width(17.dp.dashScaled()))

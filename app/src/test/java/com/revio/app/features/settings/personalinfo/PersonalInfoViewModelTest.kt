@@ -47,6 +47,43 @@ class PersonalInfoViewModelTest {
     }
 
     @Test
+    fun `initial state shows loading before the current user is available`() = runTest {
+        val pendingUser = kotlinx.coroutines.CompletableDeferred<ApiResult<User>>()
+        coEvery { userRepository.getCurrentUser() } coAnswers { pendingUser.await() }
+
+        val vm = PersonalInfoViewModel(userRepository, imageCompressor)
+
+        assertTrue(vm.uiState.value.isLoading)
+        assertNull(vm.uiState.value.user)
+
+        pendingUser.complete(ApiResult.Success(user()))
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `initial load error keeps the form unavailable and retry loads it`() = runTest {
+        val loadedUser = user()
+        coEvery { userRepository.getCurrentUser() } returnsMany listOf(
+            ApiResult.Error("Network error"),
+            ApiResult.Success(loadedUser),
+        )
+        val vm = PersonalInfoViewModel(userRepository, imageCompressor)
+        advanceUntilIdle()
+
+        assertFalse(vm.uiState.value.isLoading)
+        assertNull(vm.uiState.value.user)
+        assertEquals("Network error", vm.uiState.value.generalError)
+
+        vm.retryLoadCurrentUser()
+        advanceUntilIdle()
+
+        assertFalse(vm.uiState.value.isLoading)
+        assertEquals(loadedUser, vm.uiState.value.user)
+        assertNull(vm.uiState.value.generalError)
+        coVerify(exactly = 2) { userRepository.getCurrentUser() }
+    }
+
+    @Test
     fun `onSave sends only the changed field`() = runTest {
         val vm = createViewModel()
         advanceUntilIdle()
