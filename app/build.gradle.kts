@@ -52,6 +52,7 @@ android {
                 "API_BASE_URL",
                 "\"${property("RELEASE_API_BASE_URL")}\""
             )
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {
