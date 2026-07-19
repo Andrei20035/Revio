@@ -20,6 +20,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
+import com.revio.app.core.navigation.Screen
 import com.revio.app.core.ui.scaling.LocalProfileScale
 import com.revio.app.core.ui.scaling.LocalProfileVSpacingScale
 import com.revio.app.core.ui.scaling.profileScaled
@@ -37,6 +39,7 @@ import com.revio.app.features.profile.components.PictureContainer
 @Composable
 fun PersonalInfoStep(
     viewModel: ProfileCustomizationViewModel,
+    navController: NavController,
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -46,6 +49,14 @@ fun PersonalInfoStep(
         uiState.errorMessage?.let { message ->
             snackbarHostState.showSnackbar(message)
             Log.d("ERROR MESSAGE", uiState.errorMessage.toString())
+        }
+    }
+
+    LaunchedEffect(uiState.isUserCreated) {
+        if (uiState.isUserCreated) {
+            navController.navigate(Screen.Feed.route) {
+                popUpTo(Screen.ProfileCustomization.route) { inclusive = true }
+            }
         }
     }
 
@@ -101,7 +112,7 @@ fun PersonalInfoStep(
                 )
                 } // CompositionLocalProvider
             }
-            if (uiState.isFetchingBrands) {
+            if (uiState.isFetchingBrands || uiState.isLoading) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -149,22 +160,26 @@ private fun PersonalInfoForm(
                 onAction(ProfileCustomizationAction.UpdateProfileTransform(state))
             },
         )
+        Spacer(Modifier.height(23.dp.profileScaledV()))
         LabeledTextField(
             label = "Full name",
             value = uiState.fullName,
             onValueChange = { onAction(ProfileCustomizationAction.UpdateFullName(it)) },
             placeholderText = "Josh Michael"
         )
+        Spacer(Modifier.height(23.dp.profileScaledV()))
         LabeledTextField(
             label = "Username",
             value = uiState.username,
             onValueChange = { onAction(ProfileCustomizationAction.UpdateUsername(it)) },
             placeholderText = "Josh94"
         )
+        Spacer(Modifier.height(23.dp.profileScaledV()))
         BirthDateField(
             birthDate = uiState.birthDate,
             onBirthDateChanged = { onAction(ProfileCustomizationAction.UpdateBirthDate(it)) }
         )
+        Spacer(Modifier.height(23.dp.profileScaledV()))
         CountryDropdown(
             selectedCountry = uiState.country,
             onCountrySelected = { onAction(ProfileCustomizationAction.UpdateCountry(it.name)) }
@@ -173,7 +188,7 @@ private fun PersonalInfoForm(
         Spacer(Modifier.height(40.dp.profileScaledV()))
 
         NextStepButton(
-            text = "Next",
+            text = "Finish",
             onClick = { onAction(ProfileCustomizationAction.NextStep) },
         )
     }

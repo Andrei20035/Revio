@@ -9,14 +9,17 @@ import com.revio.app.data.remote.dto.user.UsernameAvailabilityResponse
 import com.revio.app.data.repository.UserRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import java.time.LocalDate
@@ -30,6 +33,11 @@ class PersonalInfoViewModelTest {
 
     private val userRepository: UserRepository = mockk()
     private val imageCompressor: ImageCompressor = mockk(relaxed = true)
+
+    @Before
+    fun setUp() {
+        every { userRepository.currentUser } returns MutableStateFlow(null)
+    }
 
     private fun user() = User(
         id = UUID.randomUUID(),

@@ -26,10 +26,6 @@ import javax.inject.Named
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
 
-//    Android emulator → host machine alias: "http://10.0.2.2:8080/api/"
-    // Physical phone on the same Wi-Fi → host machine's LAN IP. Must match the server's PUBLIC_BASE_URL.
-//    private const val BASE_URL = "https://carspotter-server.onrender.com/api/"
-    private const val BASE_URL = "http://192.168.1.191:8080/api/"
 
     @Provides
     @Singleton
@@ -97,7 +93,7 @@ object NetworkModule {
         val contentType = "application/json".toMediaType()
 
         return Retrofit.Builder()
-            .baseUrl(BASE_URL)
+            .baseUrl(BuildConfig.API_BASE_URL)
             .client(okHttpClient)
             .addConverterFactory(json.asConverterFactory(contentType))
             .build()
@@ -119,7 +115,7 @@ object NetworkModule {
             .writeTimeout(30, TimeUnit.SECONDS)
             .build()
         return Retrofit.Builder()
-            .baseUrl(BASE_URL)
+            .baseUrl(BuildConfig.API_BASE_URL)
             .client(rawClient)
             .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .build()
@@ -185,12 +181,6 @@ object NetworkModule {
     @Singleton
     fun provideUserCarApi(retrofit: Retrofit): UserCarApi {
         return retrofit.create(UserCarApi::class.java)
-    }
-
-    @Provides
-    @Singleton
-    fun providesUploadImageApi(retrofit: Retrofit): UploadImageApi {
-        return retrofit.create(UploadImageApi::class.java)
     }
 
     @Provides

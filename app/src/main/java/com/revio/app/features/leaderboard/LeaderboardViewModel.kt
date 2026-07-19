@@ -4,10 +4,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.revio.app.core.network.ApiResult
 import com.revio.app.data.repository.LeaderboardRepository
+import com.revio.app.data.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -15,6 +17,7 @@ import javax.inject.Inject
 @HiltViewModel
 class LeaderboardViewModel @Inject constructor(
     private val leaderboardRepository: LeaderboardRepository,
+    private val userRepository: UserRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LeaderboardUiState())
@@ -22,6 +25,11 @@ class LeaderboardViewModel @Inject constructor(
 
     init {
         load()
+        viewModelScope.launch {
+            userRepository.currentUser.filterNotNull().collect { user ->
+                _uiState.update { it.copy(navbarAvatarUrl = user.profilePicturePath) }
+            }
+        }
     }
 
     fun refresh() {

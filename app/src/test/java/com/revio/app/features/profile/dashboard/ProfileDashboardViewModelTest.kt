@@ -17,6 +17,7 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -95,6 +96,7 @@ class ProfileDashboardViewModelTest {
     @Before
     fun setUp() {
         every { userPreferences.userId } returns flowOf(currentUserId)
+        every { userRepository.currentUser } returns MutableStateFlow(null)
     }
 
     private fun buildVm(savedStateHandle: SavedStateHandle) = ProfileDashboardViewModel(

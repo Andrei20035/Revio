@@ -9,6 +9,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -25,6 +26,11 @@ class ActivityViewModel @Inject constructor(
     init {
         loadCurrentUser()
         load()
+        viewModelScope.launch {
+            userRepository.currentUser.filterNotNull().collect { user ->
+                _uiState.update { it.copy(currentUser = user) }
+            }
+        }
     }
 
     fun refresh() {

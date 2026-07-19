@@ -14,8 +14,6 @@ import com.revio.app.data.repository.FriendRepositoryImpl
 import com.revio.app.data.repository.FriendRepository
 import com.revio.app.data.repository.FriendRequestRepositoryImpl
 import com.revio.app.data.repository.FriendRequestRepository
-import com.revio.app.data.repository.ImageRepository
-import com.revio.app.data.repository.ImageRepositoryImpl
 import com.revio.app.data.repository.LikeRepository
 import com.revio.app.data.repository.LikeRepositoryImpl
 import com.revio.app.data.repository.LocationRepository
@@ -72,12 +70,6 @@ abstract class RepositoryModule {
     abstract fun bindFriendRequestRepository(
         impl: FriendRequestRepositoryImpl
     ): FriendRequestRepository
-
-    @Binds
-    @Singleton
-    abstract fun bindImageRepository(
-        impl: ImageRepositoryImpl
-    ): ImageRepository
 
     @Binds
     @Singleton

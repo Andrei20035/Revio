@@ -34,11 +34,23 @@ android {
     }
 
     buildTypes {
+        debug {
+            buildConfigField(
+                "String",
+                "API_BASE_URL",
+                "\"${property("DEBUG_API_BASE_URL")}\""
+            )
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
+            )
+            buildConfigField(
+                "String",
+                "API_BASE_URL",
+                "\"${property("RELEASE_API_BASE_URL")}\""
             )
         }
     }

@@ -147,14 +147,7 @@ class ProfileCustomizationViewModel @Inject constructor(
                     viewModelScope.launch {
                         if (!isUsernameAvailable()) return@launch
 
-                        loadCarBrands()
-                        _uiState.update {
-                            it.copy(
-                                currentStep = ProfileStep.Car,
-                                errorMessage = null
-                            )
-                        }
-                        Log.d("NextStepButton", _uiState.value.currentStep.toString())
+                        completeProfileSetup()
                     }
                 } else {
                     setError("Please fill in all required fields")

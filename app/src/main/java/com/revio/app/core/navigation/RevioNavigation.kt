@@ -20,7 +20,9 @@ import com.revio.app.features.profile.dashboard.ProfileDashboardScreen
 import com.revio.app.features.profile.customization.ProfileCustomization
 import com.revio.app.features.leaderboard.LeaderboardScreen
 import com.revio.app.features.settings.PlaceholderScreen
+import com.revio.app.features.settings.PrivacyPolicyScreen
 import com.revio.app.features.settings.SettingsScreen
+import com.revio.app.features.settings.TermsAndConditionsScreen
 import com.revio.app.features.settings.personalinfo.PersonalInfoScreen
 import com.revio.app.features.settings.changepassword.ChangePasswordScreen
 
@@ -60,7 +62,14 @@ fun RevioNavigation(
             }
         },
         popEnterTransition = {
-            if (targetState.destination.route in instantDestinationRoutes) {
+            val isReturningFromSettingsToProfile =
+                initialState.destination.route == Screen.Settings.route &&
+                    targetState.destination.route == Screen.Profile.route
+
+            if (
+                targetState.destination.route in instantDestinationRoutes &&
+                !isReturningFromSettingsToProfile
+            ) {
                 EnterTransition.None
             } else {
                 slideInHorizontally(
@@ -70,7 +79,14 @@ fun RevioNavigation(
             }
         },
         popExitTransition = {
-            if (targetState.destination.route in instantDestinationRoutes) {
+            val isReturningFromSettingsToProfile =
+                initialState.destination.route == Screen.Settings.route &&
+                    targetState.destination.route == Screen.Profile.route
+
+            if (
+                targetState.destination.route in instantDestinationRoutes &&
+                !isReturningFromSettingsToProfile
+            ) {
                 ExitTransition.None
             } else {
                 slideOutHorizontally(
@@ -176,11 +192,11 @@ fun RevioNavigation(
         }
 
         composable(Screen.PrivacyPolicy.route) {
-            PlaceholderScreen(title = "Privacy Policy", navController = navController)
+            PrivacyPolicyScreen(navController = navController)
         }
 
         composable(Screen.TermsConditions.route) {
-            PlaceholderScreen(title = "Terms & Conditions", navController = navController)
+            TermsAndConditionsScreen(navController = navController)
         }
 
         // Add other screens...

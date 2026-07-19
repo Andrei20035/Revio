@@ -58,6 +58,11 @@ class PersonalInfoViewModel @Inject constructor(
     init {
         loadCurrentUser()
         observeUsernameAvailability()
+        viewModelScope.launch {
+            userRepository.currentUser.filterNotNull().collect { user ->
+                _uiState.update { it.copy(user = user) }
+            }
+        }
     }
 
     private fun loadCurrentUser() {

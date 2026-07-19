@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import java.util.UUID
 import javax.inject.Inject
@@ -44,8 +45,18 @@ class ProfileDashboardViewModel @Inject constructor(
                 _uiState.update { it.copy(errorMessage = "Invalid profile ID") }
             targetUserId == null ->
                 loadCurrentUser()
-            else ->
+            else -> {
+                _uiState.update { it.copy(isOwnProfile = false) }
                 loadForeignProfile(targetUserId)
+            }
+        }
+
+        viewModelScope.launch {
+            userRepository.currentUser.filterNotNull().collect { user ->
+                if (_uiState.value.isOwnProfile) {
+                    _uiState.update { it.copy(user = user) }
+                }
+            }
         }
     }
 
@@ -107,8 +118,32 @@ class ProfileDashboardViewModel @Inject constructor(
     private fun loadFirstPage(userId: UUID) = load(userId, reset = true, isRefresh = false)
 
     fun refresh() {
-        val userId = _uiState.value.user?.id ?: return
-        load(userId, reset = true, isRefresh = true)
+        val state = _uiState.value
+        val userId = state.user?.id
+        if (userId != null) {
+            load(userId, reset = true, isRefresh = true)
+            return
+        }
+        if (state.isLoadingUser) return
+        if (state.isOwnProfile) {
+            loadCurrentUser()
+        } else {
+            val rawUserId = savedStateHandle.get<String>(Screen.Profile.ARG_USER_ID)
+            val targetUserId = rawUserId?.let { runCatching { UUID.fromString(it) }.getOrNull() }
+            if (targetUserId != null) loadForeignProfile(targetUserId)
+        }
+    }
+
+    fun onPostCreated() {
+        val state = _uiState.value
+        refreshCurrentUser()
+        val userId = state.user?.id
+        if (userId != null) {
+            load(userId, reset = true, isRefresh = true)
+            return
+        }
+        if (state.isLoadingUser) return
+        loadCurrentUser()
     }
 
     fun loadNextPage() {

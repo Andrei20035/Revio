@@ -3,10 +3,13 @@ package com.revio.app.features.leaderboard
 import com.revio.app.MainDispatcherRule
 import com.revio.app.core.network.ApiResult
 import com.revio.app.data.repository.LeaderboardRepository
+import com.revio.app.data.repository.UserRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -24,6 +27,9 @@ class LeaderboardViewModelTest {
     val dispatcherRule = MainDispatcherRule()
 
     private val repository: LeaderboardRepository = mockk()
+    private val userRepository: UserRepository = mockk {
+        every { currentUser } returns MutableStateFlow(null)
+    }
 
     private fun entry(rank: Int) = LeaderboardEntry(
         userId = UUID.randomUUID(),
@@ -48,7 +54,7 @@ class LeaderboardViewModelTest {
     @Test
     fun `load success splits and sorts entries into podium and rest`() = runTest {
         coEvery { repository.getLeaderboard() } returns ApiResult.Success(successResult)
-        val vm = LeaderboardViewModel(repository)
+        val vm = LeaderboardViewModel(repository, userRepository)
         advanceUntilIdle()
 
         val state = vm.uiState.value
@@ -64,7 +70,7 @@ class LeaderboardViewModelTest {
     @Test
     fun `load error sets errorMessage and clears loading`() = runTest {
         coEvery { repository.getLeaderboard() } returns ApiResult.Error("Server error")
-        val vm = LeaderboardViewModel(repository)
+        val vm = LeaderboardViewModel(repository, userRepository)
         advanceUntilIdle()
 
         val state = vm.uiState.value
@@ -80,7 +86,7 @@ class LeaderboardViewModelTest {
             ApiResult.Error("fail"),
             ApiResult.Success(successResult),
         )
-        val vm = LeaderboardViewModel(repository)
+        val vm = LeaderboardViewModel(repository, userRepository)
         advanceUntilIdle()
 
         vm.refresh()
@@ -96,7 +102,7 @@ class LeaderboardViewModelTest {
     @Test
     fun `refresh is no-op when already refreshing`() = runTest {
         coEvery { repository.getLeaderboard() } returns ApiResult.Success(successResult)
-        val vm = LeaderboardViewModel(repository)
+        val vm = LeaderboardViewModel(repository, userRepository)
         advanceUntilIdle()
 
         // first call completes, state.isRefreshing=false, second refresh proceeds normally
@@ -114,7 +120,7 @@ class LeaderboardViewModelTest {
             ApiResult.Error("fail"),
             ApiResult.Success(successResult),
         )
-        val vm = LeaderboardViewModel(repository)
+        val vm = LeaderboardViewModel(repository, userRepository)
         advanceUntilIdle()
 
         vm.retry()

@@ -31,4 +31,5 @@ data class LeaderboardUiState(
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val errorMessage: String? = null,
+    val navbarAvatarUrl: String? = null,
 )

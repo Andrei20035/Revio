@@ -33,6 +33,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -107,7 +108,7 @@ fun ProfileDashboardScreen(
             ?.collect { created ->
                 if (created) {
                     navController.currentBackStackEntry?.savedStateHandle?.set("post_created", false)
-                    viewModel.refresh()
+                    viewModel.onPostCreated()
                 }
             }
     }
@@ -197,13 +198,18 @@ fun ProfileDashboardScreen(
             navInsetDp
         }
 
+        PullToRefreshBox(
+            isRefreshing = uiState.isRefreshing,
+            onRefresh = { viewModel.refresh() },
+            modifier = Modifier.fillMaxSize().hazeSource(hazeState),
+        ) {
         LazyVerticalGrid(
             state = gridState,
             columns = GridCells.Fixed(3),
             horizontalArrangement = Arrangement.spacedBy(4.dp.dashScaled()),
             verticalArrangement = Arrangement.spacedBy(4.dp.dashScaledV()),
             contentPadding = PaddingValues(bottom = bottomClearance, start = 10.dp, end = 10.dp),
-            modifier = Modifier.fillMaxSize().hazeSource(hazeState),
+            modifier = Modifier.fillMaxSize(),
         ) {
             // ── Header: profile row ──────────────────────────────────────
             item(span = { GridItemSpan(maxLineSpan) }) {
@@ -277,6 +283,7 @@ fun ProfileDashboardScreen(
                 }
             }
         }
+        } // end PullToRefreshBox
 
         // See-post overlay — shown when a grid image is tapped.
         uiState.selectedPost?.let { post ->
@@ -373,11 +380,21 @@ private fun ProfileHeaderSection(
     ) {
         // Avatar — Figma: 121×121dp circular
         val avatarUrl = uiState.user?.profilePicturePath
-        if (avatarUrl.isNullOrBlank()) {
+        if (uiState.user == null) {
+            // User data not loaded yet — shimmer only while loading.
             Box(
                 modifier = Modifier
                     .size(121.dp.dashScaled())
                     .shimmer(CircleShape),
+            )
+        } else if (avatarUrl.isNullOrBlank()) {
+            Image(
+                painter = painterResource(R.drawable.profile_picture),
+                contentDescription = "Avatar",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(121.dp.dashScaled())
+                    .clip(CircleShape),
             )
         } else {
             var avatarState by remember(avatarUrl) { mutableStateOf(TileState.Loading) }
@@ -391,10 +408,13 @@ private fun ProfileHeaderSection(
                     contentDescription = "Avatar",
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
+                    placeholder = painterResource(R.drawable.profile_picture),
+                    fallback = painterResource(R.drawable.profile_picture),
+                    error = painterResource(R.drawable.profile_picture),
                     onSuccess = { avatarState = TileState.Success },
                     onError = { avatarState = TileState.Error },
                 )
-                if (avatarState != TileState.Success) {
+                if (avatarState == TileState.Loading) {
                     Box(Modifier.matchParentSize().shimmer(CircleShape))
                 }
             }
@@ -497,7 +517,7 @@ private fun EarlySpotterBadge(number: Int, onClick: () -> Unit) {
                 onClick = onClick,
             )
             .background(BadgeBackground)
-            .padding(horizontal = 10.dp.dashScaled(), vertical = 4.dp.dashScaledV()),
+            .padding(horizontal = 10.dp.dashScaled(), vertical = 3.dp.dashScaledV()),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Image(

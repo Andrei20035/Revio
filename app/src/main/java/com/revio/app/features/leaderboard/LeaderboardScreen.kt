@@ -43,7 +43,13 @@ fun LeaderboardScreen(
 
     val onUserClick: (LeaderboardEntry) -> Unit = { entry ->
         if (entry.userId == uiState.currentUser?.entry?.userId) {
-            navController.navigate(Screen.Profile.route) { launchSingleTop = true }
+            navController.navigate(Screen.Profile.route) {
+                popUpTo(Screen.Feed.route) {
+                    saveState = true
+                }
+                launchSingleTop = true
+                restoreState = true
+            }
         } else {
             navController.navigate(Screen.Profile.createRoute(entry.userId))
         }
@@ -53,7 +59,7 @@ fun LeaderboardScreen(
         foreground = {
             FloatingBottomNav(
                 selected = FeedNavItem.Leaderboard,
-                profilePictureUrl = uiState.currentUser?.entry?.avatarUrl,
+                profilePictureUrl = uiState.navbarAvatarUrl,
                 onHome = {
                     navController.navigate(Screen.Feed.route) {
                         popUpTo(Screen.Feed.route) {
