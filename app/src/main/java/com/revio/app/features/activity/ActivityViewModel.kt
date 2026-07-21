@@ -46,6 +46,14 @@ class ActivityViewModel @Inject constructor(
         load()
     }
 
+    fun showTodayInteractionsInfo() {
+        _uiState.update { it.copy(showTodayInteractionsInfo = true) }
+    }
+
+    fun dismissTodayInteractionsInfo() {
+        _uiState.update { it.copy(showTodayInteractionsInfo = false) }
+    }
+
     private fun loadCurrentUser() {
         viewModelScope.launch {
             when (val result = userRepository.getCurrentUser()) {

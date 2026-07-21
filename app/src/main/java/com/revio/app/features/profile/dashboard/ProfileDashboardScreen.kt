@@ -113,6 +113,18 @@ fun ProfileDashboardScreen(
             }
     }
 
+    // Refresh the grid after a post is edited from this screen.
+    LaunchedEffect(Unit) {
+        navController.currentBackStackEntry?.savedStateHandle
+            ?.getStateFlow("post_updated", false)
+            ?.collect { updated ->
+                if (updated) {
+                    navController.currentBackStackEntry?.savedStateHandle?.set("post_updated", false)
+                    viewModel.refresh()
+                }
+            }
+    }
+
     val shouldLoadMore by remember {
         derivedStateOf {
             val info = gridState.layoutInfo
@@ -294,10 +306,15 @@ fun ProfileDashboardScreen(
                 showDeleteConfirm = uiState.showDeleteConfirm,
                 onLikeToggle = { viewModel.onLikeToggle(post.id) },
                 onOpenComments = { viewModel.openComments(post.id) },
+                onEditClick = {
+                    viewModel.clearSelectedPost()
+                    navController.navigate(Screen.ImageUpload.createEditRoute(post.id.toString()))
+                },
                 onDeleteClick = { viewModel.requestDeletePost() },
                 onConfirmDelete = { viewModel.confirmDeletePost() },
                 onDismissDeleteConfirm = { viewModel.dismissDeleteConfirm() },
                 onDismiss = { viewModel.clearSelectedPost() },
+                canDelete = uiState.isOwnProfile,
             )
         }
 

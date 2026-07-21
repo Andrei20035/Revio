@@ -3,6 +3,7 @@ package com.revio.app.features.upload
 import android.net.Uri
 import com.revio.app.data.remote.dto.car_model.CarModelOption
 import com.revio.app.features.profile.components.ImageTransformState
+import java.util.UUID
 
 /** Subtle, non-blocking state of the optional location capture. */
 enum class LocationStatus { Idle, Resolving, Added, Unavailable }
@@ -14,6 +15,11 @@ data class ImageUploadUiState(
     val imageUri: Uri? = null,
     /** "CAMERA" or "GALLERY" — derived from the nav arg, never changed after init. */
     val postSource: String = "GALLERY",
+
+    // Edit mode — set only when the screen was reached to edit an existing post.
+    val postId: UUID? = null,
+    val existingImageUrl: String? = null,
+    val isLoadingPost: Boolean = false,
 
     // Optional location, attached best-effort. All nullable; posting never depends on these.
     val latitude: Double? = null,
@@ -47,13 +53,24 @@ data class ImageUploadUiState(
     // One-shot message for transient errors (brand/model fetch, post failure).
     val userMessage: String? = null,
 ) {
+    /** True when the screen was opened to edit an existing post rather than create a new one. */
+    val isEditMode: Boolean
+        get() = postId != null
+
     /** The model dropdown is interactive only once a brand is selected. */
     val isModelDropdownEnabled: Boolean
         get() = selectedBrand != null
 
-    /** Post requires an image, a brand, and a model, and no submission in flight. */
+    /**
+     * Post requires a brand and a model, and no submission/load in flight. In edit mode the
+     * image is fixed (already uploaded), so it isn't required; in create mode it is.
+     */
     val canPost: Boolean
-        get() = imageUri != null && selectedBrand != null && selectedModel != null && !isPosting
+        get() = when {
+            isPosting || isLoadingPost -> false
+            isEditMode -> selectedBrand != null && selectedModel != null
+            else -> imageUri != null && selectedBrand != null && selectedModel != null
+        }
 
     /** Display names for the model dropdown list. */
     val modelNames: List<String>

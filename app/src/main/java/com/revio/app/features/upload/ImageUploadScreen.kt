@@ -62,8 +62,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.layout.ContentScale
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import coil3.compose.AsyncImage
 import com.revio.app.R
 import com.revio.app.core.ui.components.CustomSnackbar
 import com.revio.app.features.profile.components.DropdownOverlay
@@ -88,15 +90,17 @@ fun ImageUploadScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
-    // On a successful post, signal the launching screen and return.
+    // On a successful post/edit, signal the launching screen and return.
     LaunchedEffect(uiState.postSuccess) {
         if (uiState.postSuccess) {
-            navController.previousBackStackEntry?.savedStateHandle?.set("post_created", true)
+            val key = if (uiState.isEditMode) "post_updated" else "post_created"
+            navController.previousBackStackEntry?.savedStateHandle?.set(key, true)
             navController.popBackStack()
         }
     }
 
     // Optional location: request foreground permission once on entry, then resolve best-effort.
+    // Not needed when editing — an existing post's location never changes.
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { result ->
@@ -105,6 +109,7 @@ fun ImageUploadScreen(
         viewModel.onLocationPermissionResult(granted)
     }
     LaunchedEffect(Unit) {
+        if (uiState.isEditMode) return@LaunchedEffect
         if (viewModel.hasLocationPermission()) {
             viewModel.onLocationPermissionResult(true)
         } else {
@@ -150,17 +155,19 @@ fun ImageUploadScreen(
                 )
                 Spacer(modifier = Modifier.width(14.dp))
                 Text(
-                    text = "Upload photo",
+                    text = if (uiState.isEditMode) "Edit post" else "Upload photo",
                     color = Color.White,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Medium,
                 )
                 Spacer(modifier = Modifier.weight(1f))
-                LocationStatusChip(
-                    status = uiState.locationStatus,
-                    town = uiState.town,
-                    country = uiState.country,
-                )
+                if (!uiState.isEditMode) {
+                    LocationStatusChip(
+                        status = uiState.locationStatus,
+                        town = uiState.town,
+                        country = uiState.country,
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -174,22 +181,37 @@ fun ImageUploadScreen(
                     .clip(CardShape)
                     .background(CardPlaceholder),
             ) {
-                uiState.imageUri?.let { uri ->
-                    EditableImageContainer(
-                        model = uri,
-                        contentDescription = "Selected photo",
-                        shape = CardShape,
-                        modifier = Modifier.fillMaxSize(),
-                        onTransformChanged = viewModel::onTransformChanged,
-                    )
-
-                    // One-shot pinch hint: shown once per new image, auto-dismissed after 1.5s.
-                    var showHint by remember(uri) { mutableStateOf(true) }
-                    LaunchedEffect(uri) {
-                        delay(1500)
-                        showHint = false
+                if (uiState.isEditMode) {
+                    // Editing an existing post: the image is already uploaded and fixed —
+                    // no pinch-to-zoom/pan, just a static preview.
+                    uiState.existingImageUrl?.let { url ->
+                        AsyncImage(
+                            model = url,
+                            contentDescription = "Post photo",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(CardShape),
+                        )
                     }
-                    PinchHintOverlay(visible = showHint)
+                } else {
+                    uiState.imageUri?.let { uri ->
+                        EditableImageContainer(
+                            model = uri,
+                            contentDescription = "Selected photo",
+                            shape = CardShape,
+                            modifier = Modifier.fillMaxSize(),
+                            onTransformChanged = viewModel::onTransformChanged,
+                        )
+
+                        // One-shot pinch hint: shown once per new image, auto-dismissed after 1.5s.
+                        var showHint by remember(uri) { mutableStateOf(true) }
+                        LaunchedEffect(uri) {
+                            delay(1500)
+                            showHint = false
+                        }
+                        PinchHintOverlay(visible = showHint)
+                    }
                 }
             }
 
@@ -245,6 +267,7 @@ fun ImageUploadScreen(
 
             // ---- Post button ----
             PostButton(
+                text = if (uiState.isEditMode) "Save changes" else "Post",
                 enabled = uiState.canPost,
                 loading = uiState.isPosting,
                 onClick = viewModel::post,
@@ -469,6 +492,7 @@ private fun PostButton(
     loading: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    text: String = "Post",
 ) {
     Box(
         modifier = modifier
@@ -493,7 +517,7 @@ private fun PostButton(
                 color = Color.White,
             )
         } else {
-            Text(text = "Post", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Medium)
+            Text(text = text, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Medium)
         }
     }
 }

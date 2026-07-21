@@ -46,6 +46,7 @@ import com.revio.app.features.activity.components.LeaderboardUpCard
 import com.revio.app.features.activity.components.LikeActivityCard
 import com.revio.app.features.activity.components.StatCard
 import com.revio.app.features.activity.components.StreakCard
+import com.revio.app.features.activity.components.TodayInteractionsInfoOverlay
 import com.revio.app.features.activity.model.ActivityItem
 import com.revio.app.features.feed.components.rememberPostCreationLauncher
 
@@ -160,6 +161,7 @@ fun ActivityScreen(
                                         title = "Today's Interactions",
                                         value = uiState.todayInteractions,
                                         isWeeklyScore = false,
+                                        onInfoClick = { viewModel.showTodayInteractionsInfo() },
                                     )
                                 }
                                 Spacer(modifier = Modifier.height(16.dp.actScaled()))
@@ -190,6 +192,10 @@ fun ActivityScreen(
                     }
                 }
             }
+        }
+
+        if (uiState.showTodayInteractionsInfo) {
+            TodayInteractionsInfoOverlay(onDismiss = { viewModel.dismissTodayInteractionsInfo() })
         }
     }
 }

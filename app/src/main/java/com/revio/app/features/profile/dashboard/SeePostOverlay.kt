@@ -19,10 +19,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -44,6 +47,8 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -73,6 +78,7 @@ fun SeePostOverlay(
     showDeleteConfirm: Boolean,
     onLikeToggle: () -> Unit,
     onOpenComments: () -> Unit,
+    onEditClick: () -> Unit,
     onDeleteClick: () -> Unit,
     onConfirmDelete: () -> Unit,
     onDismissDeleteConfirm: () -> Unit,
@@ -121,16 +127,12 @@ fun SeePostOverlay(
                 ),
             contentAlignment = Alignment.Center,
         ) {
-            // Inner content: consumes clicks so they don't reach the dismiss handler.
+            // Only the post's visible controls consume taps; empty layout space dismisses the overlay.
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = {},
-                    ),
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
@@ -145,11 +147,17 @@ fun SeePostOverlay(
                         color = Color.White,
                         fontWeight = FontWeight.Medium,
                         fontSize = 15.sp,
+                        modifier = Modifier.clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = {},
+                        ),
                     )
 
                     if (canDelete) {
-                        PostDeleteMenu(
+                        PostOptionsMenu(
                             isDeleting = isDeleting,
+                            onEditClick = onEditClick,
                             onDeleteClick = onDeleteClick,
                         )
                     }
@@ -163,12 +171,38 @@ fun SeePostOverlay(
                     modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(375f / 468f)
-                        .clip(RoundedCornerShape(20.dp)),
+                        .clip(RoundedCornerShape(20.dp))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = {},
+                        ),
                     placeholder = painterResource(R.drawable.profile_picture),
                     error = painterResource(R.drawable.profile_picture),
                 )
 
-                Spacer(modifier = Modifier.height(10.dp))
+                if (!post.caption.isNullOrBlank()) {
+                    Text(
+                        text = post.caption,
+                        color = Color.White,
+                        fontFamily = Poppins,
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = {},
+                            ),
+                    )
+                } else {
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
+
                 // Like + comment row
                 Row(
                     horizontalArrangement = Arrangement.Center,
@@ -176,16 +210,30 @@ fun SeePostOverlay(
                 ) {
                     // Like
                     Row(
-                        modifier = Modifier.clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = { if (!isLikeInFlight) onLikeToggle() },
-                        ),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        LikeIcon(liked = post.likedByCurrentUser, size = 26.dp)
+                        Box(
+                            modifier = Modifier
+                                .size(26.dp)
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                    onClick = { if (!isLikeInFlight) onLikeToggle() },
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            LikeIcon(liked = post.likedByCurrentUser, size = 26.dp)
+                        }
                         Spacer(modifier = Modifier.width(6.dp))
-                        Box(modifier = Modifier.width(interactionCountWidth(post.likeCount, scale = 1f))) {
+                        Box(
+                            modifier = Modifier
+                                .width(interactionCountWidth(post.likeCount, scale = 1f))
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                    onClick = { if (!isLikeInFlight) onLikeToggle() },
+                                ),
+                        ) {
                             Text(
                                 text = formatCount(post.likeCount),
                                 color = Color.White,
@@ -201,20 +249,34 @@ fun SeePostOverlay(
 
                     // Comment
                     Row(
-                        modifier = Modifier.clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = onOpenComments,
-                        ),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Image(
-                            painter = painterResource(R.drawable.comment),
-                            contentDescription = "Comments",
-                            modifier = Modifier.size(26.dp),
-                        )
+                        Box(
+                            modifier = Modifier
+                                .size(26.dp)
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                    onClick = onOpenComments,
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Image(
+                                painter = painterResource(R.drawable.comment),
+                                contentDescription = "Comments",
+                                modifier = Modifier.size(26.dp),
+                            )
+                        }
                         Spacer(modifier = Modifier.width(6.dp))
-                        Box(modifier = Modifier.width(interactionCountWidth(post.commentCount, scale = 1f))) {
+                        Box(
+                            modifier = Modifier
+                                .width(interactionCountWidth(post.commentCount, scale = 1f))
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                    onClick = onOpenComments,
+                                ),
+                        ) {
                             Text(
                                 text = formatCount(post.commentCount),
                                 color = Color.White,
@@ -334,8 +396,9 @@ private fun DeletePostConfirmPanel(
 }
 
 @Composable
-private fun PostDeleteMenu(
+private fun PostOptionsMenu(
     isDeleting: Boolean,
+    onEditClick: () -> Unit,
     onDeleteClick: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -376,6 +439,39 @@ private fun PostDeleteMenu(
                         .border(1.dp, OverlayMenuBorder, RoundedCornerShape(16.dp))
                         .padding(vertical = 6.dp),
                 ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                expanded = false
+                                onEditClick()
+                            }
+                            .padding(horizontal = 16.dp, vertical = 13.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Edit,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Text(
+                            text = "Edit Post",
+                            color = Color.White,
+                            fontFamily = Poppins,
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 14.sp,
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(OverlayMenuBorder),
+                    )
+
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()

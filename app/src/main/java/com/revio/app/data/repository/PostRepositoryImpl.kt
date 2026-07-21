@@ -4,8 +4,9 @@ import com.revio.app.data.remote.api.PostApi
 import com.revio.app.data.remote.dto.post.CreatePostMetadata
 import com.revio.app.data.remote.dto.post.FeedCursor
 import com.revio.app.data.remote.dto.post.FeedResult
-import com.revio.app.data.remote.dto.post.PostEditRequest
+import com.revio.app.data.remote.dto.post.UpdatePostRequest
 import com.revio.app.data.remote.dto.post.toDomain
+import com.revio.app.data.model.FeedPost
 import com.revio.app.data.model.Post
 import com.revio.app.core.network.ApiResult
 import com.revio.app.core.network.safeApiCall
@@ -26,10 +27,10 @@ interface PostRepository {
         imageBytes: ByteArray,
         mimeType: String,
     ): ApiResult<Unit>
-    suspend fun getPostById(postId: UUID): ApiResult<Post>
+    suspend fun getPostDetail(postId: UUID): ApiResult<FeedPost>
     suspend fun getAllPosts(): ApiResult<List<Post>>
     suspend fun getCurrentDayPostsForUser(): ApiResult<List<Post>>
-    suspend fun editPost(postId: UUID, request: PostEditRequest): ApiResult<Unit>
+    suspend fun updatePost(postId: UUID, request: UpdatePostRequest): ApiResult<FeedPost>
     suspend fun deletePost(postId: UUID): ApiResult<Unit>
     suspend fun getFeedPosts(limit: Int, cursor: FeedCursor? = null): ApiResult<FeedResult>
     suspend fun getUserPosts(userId: UUID, limit: Int, cursor: FeedCursor? = null): ApiResult<FeedResult>
@@ -59,9 +60,9 @@ class PostRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun getPostById(postId: UUID): ApiResult<Post> {
+    override suspend fun getPostDetail(postId: UUID): ApiResult<FeedPost> {
         return when (val result = safeApiCall { postApi.getPostById(postId) }) {
-            is ApiResult.Success -> ApiResult.Success(result.data)
+            is ApiResult.Success -> ApiResult.Success(result.data.toDomain())
             is ApiResult.Error -> ApiResult.Error(result.message)
         }
     }
@@ -81,8 +82,11 @@ class PostRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun editPost(postId: UUID, request: PostEditRequest): ApiResult<Unit> {
-        return safeApiCallNoContent { postApi.editPost(postId, request) }
+    override suspend fun updatePost(postId: UUID, request: UpdatePostRequest): ApiResult<FeedPost> {
+        return when (val result = safeApiCall { postApi.updatePost(postId, request) }) {
+            is ApiResult.Success -> ApiResult.Success(result.data.toDomain())
+            is ApiResult.Error -> ApiResult.Error(result.message)
+        }
     }
 
     override suspend fun deletePost(postId: UUID): ApiResult<Unit> {

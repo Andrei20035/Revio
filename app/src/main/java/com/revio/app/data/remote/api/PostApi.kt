@@ -2,8 +2,9 @@ package com.revio.app.data.remote.api
 
 import com.revio.app.data.model.Post
 import com.revio.app.data.remote.dto.post.CreatePostResponse
+import com.revio.app.data.remote.dto.post.FeedPostDto
 import com.revio.app.data.remote.dto.post.FeedResponse
-import com.revio.app.data.remote.dto.post.PostEditRequest
+import com.revio.app.data.remote.dto.post.UpdatePostRequest
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import retrofit2.Response
@@ -26,7 +27,7 @@ interface PostApi {
     @GET("posts/{postId}")
     suspend fun getPostById(
         @Path("postId") postId: UUID
-    ): Response<Post>
+    ): Response<FeedPostDto>
 
     @GET("posts")
     suspend fun getAllPosts(): Response<List<Post>>
@@ -36,11 +37,11 @@ interface PostApi {
         @Header("Time-Zone") timeZone: String = TimeZone.getDefault().id
     ): Response<List<Post>>
 
-    @PUT("posts/{postId}")
-    suspend fun editPost(
+    @PATCH("posts/{postId}")
+    suspend fun updatePost(
         @Path("postId") postId: UUID,
-        @Body request: PostEditRequest
-    ): Response<Unit>
+        @Body request: UpdatePostRequest
+    ): Response<FeedPostDto>
 
     @DELETE("posts/{postId}")
     suspend fun deletePost(

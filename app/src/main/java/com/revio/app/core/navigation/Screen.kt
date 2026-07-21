@@ -29,12 +29,16 @@ sealed class Screen(val route: String) {
      * Upload-image screen reached after the user captures/picks a photo from the
      * "Post your find" overlay. Carries the selected image URI and post source as query arguments.
      */
-    object ImageUpload : Screen("image_upload?imageUri={imageUri}&source={source}") {
+    object ImageUpload : Screen("image_upload?imageUri={imageUri}&source={source}&postId={postId}") {
         const val ARG_IMAGE_URI = "imageUri"
         const val ARG_SOURCE = "source"
+        const val ARG_POST_ID = "postId"
 
         /** Builds the concrete route for [imageUri], encoding it for safe nav-arg transport. */
         fun createRoute(imageUri: String, source: String = "GALLERY"): String =
             "image_upload?imageUri=${Uri.encode(imageUri)}&source=$source"
+
+        /** Builds the concrete route for editing an existing post identified by [postId]. */
+        fun createEditRoute(postId: String): String = "image_upload?postId=$postId"
     }
 }

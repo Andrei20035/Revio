@@ -2,15 +2,23 @@ package com.revio.app.features.activity.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -32,6 +40,7 @@ fun StatCard(
     value: Int,
     isWeeklyScore: Boolean,
     modifier: Modifier = Modifier,
+    onInfoClick: (() -> Unit)? = null,
 ) {
     Column(
         modifier = modifier
@@ -51,14 +60,32 @@ fun StatCard(
                 else -> 16.sp
             }
 
-            Text(
-                text = title,
-                color = Color.White,
-                fontWeight = FontWeight.Medium,
-                fontSize = titleFontSize.actScaledText(),
-                maxLines = 1,
-                softWrap = false,
-            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp.actScaled()),
+            ) {
+                Text(
+                    text = title,
+                    color = Color.White,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = titleFontSize.actScaledText(),
+                    maxLines = 1,
+                    softWrap = false,
+                )
+                if (onInfoClick != null) {
+                    Icon(
+                        imageVector = Icons.Outlined.Info,
+                        contentDescription = "Info",
+                        tint = Color.White,
+                        modifier = Modifier
+                            .size(16.dp.actScaled())
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = onInfoClick,
+                            ),
+                    )
+                }
+            }
         }
         Text(
             text = if (isWeeklyScore) "+$value" else "$value",

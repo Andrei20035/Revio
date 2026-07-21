@@ -11,6 +11,7 @@ data class ActivityUiState(
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val errorMessage: String? = null,
+    val showTodayInteractionsInfo: Boolean = false,
 ) {
     val isEmpty: Boolean get() = items.isEmpty()
 }

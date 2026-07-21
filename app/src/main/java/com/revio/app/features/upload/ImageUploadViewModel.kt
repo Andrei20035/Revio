@@ -10,6 +10,7 @@ import com.revio.app.core.network.ApiResult
 import com.revio.app.features.profile.components.ImageTransformState
 import com.revio.app.core.navigation.Screen
 import com.revio.app.data.remote.dto.post.CreatePostMetadata
+import com.revio.app.data.remote.dto.post.UpdatePostRequest
 import com.revio.app.data.repository.CarModelRepository
 import com.revio.app.data.repository.LocationRepository
 import com.revio.app.data.repository.PostRepository
@@ -20,6 +21,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.ZoneId
+import java.util.UUID
 import javax.inject.Inject
 
 @HiltViewModel
@@ -38,16 +40,75 @@ class ImageUploadViewModel @Inject constructor(
     val uiState: StateFlow<ImageUploadUiState> = _uiState.asStateFlow()
 
     init {
-        val imageUri = savedStateHandle
-            .get<String>(Screen.ImageUpload.ARG_IMAGE_URI)
+        val postId = savedStateHandle
+            .get<String>(Screen.ImageUpload.ARG_POST_ID)
             ?.takeIf { it.isNotBlank() }
-            ?.let(Uri::parse)
-        val source = savedStateHandle
-            .get<String>(Screen.ImageUpload.ARG_SOURCE)
-            ?.takeIf { it == "CAMERA" || it == "GALLERY" }
-            ?: "GALLERY"
-        _uiState.update { it.copy(imageUri = imageUri, postSource = source) }
+            ?.let { runCatching { UUID.fromString(it) }.getOrNull() }
+
+        if (postId != null) {
+            _uiState.update { it.copy(postId = postId) }
+            loadExistingPost(postId)
+        } else {
+            val imageUri = savedStateHandle
+                .get<String>(Screen.ImageUpload.ARG_IMAGE_URI)
+                ?.takeIf { it.isNotBlank() }
+                ?.let(Uri::parse)
+            val source = savedStateHandle
+                .get<String>(Screen.ImageUpload.ARG_SOURCE)
+                ?.takeIf { it == "CAMERA" || it == "GALLERY" }
+                ?: "GALLERY"
+            _uiState.update { it.copy(imageUri = imageUri, postSource = source) }
+        }
         loadBrands()
+    }
+
+    // ---- Edit mode: prefill from the existing post ----
+
+    private fun loadExistingPost(postId: UUID) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingPost = true) }
+            when (val result = postRepository.getPostDetail(postId)) {
+                is ApiResult.Success -> {
+                    val post = result.data
+                    _uiState.update {
+                        it.copy(
+                            isLoadingPost = false,
+                            existingImageUrl = post.imageUrl,
+                            description = post.caption.orEmpty(),
+                            selectedBrand = post.brand,
+                        )
+                    }
+                    prefillModel(post.brand, post.model)
+                }
+                is ApiResult.Error -> _uiState.update {
+                    it.copy(isLoadingPost = false, userMessage = result.message)
+                }
+            }
+        }
+    }
+
+    /**
+     * Like [loadModels], but also selects the [CarModelOption] matching [modelName] once the
+     * list loads, so the edit screen can prefill [ImageUploadUiState.selectedModel] (needed to
+     * send a `carModelId` back on save). If no catalog model matches (e.g. a custom car), the
+     * selection is left null and the user must pick one explicitly.
+     */
+    private suspend fun prefillModel(brand: String, modelName: String) {
+        _uiState.update { it.copy(isLoadingModels = true, modelsError = null) }
+        when (val result = carModelRepository.getModelsForBrand(brand)) {
+            is ApiResult.Success -> _uiState.update {
+                if (it.selectedBrand != brand) it
+                else it.copy(
+                    models = result.data,
+                    isLoadingModels = false,
+                    selectedModel = result.data.firstOrNull { option -> option.model == modelName },
+                )
+            }
+            is ApiResult.Error -> _uiState.update {
+                if (it.selectedBrand != brand) it
+                else it.copy(isLoadingModels = false, modelsError = result.message)
+            }
+        }
     }
 
     // ---- Brands ----
@@ -139,6 +200,9 @@ class ImageUploadViewModel @Inject constructor(
 
     /** Called once with the outcome of the foreground-location permission request. */
     fun onLocationPermissionResult(granted: Boolean) {
+        // Editing an existing post never touches its location.
+        if (_uiState.value.isEditMode) return
+
         if (granted) {
             resolveLocation()
         } else {
@@ -148,7 +212,7 @@ class ImageUploadViewModel @Inject constructor(
     }
 
     private fun resolveLocation() {
-        if (locationResolutionStarted) return
+        if (locationResolutionStarted || _uiState.value.isEditMode) return
         locationResolutionStarted = true
 
         viewModelScope.launch {
@@ -188,9 +252,19 @@ class ImageUploadViewModel @Inject constructor(
 
     fun post() {
         val state = _uiState.value
+        if (!state.canPost) return
+
+        if (state.isEditMode) {
+            updateExistingPost(state)
+        } else {
+            createNewPost(state)
+        }
+    }
+
+    private fun createNewPost(state: ImageUploadUiState) {
         val imageUri = state.imageUri
         val model = state.selectedModel
-        if (!state.canPost || imageUri == null || model == null) return
+        if (imageUri == null || model == null) return
 
         viewModelScope.launch {
             _uiState.update { it.copy(isPosting = true) }
@@ -222,6 +296,27 @@ class ImageUploadViewModel @Inject constructor(
             )
 
             when (val result = postRepository.createPost(metadata, compressed.bytes, compressed.mimeType)) {
+                is ApiResult.Success -> _uiState.update { it.copy(isPosting = false, postSuccess = true) }
+                is ApiResult.Error -> _uiState.update {
+                    it.copy(isPosting = false, userMessage = result.message)
+                }
+            }
+        }
+    }
+
+    private fun updateExistingPost(state: ImageUploadUiState) {
+        val postId = state.postId ?: return
+        val model = state.selectedModel ?: return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isPosting = true) }
+
+            val request = UpdatePostRequest(
+                carModelId = model.id,
+                caption = state.description.trim().ifBlank { null },
+            )
+
+            when (val result = postRepository.updatePost(postId, request)) {
                 is ApiResult.Success -> _uiState.update { it.copy(isPosting = false, postSuccess = true) }
                 is ApiResult.Error -> _uiState.update {
                     it.copy(isPosting = false, userMessage = result.message)

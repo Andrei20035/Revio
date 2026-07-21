@@ -258,7 +258,7 @@ class AuthViewModelTest {
         vm.submitEmailAuth()
 
         assertTrue(
-            vm.uiState.value.errorMessage?.contains("8 characters") == true
+            vm.uiState.value.errorMessage?.contains("8+ characters") == true
         )
         coVerify(exactly = 0) { authRepository.register(any(), any(), any(), any()) }
     }

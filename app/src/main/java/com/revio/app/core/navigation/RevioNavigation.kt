@@ -156,6 +156,11 @@ fun RevioNavigation(
                     type = NavType.StringType
                     defaultValue = "GALLERY"
                 },
+                navArgument(Screen.ImageUpload.ARG_POST_ID) {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
             ),
         ) {
             // The image URI and source nav args are read by ImageUploadViewModel via SavedStateHandle.
