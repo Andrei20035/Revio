@@ -22,6 +22,7 @@ sealed class Screen(val route: String) {
     object EditProfile : Screen("edit_profile")
     object PersonalInfo : Screen("personal_info")
     object ChangePassword : Screen("change_password")
+    object DeleteAccount : Screen("delete_account")
     object PrivacyPolicy : Screen("privacy_policy")
     object TermsConditions : Screen("terms_conditions")
 

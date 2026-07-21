@@ -25,6 +25,7 @@ import com.revio.app.features.settings.SettingsScreen
 import com.revio.app.features.settings.TermsAndConditionsScreen
 import com.revio.app.features.settings.personalinfo.PersonalInfoScreen
 import com.revio.app.features.settings.changepassword.ChangePasswordScreen
+import com.revio.app.features.settings.deleteaccount.DeleteAccountScreen
 
 @Composable
 fun RevioNavigation(
@@ -194,6 +195,10 @@ fun RevioNavigation(
 
         composable(Screen.ChangePassword.route) {
             ChangePasswordScreen(navController = navController)
+        }
+
+        composable(Screen.DeleteAccount.route) {
+            DeleteAccountScreen(navController = navController)
         }
 
         composable(Screen.PrivacyPolicy.route) {

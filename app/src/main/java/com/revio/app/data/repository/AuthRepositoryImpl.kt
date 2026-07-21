@@ -6,6 +6,8 @@ import com.revio.app.data.local.auth.DeviceIdentity
 import com.revio.app.data.local.auth.TokenStore
 import com.revio.app.data.remote.api.AuthApi
 import com.revio.app.data.remote.dto.auth.AuthResponse
+import com.revio.app.data.remote.dto.auth.DeleteAccountRequest
+import com.revio.app.data.remote.dto.auth.DeletionContextDto
 import com.revio.app.data.remote.dto.auth.LoginRequest
 import com.revio.app.data.remote.dto.auth.RegisterRequest
 import com.revio.app.data.remote.dto.auth.UpdatePasswordRequest
@@ -19,7 +21,8 @@ import javax.inject.Singleton
 interface AuthRepository {
     suspend fun login(email: String?, password: String?, googleIdToken: String?, provider: AuthProvider): ApiResult<AuthResponse>
     suspend fun register(email: String?, password: String?, googleIdToken: String?, provider: AuthProvider): ApiResult<AuthResponse>
-    suspend fun deleteAccount(): ApiResult<Unit>
+    suspend fun deleteAccount(request: DeleteAccountRequest): ApiResult<Unit>
+    suspend fun getDeletionContext(): ApiResult<DeletionContextDto>
     suspend fun updatePassword(oldPassword: String, newPassword: String): ApiResult<AuthResponse>
     suspend fun logout(): ApiResult<Unit>
 }
@@ -48,8 +51,8 @@ class AuthRepositoryImpl @Inject constructor(
         return safeApiCall { authApi.register(registerRequest) }
     }
 
-    override suspend fun deleteAccount(): ApiResult<Unit> {
-        val result =  safeApiCall { authApi.deleteAccount() }
+    override suspend fun deleteAccount(request: DeleteAccountRequest): ApiResult<Unit> {
+        val result = safeApiCall { authApi.deleteAccount(request) }
 
         if (result is ApiResult.Success) {
             tokenStore?.clear()
@@ -57,6 +60,10 @@ class AuthRepositoryImpl @Inject constructor(
         }
 
         return result
+    }
+
+    override suspend fun getDeletionContext(): ApiResult<DeletionContextDto> {
+        return safeApiCall { authApi.getDeletionContext() }
     }
 
     override suspend fun updatePassword(oldPassword: String, newPassword: String): ApiResult<AuthResponse> {

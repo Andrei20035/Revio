@@ -8,6 +8,7 @@ import com.revio.app.data.model.AuthProvider
 import com.revio.app.data.remote.api.AuthApi
 import com.revio.app.data.remote.dto.auth.AuthRequest
 import com.revio.app.data.remote.dto.auth.AuthResponse
+import com.revio.app.data.remote.dto.auth.DeleteAccountRequest
 import com.revio.app.data.remote.dto.auth.OnboardingStep
 import com.revio.app.data.remote.dto.auth.UpdatePasswordRequest
 import io.mockk.coEvery
@@ -108,25 +109,31 @@ class AuthRepositoryImplTest {
     }
 
     @Test
-    fun `deleteAccount sterge prefs DOAR daca apelul a reusit`() = runTest {
-        coEvery { authApi.deleteAccount() } returns Response.success(Unit)
+    fun `deleteAccount sterge tokenStore si prefs DOAR daca apelul a reusit`() = runTest {
+        val tokenStore: TokenStore = mockk(relaxed = true)
+        val repoWithTokenStore = AuthRepositoryImpl(authApi, userPreferences, tokenStore)
+        coEvery { authApi.deleteAccount(any()) } returns Response.success(Unit)
 
-        val result = repo.deleteAccount()
+        val result = repoWithTokenStore.deleteAccount(DeleteAccountRequest(password = "Passw0rd!"))
 
         assertTrue(result is ApiResult.Success)
         coVerify(exactly = 1) { userPreferences.clearAuthData() }
+        coVerify(exactly = 1) { tokenStore.clear() }
     }
 
     @Test
-    fun `deleteAccount NU sterge prefs daca serverul intoarce eroare`() = runTest {
-        val errorBody = """{"error":"forbidden"}"""
+    fun `deleteAccount NU sterge tokenStore sau prefs daca serverul intoarce eroare`() = runTest {
+        val tokenStore: TokenStore = mockk(relaxed = true)
+        val repoWithTokenStore = AuthRepositoryImpl(authApi, userPreferences, tokenStore)
+        val errorBody = """{"error":{"code":"INVALID_CURRENT_PASSWORD","message":"Invalid password"}}"""
             .toResponseBody("application/json".toMediaType())
-        coEvery { authApi.deleteAccount() } returns Response.error(403, errorBody)
+        coEvery { authApi.deleteAccount(any()) } returns Response.error(401, errorBody)
 
-        val result = repo.deleteAccount()
+        val result = repoWithTokenStore.deleteAccount(DeleteAccountRequest(password = "wrong"))
 
         assertTrue(result is ApiResult.Error)
         coVerify(exactly = 0) { userPreferences.clearAuthData() }
+        coVerify(exactly = 0) { tokenStore.clear() }
     }
 
     @Test

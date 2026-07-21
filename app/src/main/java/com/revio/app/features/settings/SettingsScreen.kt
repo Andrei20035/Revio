@@ -172,8 +172,22 @@ fun SettingsScreen(
                 iconRes = R.drawable.user_icon,
                 label = "Personal info",
                 topRound = true,
-                bottomRound = true,
+                bottomRound = false,
                 onClick = { navController.navigate(Screen.PersonalInfo.route) },
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(Color.White.copy(alpha = 0.08f))
+            )
+            SettingsRow(
+                iconRes = R.drawable.user_icon,
+                label = "Delete account",
+                topRound = false,
+                bottomRound = true,
+                onClick = { navController.navigate(Screen.DeleteAccount.route) },
+                labelColor = LogoutRed,
             )
 
             // ── Security section ─────────────────────────────────────────────
@@ -270,6 +284,7 @@ private fun SettingsRow(
     topRound: Boolean,
     bottomRound: Boolean,
     onClick: () -> Unit,
+    labelColor: Color = ItemTextColor,
 ) {
     val topRadius = if (topRound) 20.dp else 0.dp
     val bottomRadius = if (bottomRound) 20.dp else 0.dp
@@ -301,7 +316,7 @@ private fun SettingsRow(
         Spacer(modifier = Modifier.width(16.dp.actScaled()))
         Text(
             text = label,
-            color = ItemTextColor,
+            color = labelColor,
             fontFamily = FontFamily.Default,
             fontWeight = FontWeight.Medium,
             fontSize = 16.sp.actScaledText(),

@@ -76,7 +76,7 @@ Revio requests location permission only when you choose to create a post. Locati
 
 If you grant permission and choose to use the feature, we may collect and store the latitude and longitude connected with that post, and derive or store the associated town and country. Other users are shown no more than the town and country; Revio does not display your precise coordinates to other users. Revio does not collect location in the background.
 
-We remove EXIF location metadata from uploaded photographs before storage or publication. `[REQUIRED BEFORE LAUNCH: not yet implemented — ImageCompressor.kt currently reads EXIF orientation to rotate images but does not strip EXIF tags before upload. Implement stripping or remove this sentence.]`
+Uploaded photographs are reprocessed on-device before upload: the image is re-encoded from pixel data, so EXIF metadata — including GPS location, timestamp, and device model — is not transmitted and never reaches storage. Correct visual orientation is preserved by applying rotation directly to the pixels.
 
 #### D. Analytics and technical data
 
