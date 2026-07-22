@@ -52,7 +52,7 @@ class AuthRepositoryImpl @Inject constructor(
     }
 
     override suspend fun deleteAccount(request: DeleteAccountRequest): ApiResult<Unit> {
-        val result = safeApiCall { authApi.deleteAccount(request) }
+        val result = safeApiCallNoContent { authApi.deleteAccount(request) }
 
         if (result is ApiResult.Success) {
             tokenStore?.clear()

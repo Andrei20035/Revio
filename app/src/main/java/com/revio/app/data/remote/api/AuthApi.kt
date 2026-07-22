@@ -9,8 +9,8 @@ import com.revio.app.data.remote.dto.auth.RegisterRequest
 import com.revio.app.data.remote.dto.auth.UpdatePasswordRequest
 import retrofit2.Response
 import retrofit2.http.Body
-import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.HTTP
 import retrofit2.http.POST
 import retrofit2.http.PUT
 
@@ -29,7 +29,7 @@ interface AuthApi {
     @POST("auth/logout")
     suspend fun logout(): Response<Unit>
 
-    @DELETE("auth/account")
+    @HTTP(method = "DELETE", path = "auth/account", hasBody = true)
     suspend fun deleteAccount(@Body deleteAccountRequest: DeleteAccountRequest): Response<Unit>
 
     @GET("auth/account/deletion-context")

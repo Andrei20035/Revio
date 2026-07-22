@@ -42,11 +42,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -61,15 +64,19 @@ import androidx.navigation.NavController
 import coil3.compose.AsyncImage
 import com.revio.app.R
 import com.revio.app.core.navigation.Screen
+import com.revio.app.core.tour.TourHostViewModel
+import com.revio.app.core.tour.TourStep
 import com.revio.app.core.ui.components.AppScreenBackground
 import com.revio.app.core.ui.components.CustomSnackbar
 import com.revio.app.core.ui.components.FeedNavItem
 import com.revio.app.core.ui.components.FloatingBottomNav
 import com.revio.app.core.ui.components.LikeIcon
+import com.revio.app.core.ui.components.NavSlot
 import com.revio.app.core.ui.components.StateMessage
 import com.revio.app.core.ui.components.formatCount
 import com.revio.app.core.ui.components.interactionCountWidth
 import com.revio.app.core.ui.theme.Poppins
+import com.revio.app.core.ui.tour.TourOverlay
 import com.revio.app.data.model.FeedPost
 import com.revio.app.data.model.ReportReason
 import com.revio.app.features.feed.components.CarLocationRow
@@ -149,6 +156,17 @@ fun FeedScreen(
     val context = LocalContext.current
     val openPostCreation = rememberPostCreationLauncher(navController)
     val hazeState = remember { HazeState() }
+    val tourHostViewModel: TourHostViewModel = hiltViewModel()
+    val tourStep by tourHostViewModel.tourController.step.collectAsState()
+    var slotBounds by remember { mutableStateOf(emptyMap<NavSlot, Rect>()) }
+
+    // A brand-new signup arms the tour but never passes through StartDestinationViewModel's
+    // app-start check again, so this is the one guaranteed moment the tour can actually start
+    // for that user. Idempotent per process (TourController.startIfArmed()), so this is safe to
+    // re-run every time this screen recomposes/is recreated on tab switches.
+    LaunchedEffect(Unit) {
+        tourHostViewModel.tourController.startIfArmed()
+    }
 
     // "Submit Report" confirmation — driven entirely by the ViewModel (UDF).
     uiState.reportDialog?.let { dialog ->
@@ -224,11 +242,21 @@ fun FeedScreen(
                     }
                 },
                 hazeState = hazeState,
+                onSlotBounds = { slot, rect -> slotBounds = slotBounds + (slot to rect) },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
                     .padding(bottom = 16.dp),
             )
+
+            if (tourStep == TourStep.Feed) {
+                TourOverlay(
+                    step = TourStep.Feed,
+                    spotlight = null,
+                    onAdvance = { tourHostViewModel.tourController.advance() },
+                    onPostCta = {},
+                )
+            }
 
             // One-shot feedback (e.g. report submitted) — auto-dismisses after a short delay.
             uiState.userMessage?.let { message ->

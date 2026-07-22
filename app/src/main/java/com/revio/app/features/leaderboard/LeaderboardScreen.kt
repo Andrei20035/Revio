@@ -12,20 +12,27 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.revio.app.core.navigation.Screen
+import com.revio.app.core.tour.TourHostViewModel
+import com.revio.app.core.tour.TourStep
 import com.revio.app.core.ui.components.AppScreenBackground
 import com.revio.app.core.ui.components.FeedNavItem
 import com.revio.app.core.ui.components.FloatingBottomNav
+import com.revio.app.core.ui.components.NavSlot
 import com.revio.app.core.ui.components.StateMessage
+import com.revio.app.core.ui.tour.TourOverlay
 import com.revio.app.features.feed.components.rememberPostCreationLauncher
 import com.revio.app.features.leaderboard.components.CurrentUserLeaderboardCard
 import com.revio.app.features.leaderboard.components.LeaderboardUserRow
@@ -40,6 +47,9 @@ fun LeaderboardScreen(
     val uiState by viewModel.uiState.collectAsState()
     val openPostCreation = rememberPostCreationLauncher(navController)
     val hazeState = remember { HazeState() }
+    val tourHostViewModel: TourHostViewModel = hiltViewModel()
+    val tourStep by tourHostViewModel.tourController.step.collectAsState()
+    var slotBounds by remember { mutableStateOf(emptyMap<NavSlot, Rect>()) }
 
     val onUserClick: (LeaderboardEntry) -> Unit = { entry ->
         if (entry.userId == uiState.currentUser?.entry?.userId) {
@@ -90,11 +100,21 @@ fun LeaderboardScreen(
                     }
                 },
                 hazeState = hazeState,
+                onSlotBounds = { slot, rect -> slotBounds = slotBounds + (slot to rect) },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
                     .padding(bottom = 16.dp),
             )
+
+            if (tourStep == TourStep.Leaderboard) {
+                TourOverlay(
+                    step = TourStep.Leaderboard,
+                    spotlight = slotBounds[NavSlot.Leaderboard],
+                    onAdvance = { tourHostViewModel.tourController.advance() },
+                    onPostCta = {},
+                )
+            }
         },
     ) {
         when {

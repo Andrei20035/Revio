@@ -1,8 +1,10 @@
 package com.revio.app.core.navigation
 
 import com.revio.app.MainDispatcherRule
+import com.revio.app.core.tour.TourController
 import com.revio.app.data.local.auth.AuthTokens
 import com.revio.app.data.local.auth.TokenStore
+import com.revio.app.data.local.preferences.TourStatus
 import com.revio.app.data.local.preferences.UserPreferences
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -12,6 +14,7 @@ import io.mockk.verify
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 import java.util.UUID
@@ -29,13 +32,16 @@ class StartDestinationViewModelTest {
     private fun prefsMock(
         onboardingDone: Boolean,
         token: String?,
-        userId: UUID?
+        userId: UUID?,
+        tourStatus: TourStatus = TourStatus.Completed,
     ): UserPreferences = mockk<UserPreferences>().apply {
         every { onboardingCompleted } returns flowOf(onboardingDone)
         every { authToken } returns flowOf(token)
         every { this@apply.userId } returns flowOf(userId)
+        every { this@apply.tourStatus } returns flowOf(tourStatus)
         coEvery { clearAuthData() } returns Unit
         coEvery { removeLegacyJwt() } returns Unit
+        coEvery { setTourStatus(any()) } returns Unit
     }
 
     private fun tokenStoreMock(tokens: AuthTokens?): TokenStore = mockk<TokenStore>().apply {
@@ -88,5 +94,38 @@ class StartDestinationViewModelTest {
         )
 
         assertEquals(Screen.Feed.route, vm.startDestination.value)
+    }
+
+    @Test
+    fun `tourStatus Unknown + sesiune valida - marcheaza Completed si nu porneste turul`() = runTest {
+        val prefs = prefsMock(
+            onboardingDone = true,
+            token = "jwt",
+            userId = UUID.randomUUID(),
+            tourStatus = TourStatus.Unknown,
+        )
+        val tourController = TourController(prefs)
+
+        val vm = StartDestinationViewModel(prefs, tourController = tourController)
+
+        assertEquals(Screen.Feed.route, vm.startDestination.value)
+        coVerify(exactly = 1) { prefs.setTourStatus(TourStatus.Completed) }
+        assertNull(tourController.step.value)
+    }
+
+    @Test
+    fun `tourStatus Unknown + fara sesiune valida - nu scrie tourStatus`() = runTest {
+        val prefs = prefsMock(
+            onboardingDone = true,
+            token = null,
+            userId = null,
+            tourStatus = TourStatus.Unknown,
+        )
+        val tourController = TourController(prefs)
+
+        val vm = StartDestinationViewModel(prefs, tourController = tourController)
+
+        assertEquals(Screen.Auth.route, vm.startDestination.value)
+        coVerify(exactly = 0) { prefs.setTourStatus(any()) }
     }
 }

@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.revio.app.core.image.CropTransform
 import com.revio.app.core.image.ImageCompressor
 import com.revio.app.features.profile.components.ImageTransformState
+import com.revio.app.data.local.preferences.TourStatus
 import com.revio.app.data.local.preferences.UserPreferences
 import com.revio.app.data.local.auth.AuthTokens
 import com.revio.app.data.local.auth.TokenStore
@@ -203,6 +204,10 @@ class ProfileCustomizationViewModel @Inject constructor(
                     return@launch
                 }
 
+                // Arm the guided tour here: this is the genuine first entry into the main
+                // app for a brand-new signup, right before the isUserCreated flag triggers
+                // navigation to Feed.
+                userPreferences.setTourStatus(TourStatus.Armed)
                 _uiState.update { it.copy(isLoading = false, isUserCreated = true) }
             } catch (e: Exception) {
                 setError(e.message.toString())

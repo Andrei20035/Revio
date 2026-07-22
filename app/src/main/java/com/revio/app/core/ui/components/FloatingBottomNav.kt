@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Paint
@@ -30,6 +31,8 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
@@ -42,6 +45,9 @@ import dev.chrisbanes.haze.hazeEffect
 
 /** Tabs that own a selectable nav slot. The center "+" is intentionally not a tab. */
 enum class FeedNavItem { Home, Leaderboard, Activity, Profile }
+
+/** Every slot in [FloatingBottomNav] that [FloatingBottomNav]'s `onSlotBounds` can report on. */
+enum class NavSlot { Home, Leaderboard, Plus, Activity, Profile }
 
 // Figma baseline: 362dp pill inside a 402dp screen frame.
 private const val ReferenceWidthDp = 402f
@@ -82,6 +88,7 @@ fun FloatingBottomNav(
     onActivity: () -> Unit,
     onProfile: () -> Unit,
     hazeState: HazeState? = null,
+    onSlotBounds: ((NavSlot, Rect) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val scale = (LocalConfiguration.current.screenWidthDp / ReferenceWidthDp).coerceIn(MinScale, MaxScale)
@@ -139,25 +146,33 @@ fun FloatingBottomNav(
             contentDescription = "Home",
             size = RefIconSize * scale,
             onClick = onHome,
+            modifier = Modifier.reportBounds(NavSlot.Home, onSlotBounds),
         )
         NavIcon(
             res = if (selected == FeedNavItem.Leaderboard) R.drawable.leaderboard_selected else R.drawable.leaderboard,
             contentDescription = "Leaderboard",
             size = RefIconSize * scale,
             onClick = onLeaderboard,
+            modifier = Modifier.reportBounds(NavSlot.Leaderboard, onSlotBounds),
         )
-        PlusButton(size = RefPlusSize * scale, onClick = onPlus)
+        PlusButton(
+            size = RefPlusSize * scale,
+            onClick = onPlus,
+            modifier = Modifier.reportBounds(NavSlot.Plus, onSlotBounds),
+        )
         NavIcon(
             res = if (selected == FeedNavItem.Activity) R.drawable.activity_selected else R.drawable.activity,
             contentDescription = "Activity",
             size = (RefIconSize - 2.dp) * scale,
             onClick = onActivity,
+            modifier = Modifier.reportBounds(NavSlot.Activity, onSlotBounds),
         )
         ProfileTab(
             profilePictureUrl = profilePictureUrl,
             selected = selected == FeedNavItem.Profile,
             size = RefIconSize * scale,
             onClick = onProfile,
+            modifier = Modifier.reportBounds(NavSlot.Profile, onSlotBounds),
         )
     }
 }
@@ -168,9 +183,10 @@ private fun NavIcon(
     contentDescription: String,
     size: Dp,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .size(40.dp)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
@@ -195,11 +211,11 @@ private fun NavIcon(
  * visually elevated via its larger size and own drop shadow.
  */
 @Composable
-private fun PlusButton(size: Dp, onClick: () -> Unit) {
+private fun PlusButton(size: Dp, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Image(
         painter = painterResource(R.drawable.plus_button),
         contentDescription = "Post your find",
-        modifier = Modifier
+        modifier = modifier
             .size(size)
             .shadow(elevation = 12.dp, shape = CircleShape, clip = false)
             .clip(CircleShape)
@@ -217,8 +233,9 @@ private fun ProfileTab(
     selected: Boolean,
     size: Dp,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    val base = Modifier
+    val base = modifier
         .size(size)
         .clip(CircleShape)
         .then(
@@ -263,6 +280,22 @@ private val NavBarFill = Brush.horizontalGradient(
 )
 
 private val NavBarBorder = Color.White.copy(alpha = 0.12f)
+
+/**
+ * Reports this composable's on-screen bounds (in window coordinates) to [onSlotBounds] on every
+ * layout pass, so a caller (e.g. the guided tour's spotlight) can anchor to a nav slot without
+ * this component needing to know anything about that caller. A no-op — and zero extra
+ * measurement/placement cost — when [onSlotBounds] is null, which keeps existing call sites
+ * unaffected.
+ */
+private fun Modifier.reportBounds(
+    slot: NavSlot,
+    onSlotBounds: ((NavSlot, Rect) -> Unit)?,
+): Modifier = if (onSlotBounds == null) {
+    this
+} else {
+    onGloballyPositioned { coordinates -> onSlotBounds(slot, coordinates.boundsInWindow()) }
+}
 
 /**
  * Draws a soft, colored drop shadow behind the composable, matching Figma's shadow controls

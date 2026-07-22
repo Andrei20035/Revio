@@ -47,6 +47,7 @@ import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
@@ -59,11 +60,15 @@ import androidx.navigation.NavController
 import coil3.compose.AsyncImage
 import com.revio.app.R
 import com.revio.app.core.navigation.Screen
+import com.revio.app.core.tour.TourHostViewModel
+import com.revio.app.core.tour.TourStep
 import com.revio.app.core.ui.components.AppScreenBackground
 import com.revio.app.core.ui.components.FeedNavItem
 import com.revio.app.core.ui.components.FloatingBottomNav
+import com.revio.app.core.ui.components.NavSlot
 import com.revio.app.core.ui.components.StateMessage
 import com.revio.app.core.ui.components.shimmer
+import com.revio.app.core.ui.tour.TourOverlay
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import androidx.compose.runtime.CompositionLocalProvider
@@ -100,6 +105,9 @@ fun ProfileDashboardScreen(
     val gridState = rememberLazyGridState()
     val openPostCreation = rememberPostCreationLauncher(navController)
     val hazeState = remember { HazeState() }
+    val tourHostViewModel: TourHostViewModel = hiltViewModel()
+    val tourStep by tourHostViewModel.tourController.step.collectAsState()
+    var slotBounds by remember { mutableStateOf(emptyMap<NavSlot, Rect>()) }
 
     // Refresh the grid after a post is created from this screen.
     LaunchedEffect(Unit) {
@@ -177,11 +185,31 @@ fun ProfileDashboardScreen(
                         }
                     },
                     onProfile = { /* already here */ },
+                    onSlotBounds = { slot, rect -> slotBounds = slotBounds + (slot to rect) },
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .navigationBarsPadding()
                         .padding(bottom = 16.dp),
                 )
+
+                when (tourStep) {
+                    TourStep.Profile -> TourOverlay(
+                        step = TourStep.Profile,
+                        spotlight = slotBounds[NavSlot.Profile],
+                        onAdvance = { tourHostViewModel.tourController.advance() },
+                        onPostCta = {},
+                    )
+                    TourStep.PostCta -> TourOverlay(
+                        step = TourStep.PostCta,
+                        spotlight = slotBounds[NavSlot.Plus],
+                        onAdvance = {},
+                        onPostCta = {
+                            tourHostViewModel.tourController.completeAndPersist()
+                            openPostCreation()
+                        },
+                    )
+                    else -> {}
+                }
             }
 
             // One-shot feedback — auto-dismisses after a short delay.
