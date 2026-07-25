@@ -37,17 +37,20 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil3.ImageLoader
 import coil3.compose.AsyncImage
 import com.revio.app.R
 import com.revio.app.core.ui.components.StateMessage
@@ -55,9 +58,11 @@ import com.revio.app.core.ui.theme.Poppins
 import com.revio.app.core.util.toRelativeTime
 import com.revio.app.data.model.Comment
 import com.revio.app.features.feed.CommentsSheetState
+import com.revio.app.features.feed.FeedImageLoaderEntryPoint
 import com.revio.app.core.ui.scaling.LocalFeedScale
 import com.revio.app.core.ui.scaling.rememberFeedScale
 import com.revio.app.core.ui.scaling.scaled
+import dagger.hilt.android.EntryPointAccessors
 
 // Sheet palette — consistent with the dark feed surface.
 private val SheetSurface = Color(0xFF11162E)
@@ -92,6 +97,22 @@ private val RefInputFontSize = 14.sp
 private val RefInputSpinnerSize = 20.dp
 
 /**
+ * Resolves the feed's isolated [ImageLoader] (see `di/ImageModule.kt`'s `@Named("feedImageLoader")`
+ * binding) directly from the Hilt application graph. `ModalBottomSheet` creates a new Android
+ * window, so this sheet can't rely on `LocalFeedImageLoader` provided in `FeedScreen`'s
+ * composition — same reason `LocalFeedScale` is re-derived below instead of inherited.
+ */
+@Composable
+private fun rememberFeedImageLoader(): ImageLoader {
+    val applicationContext = LocalContext.current.applicationContext
+    return remember {
+        EntryPointAccessors
+            .fromApplication(applicationContext, FeedImageLoaderEntryPoint::class.java)
+            .feedImageLoader()
+    }
+}
+
+/**
  * Instagram-style comments overlay: a modal bottom sheet with rounded top corners, a dark
  * background, a scrollable comments list, and an input row pinned at the bottom. Dismisses on
  * swipe-down or scrim tap.
@@ -107,6 +128,7 @@ fun CommentsSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val listState = rememberLazyListState()
+    val feedImageLoader = rememberFeedImageLoader()
 
     // Reveal the newly posted comment (server appends oldest-first, so it lands at the bottom).
     LaunchedEffect(state.comments.size) {
@@ -182,7 +204,7 @@ fun CommentsSheet(
                             ),
                         ) {
                             items(state.comments, key = { it.id }) { comment ->
-                                CommentRow(comment)
+                                CommentRow(comment, feedImageLoader)
                                 Spacer(modifier = Modifier.height(RefCommentSpacing.scaled()))
                             }
                         }
@@ -202,7 +224,7 @@ fun CommentsSheet(
 }
 
 @Composable
-private fun CommentRow(comment: Comment) {
+private fun CommentRow(comment: Comment, imageLoader: ImageLoader) {
     Row(modifier = Modifier.fillMaxWidth()) {
         val avatarModifier = Modifier
             .size(RefAvatarSize.scaled())
@@ -220,6 +242,7 @@ private fun CommentRow(comment: Comment) {
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = avatarModifier,
+                imageLoader = imageLoader,
                 placeholder = painterResource(R.drawable.profile_picture),
                 fallback = painterResource(R.drawable.profile_picture),
                 error = painterResource(R.drawable.profile_picture),

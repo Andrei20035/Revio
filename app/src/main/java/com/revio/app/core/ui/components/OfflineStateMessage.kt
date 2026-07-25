@@ -18,8 +18,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
- * Offline-specific variant of [StateMessage]: a crossed-out Wi-Fi icon plus user-friendly copy,
- * shown when a request fails because the device has no network connection.
+ * Offline-specific variant of [StateMessage]: a Wi-Fi icon plus user-friendly copy, shown when a
+ * request fails because the device has no network connection. [icon] defaults to the hand-drawn
+ * crossed-out Wi-Fi glyph; pass a different composable (e.g. a drawable resource) to use that
+ * instead without touching the surrounding copy/layout.
  */
 @Composable
 fun OfflineStateMessage(
@@ -28,12 +30,13 @@ fun OfflineStateMessage(
     title: String = "You're not connected to the internet",
     subtitle: String = "Check your Wi-Fi or mobile data. We'll refresh automatically once you're back online.",
     actionLabel: String = "Try again",
+    icon: (@Composable () -> Unit)? = null,
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        WifiOffIcon()
+        if (icon != null) icon() else WifiOffIcon()
         Spacer(modifier = Modifier.height(12.dp))
         StateMessage(
             title = title,

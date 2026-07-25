@@ -1,6 +1,7 @@
 package com.revio.app.core.auth
 
 import com.revio.app.data.local.auth.TokenStore
+import com.revio.app.data.local.cache.FeedCache
 import com.revio.app.data.local.preferences.UserPreferences
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -11,6 +12,7 @@ import javax.inject.Singleton
 class SessionManager @Inject constructor(
     private val tokenStore: TokenStore,
     private val userPreferences: UserPreferences,
+    private val feedCache: FeedCache,
 ) {
     private val _expired = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val expired = _expired.asSharedFlow()
@@ -18,6 +20,7 @@ class SessionManager @Inject constructor(
     suspend fun expire(message: String = "Your session has expired. Please sign in again.") {
         tokenStore.clear()
         userPreferences.clearAuthData()
+        feedCache.clear()
         _expired.emit(message)
     }
 }

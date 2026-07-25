@@ -3,6 +3,7 @@ package com.revio.app.core.navigation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.revio.app.core.tour.TourController
+import com.revio.app.data.local.cache.FeedCache
 import com.revio.app.data.local.preferences.TourStatus
 import com.revio.app.data.local.preferences.UserPreferences
 import com.revio.app.data.local.auth.TokenStore
@@ -18,6 +19,7 @@ class StartDestinationViewModel @Inject constructor(
     private val userPreferences: UserPreferences,
     private val tokenStore: TokenStore? = null,
     private val tourController: TourController? = null,
+    private val feedCache: FeedCache? = null,
 ) : ViewModel() {
     private val _startDestination = MutableStateFlow<String?>(null)
     val startDestination = _startDestination.asStateFlow()
@@ -36,6 +38,7 @@ class StartDestinationViewModel @Inject constructor(
                 userId == null -> {
                     tokenStore?.clear()
                     userPreferences.clearAuthData()
+                    feedCache?.clear()
                     Screen.Auth.route
                 }
                 else -> {

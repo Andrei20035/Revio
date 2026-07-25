@@ -28,6 +28,31 @@ data class CommentsSheetState(
         get() = draft.isNotBlank() && !isSubmitting
 }
 
+/** A load failure, distinguishing "no internet" from any other (server/parse/etc.) error. */
+sealed interface LoadError {
+    data object Offline : LoadError
+    data class Generic(val message: String) : LoadError
+}
+
+/** What the feed's main content area should render. */
+sealed interface FeedContent {
+    data object Skeletons : FeedContent
+    data object NoInternet : FeedContent
+    data object Empty : FeedContent
+    data class Error(val message: String) : FeedContent
+    data object Posts : FeedContent
+}
+
+/** What the list's trailing footer item should render. */
+sealed interface FeedFooterState {
+    data object Hidden : FeedFooterState
+    data object Idle : FeedFooterState
+    data object Loading : FeedFooterState
+    data object OfflineRetry : FeedFooterState
+    data class ErrorRetry(val message: String) : FeedFooterState
+    data object CaughtUp : FeedFooterState
+}
+
 data class FeedUiState(
     val currentUser: User? = null,
 
@@ -35,14 +60,26 @@ data class FeedUiState(
     val nextCursor: FeedCursor? = null,
     val hasMore: Boolean = true,
 
+    // The cache read has completed (empty or not) — gates the skeleton so it can't outlive hydration.
+    val isCacheHydrated: Boolean = false,
+    // Mirrors NetworkConnectivityManager.isInternetValidated, inverted.
+    val isOffline: Boolean = false,
+
     // First page into an empty list — show a full-screen loader.
     val isLoadingInitial: Boolean = false,
     // Pull-to-refresh while content may already be on screen.
     val isRefreshing: Boolean = false,
     // Appending the next page — show a footer loader.
     val isLoadingMore: Boolean = false,
+    // Silent freshness refresh on reconnect with a stale cache — no spinner, no skeleton.
+    val isSyncing: Boolean = false,
 
-    val errorMessage: String? = null,
+    // Initial-load failure into an empty feed — drives the full-screen NoInternet/Error content.
+    val initialLoadError: LoadError? = null,
+    // Load-more failure — drives the footer's OfflineRetry/ErrorRetry state.
+    val loadMoreError: LoadError? = null,
+    // Pull-to-refresh failure — surfaced as a transient snackbar only, never a full-screen state.
+    val refreshError: LoadError? = null,
 
     // Non-null while the "Submit Report" confirmation dialog is open.
     val reportDialog: ReportDialogState? = null,
@@ -58,5 +95,26 @@ data class FeedUiState(
         get() = feedPosts.isEmpty()
 
     val isAnyLoading: Boolean
-        get() = isLoadingInitial || isRefreshing || isLoadingMore
+        get() = isLoadingInitial || isRefreshing || isLoadingMore || isSyncing
+
+    /** What the main content area should render. */
+    val content: FeedContent
+        get() = when {
+            !isCacheHydrated || isLoadingInitial -> FeedContent.Skeletons
+            feedPosts.isNotEmpty() -> FeedContent.Posts
+            initialLoadError is LoadError.Offline -> FeedContent.NoInternet
+            initialLoadError is LoadError.Generic -> FeedContent.Error(initialLoadError.message)
+            else -> FeedContent.Empty
+        }
+
+    /** What the list's trailing footer item should render. */
+    val footer: FeedFooterState
+        get() = when {
+            feedPosts.isEmpty() -> FeedFooterState.Hidden
+            isLoadingMore -> FeedFooterState.Loading
+            loadMoreError is LoadError.Offline -> FeedFooterState.OfflineRetry
+            loadMoreError is LoadError.Generic -> FeedFooterState.ErrorRetry(loadMoreError.message)
+            !hasMore -> FeedFooterState.CaughtUp
+            else -> FeedFooterState.Idle
+        }
 }

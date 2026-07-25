@@ -15,3 +15,9 @@ sealed class ApiResult<out T> {
 
 val ApiResult.Error.isNetworkError: Boolean
     get() = code == ERROR_CODE_NETWORK
+
+/** Transforms a successful result's data while passing an [ApiResult.Error] through unchanged, [code] included. */
+inline fun <T, R> ApiResult<T>.map(transform: (T) -> R): ApiResult<R> = when (this) {
+    is ApiResult.Success -> ApiResult.Success(transform(data))
+    is ApiResult.Error -> this
+}

@@ -6,6 +6,7 @@ plugins {
     kotlin("kapt")
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.google.services)
+    alias(libs.plugins.ksp)
 }
 
 kotlin {
@@ -74,6 +75,10 @@ kapt {
     correctErrorTypes = true
 }
 
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
 
     implementation(libs.androidx.compose.foundation.layout)
@@ -106,6 +111,12 @@ dependencies {
     implementation(libs.serialization.converter)
 
     implementation(libs.haze)
+
+    // Local persistence (Room)
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    ksp(libs.room.compiler)
+    androidTestImplementation(libs.room.testing)
 
     // Network
     implementation(libs.retrofit)

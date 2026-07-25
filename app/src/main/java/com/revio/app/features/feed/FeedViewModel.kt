@@ -2,9 +2,12 @@ package com.revio.app.features.feed
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.revio.app.BuildConfig
 import com.revio.app.core.network.ApiResult
-import com.revio.app.data.model.FeedPost
+import com.revio.app.core.network.NetworkConnectivityManager
+import com.revio.app.core.network.isNetworkError
+import com.revio.app.core.network.onValidatedReconnect
+import com.revio.app.data.local.cache.FeedCache
+import com.revio.app.data.local.preferences.UserPreferences
 import com.revio.app.data.model.ReportReason
 import com.revio.app.data.repository.CommentRepository
 import com.revio.app.data.repository.LikeRepository
@@ -12,15 +15,18 @@ import com.revio.app.data.repository.PostRepository
 import com.revio.app.data.repository.ReportRepository
 import com.revio.app.data.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.delay
+import java.time.Duration
+import java.time.Instant
+import java.util.UUID
+import javax.inject.Inject
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.util.UUID
-import javax.inject.Inject
 
 @HiltViewModel
 class FeedViewModel @Inject constructor(
@@ -29,19 +35,121 @@ class FeedViewModel @Inject constructor(
     private val reportRepository: ReportRepository,
     private val likeRepository: LikeRepository,
     private val commentRepository: CommentRepository,
+    private val feedCache: FeedCache,
+    private val connectivity: NetworkConnectivityManager,
+    private val userPreferences: UserPreferences,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(FeedUiState())
     val uiState: StateFlow<FeedUiState> = _uiState.asStateFlow()
 
+    private var feedLoadJob: Job? = null
+    private var ownerUserId: UUID? = null
+    private var firstVisibleItemIndex: Int = 0
+
     init {
         loadCurrentUser()
-        loadFirstPage()
+        viewModelScope.launch { hydrateFromCache() }
         viewModelScope.launch {
             userRepository.currentUser.filterNotNull().collect { user ->
                 _uiState.update { it.copy(currentUser = user) }
             }
         }
+        viewModelScope.launch {
+            feedCache.observePosts().collect { posts ->
+                _uiState.update { it.copy(feedPosts = posts) }
+            }
+        }
+        viewModelScope.launch {
+            connectivity.isInternetValidated.collect { validated ->
+                _uiState.update { it.copy(isOffline = !validated) }
+            }
+        }
+        viewModelScope.launch {
+            connectivity.onValidatedReconnect().collect { onReconnected() }
+        }
+    }
+
+    /**
+     * Hydrates from the persistent cache before deciding whether to hit the network: an owner
+     * mismatch (different logged-in user than the one the cache was written for) wipes it, a
+     * stale-but-matching cache is trimmed and its pagination metadata restored. An empty cache
+     * falls through to a normal first-page load (which itself short-circuits to Offline when
+     * there's no connectivity); a non-empty cache renders immediately and, at most, queues a
+     * silent freshness sync.
+     */
+    private suspend fun hydrateFromCache() {
+        ownerUserId = userPreferences.userId.first()
+
+        val meta = feedCache.readMeta()
+        val ownerMismatch = meta?.ownerUserId != null && meta.ownerUserId != ownerUserId
+        if (ownerMismatch) {
+            feedCache.clear()
+        } else {
+            feedCache.trimTo(MAX_CACHED_POSTS)
+        }
+
+        val effectiveMeta = if (ownerMismatch) null else feedCache.readMeta()
+        val cachedPosts = feedCache.observePosts().first()
+
+        _uiState.update {
+            it.copy(
+                isCacheHydrated = true,
+                nextCursor = effectiveMeta?.nextCursor,
+                hasMore = effectiveMeta?.hasMore ?: true,
+            )
+        }
+
+        if (cachedPosts.isEmpty()) {
+            loadFirstPage()
+        } else {
+            maybeSyncSilently()
+        }
+    }
+
+    /**
+     * Reacts to a validated reconnect. Auto-retry is only ever mandatory for the empty
+     * no-internet state; a stuck load-more retries because the user is already waiting at the
+     * bottom of the list; anything else is a best-effort, non-disruptive freshness sync.
+     */
+    private suspend fun onReconnected() {
+        val state = _uiState.value
+        when {
+            state.content is FeedContent.NoInternet -> loadFirstPage()
+
+            state.loadMoreError != null && state.hasMore && state.feedPosts.isNotEmpty() -> {
+                _uiState.update { it.copy(loadMoreError = null) }
+                loadNextPage()
+            }
+
+            else -> maybeSyncSilently()
+        }
+    }
+
+    /**
+     * Silently refreshes the first page when the cache is stale (and the list is scrolled near
+     * the top, so the delete-and-replace refresh is imperceptible). Never touches loading flags
+     * other than [FeedUiState.isSyncing], and is completely silent on failure — the user never
+     * asked for this refresh, so there's nothing to report back.
+     */
+    private suspend fun maybeSyncSilently() {
+        val state = _uiState.value
+        if (feedLoadJob?.isActive == true) return
+        if (state.feedPosts.isEmpty()) return
+        if (state.initialLoadError != null || state.loadMoreError != null) return
+        if (!connectivity.isNetworkAvailable.value) return
+        if (firstVisibleItemIndex > PAGE_SIZE) return
+
+        val meta = feedCache.readMeta()
+        val isStale = meta?.lastSyncedAt?.let { Duration.between(it, Instant.now()) > STALE_AFTER } ?: true
+        if (isStale) {
+            load(reset = true, isRefresh = false, isSilent = true)
+        }
+    }
+
+    /** Called from the feed list's scroll state; gates the silent sync so it never yanks content out from under the user. */
+    fun onScrollPositionChanged(index: Int) {
+        firstVisibleItemIndex = index
     }
 
     /** Initial load into an empty feed. */
@@ -57,60 +165,106 @@ class FeedViewModel @Inject constructor(
         load(reset = false, isRefresh = false)
     }
 
-    /** Retry after an error — reloads the first page when empty, otherwise retries the next page. */
-    fun retry() {
-        val state = _uiState.value
-        if (state.isAnyLoading) return
-        load(reset = state.isEmpty, isRefresh = false)
-    }
+    /** Footer Retry tap — retries the next page only; offline, it never reaches the network. */
+    fun onFooterRetry() = load(reset = false, isRefresh = false)
 
-    private fun load(reset: Boolean, isRefresh: Boolean) {
-        viewModelScope.launch {
-            val shouldShowInitialLoading = reset && !isRefresh && _uiState.value.isEmpty
-            _uiState.update {
-                it.copy(
-                    isLoadingInitial = reset && !isRefresh && it.isEmpty,
-                    isRefreshing = isRefresh,
-                    isLoadingMore = !reset,
-                    errorMessage = null,
-                )
+    /** Retry from the full-screen error state (the [LoadError.Generic] case — NoInternet auto-retries on its own). */
+    fun onInitialRetry() = load(reset = true, isRefresh = false)
+
+    private fun load(reset: Boolean, isRefresh: Boolean, isSilent: Boolean = false) {
+        if (feedLoadJob?.isActive == true) return
+
+        val isInitial = reset && !isRefresh && !isSilent
+
+        _uiState.update { state ->
+            val base = state.copy(
+                isLoadingInitial = isInitial && state.isEmpty,
+                isRefreshing = isRefresh,
+                isLoadingMore = !reset,
+                isSyncing = isSilent,
+            )
+            when {
+                isSilent -> base
+                isRefresh -> base.copy(refreshError = null)
+                !reset -> base.copy(loadMoreError = null)
+                else -> base.copy(initialLoadError = null)
             }
+        }
 
-            if (BuildConfig.DEBUG && shouldShowInitialLoading) {
-                delay(0)
+        if (!connectivity.isNetworkAvailable.value) {
+            _uiState.update { state ->
+                val cleared = state.copy(isLoadingInitial = false, isRefreshing = false, isLoadingMore = false, isSyncing = false)
+                when {
+                    isSilent -> cleared
+                    isRefresh -> cleared.copy(refreshError = LoadError.Offline)
+                    !reset -> cleared.copy(loadMoreError = LoadError.Offline)
+                    else -> cleared.copy(initialLoadError = LoadError.Offline)
+                }
             }
+            return
+        }
 
+        feedLoadJob = viewModelScope.launch {
             val cursor = if (reset) null else _uiState.value.nextCursor
 
             when (val result = postRepository.getFeedPosts(limit = PAGE_SIZE, cursor = cursor)) {
-                is ApiResult.Success -> _uiState.update { state ->
-                    val incoming = result.data.posts
-                    val merged = if (reset) {
-                        incoming
+                is ApiResult.Success -> {
+                    val syncedAt = Instant.now()
+                    if (reset) {
+                        feedCache.replaceWithFirstPage(
+                            page = result.data,
+                            ownerUserId = ownerUserId,
+                            syncedAt = syncedAt,
+                        )
                     } else {
-                        // Append, de-duplicating on id in case a new post shifted the page window.
-                        (state.feedPosts + incoming).distinctBy { it.id }
+                        feedCache.appendPage(page = result.data, syncedAt = syncedAt)
                     }
-                    state.copy(
-                        feedPosts = merged,
-                        nextCursor = result.data.nextCursor,
-                        hasMore = result.data.hasMore,
-                        isLoadingInitial = false,
-                        isRefreshing = false,
-                        isLoadingMore = false,
-                    )
+                    _uiState.update { state ->
+                        val cleared = state.copy(
+                            nextCursor = result.data.nextCursor,
+                            hasMore = result.data.hasMore,
+                            isLoadingInitial = false,
+                            isRefreshing = false,
+                            isLoadingMore = false,
+                            isSyncing = false,
+                        )
+                        when {
+                            isSilent -> cleared
+                            isRefresh -> cleared.copy(refreshError = null)
+                            !reset -> cleared.copy(loadMoreError = null)
+                            else -> cleared.copy(initialLoadError = null)
+                        }
+                    }
                 }
 
-                is ApiResult.Error -> _uiState.update {
-                    it.copy(
-                        isLoadingInitial = false,
-                        isRefreshing = false,
-                        isLoadingMore = false,
-                        errorMessage = result.message,
-                    )
+                is ApiResult.Error -> {
+                    val error = if (result.isNetworkError) LoadError.Offline else LoadError.Generic(result.message)
+                    _uiState.update { state ->
+                        val cleared = state.copy(isLoadingInitial = false, isRefreshing = false, isLoadingMore = false, isSyncing = false)
+                        when {
+                            isSilent -> cleared
+                            isRefresh -> cleared.copy(refreshError = error)
+                            !reset -> cleared.copy(loadMoreError = error)
+                            else -> cleared.copy(initialLoadError = error)
+                        }
+                    }
                 }
             }
         }
+    }
+
+    /**
+     * Guards a network-bound action: if there's no connectivity, surfaces [message] as a
+     * snackbar and never runs [block] — no API call, no queued retry. Actions that need to
+     * additionally unwind their own UI state (e.g. closing a dialog) when offline don't fit
+     * this shape and guard inline instead.
+     */
+    private inline fun requireOnline(message: String, block: () -> Unit) {
+        if (!connectivity.isNetworkAvailable.value) {
+            _uiState.update { it.copy(userMessage = message) }
+            return
+        }
+        block()
     }
 
     // ---- Post options / reporting ----
@@ -129,6 +283,13 @@ class FeedViewModel @Inject constructor(
     fun confirmReport() {
         val dialog = _uiState.value.reportDialog ?: return
         if (dialog.isSubmitting) return
+
+        if (!connectivity.isNetworkAvailable.value) {
+            _uiState.update {
+                it.copy(reportDialog = null, userMessage = "You're offline — your report wasn't sent.")
+            }
+            return
+        }
 
         viewModelScope.launch {
             _uiState.update { it.copy(reportDialog = dialog.copy(isSubmitting = true)) }
@@ -158,48 +319,34 @@ class FeedViewModel @Inject constructor(
         val current = _uiState.value.feedPosts.firstOrNull { it.id == postId } ?: return
         if (postId in _uiState.value.likeInFlight) return
 
-        val wasLiked = current.likedByCurrentUser
+        requireOnline("You're offline — likes will work once you're back online.") {
+            val wasLiked = current.likedByCurrentUser
+            val optimisticCount = (current.likeCount + if (wasLiked) -1 else 1).coerceAtLeast(0)
 
-        // Optimistic flip + count nudge, and mark the post as in-flight.
-        _uiState.update { state ->
-            state.copy(
-                feedPosts = state.feedPosts.replacePost(postId) {
-                    it.copy(
-                        likedByCurrentUser = !wasLiked,
-                        likeCount = (it.likeCount + if (wasLiked) -1 else 1).coerceAtLeast(0),
-                    )
-                },
-                likeInFlight = state.likeInFlight + postId,
-            )
-        }
+            // Mark in-flight; the optimistic flip + count nudge below goes through the cache,
+            // whose Flow reflects it into feedPosts immediately.
+            _uiState.update { it.copy(likeInFlight = it.likeInFlight + postId) }
 
-        viewModelScope.launch {
-            when (val result = likeRepository.toggleLike(postId)) {
-                is ApiResult.Success -> _uiState.update { state ->
-                    // Reconcile with the server's authoritative state.
-                    state.copy(
-                        feedPosts = state.feedPosts.replacePost(postId) {
+            viewModelScope.launch {
+                feedCache.updateLike(postId, liked = !wasLiked, likeCount = optimisticCount)
+
+                when (val result = likeRepository.toggleLike(postId)) {
+                    is ApiResult.Success -> {
+                        // Reconcile with the server's authoritative state.
+                        feedCache.updateLike(postId, liked = result.data.liked, likeCount = result.data.count)
+                        _uiState.update { it.copy(likeInFlight = it.likeInFlight - postId) }
+                    }
+
+                    is ApiResult.Error -> {
+                        // Revert the optimistic change.
+                        feedCache.updateLike(postId, liked = wasLiked, likeCount = current.likeCount)
+                        _uiState.update {
                             it.copy(
-                                likedByCurrentUser = result.data.liked,
-                                likeCount = result.data.count,
+                                likeInFlight = it.likeInFlight - postId,
+                                userMessage = "Couldn't update your like. Please try again.",
                             )
-                        },
-                        likeInFlight = state.likeInFlight - postId,
-                    )
-                }
-
-                is ApiResult.Error -> _uiState.update { state ->
-                    // Revert the optimistic change.
-                    state.copy(
-                        feedPosts = state.feedPosts.replacePost(postId) {
-                            it.copy(
-                                likedByCurrentUser = wasLiked,
-                                likeCount = (it.likeCount + if (wasLiked) 1 else -1).coerceAtLeast(0),
-                            )
-                        },
-                        likeInFlight = state.likeInFlight - postId,
-                        userMessage = "Couldn't update your like. Please try again.",
-                    )
+                        }
+                    }
                 }
             }
         }
@@ -229,7 +376,14 @@ class FeedViewModel @Inject constructor(
                 state.copy(
                     commentsSheet = when (result) {
                         is ApiResult.Success -> sheet.copy(comments = result.data, isLoading = false, errorMessage = null)
-                        is ApiResult.Error -> sheet.copy(isLoading = false, errorMessage = result.message)
+                        is ApiResult.Error -> sheet.copy(
+                            isLoading = false,
+                            errorMessage = if (result.isNetworkError) {
+                                "You're offline — comments couldn't be loaded."
+                            } else {
+                                result.message
+                            },
+                        )
                     }
                 )
             }
@@ -253,35 +407,39 @@ class FeedViewModel @Inject constructor(
         val text = sheet.draft.trim()
         if (text.isEmpty() || sheet.isSubmitting) return
 
-        viewModelScope.launch {
-            _uiState.update { state ->
-                val s = state.commentsSheet ?: return@update state
-                state.copy(commentsSheet = s.copy(isSubmitting = true))
-            }
-
-            when (val result = commentRepository.addComment(sheet.postId, text)) {
-                is ApiResult.Success -> _uiState.update { state ->
-                    val s = state.commentsSheet?.takeIf { it.postId == sheet.postId }
-                    state.copy(
-                        // Append the new comment (server orders oldest-first) and clear the input.
-                        commentsSheet = s?.copy(
-                            comments = s.comments + result.data,
-                            draft = "",
-                            isSubmitting = false,
-                        ) ?: state.commentsSheet,
-                        // Keep the feed's comment count consistent with the new comment.
-                        feedPosts = state.feedPosts.replacePost(sheet.postId) {
-                            it.copy(commentCount = it.commentCount + 1)
-                        },
-                    )
+        requireOnline("You're offline — your comment wasn't posted.") {
+            viewModelScope.launch {
+                _uiState.update { state ->
+                    val s = state.commentsSheet ?: return@update state
+                    state.copy(commentsSheet = s.copy(isSubmitting = true))
                 }
 
-                is ApiResult.Error -> _uiState.update { state ->
-                    val s = state.commentsSheet ?: return@update state
-                    state.copy(
-                        commentsSheet = s.copy(isSubmitting = false),
-                        userMessage = "Couldn't post your comment. Please try again.",
-                    )
+                when (val result = commentRepository.addComment(sheet.postId, text)) {
+                    is ApiResult.Success -> {
+                        // Keep the feed's comment count consistent with the new comment.
+                        val currentCount = _uiState.value.feedPosts.firstOrNull { it.id == sheet.postId }?.commentCount ?: 0
+                        feedCache.setCommentCount(sheet.postId, currentCount + 1)
+
+                        _uiState.update { state ->
+                            val s = state.commentsSheet?.takeIf { it.postId == sheet.postId }
+                            state.copy(
+                                // Append the new comment (server orders oldest-first) and clear the input.
+                                commentsSheet = s?.copy(
+                                    comments = s.comments + result.data,
+                                    draft = "",
+                                    isSubmitting = false,
+                                ) ?: state.commentsSheet,
+                            )
+                        }
+                    }
+
+                    is ApiResult.Error -> _uiState.update { state ->
+                        val s = state.commentsSheet ?: return@update state
+                        state.copy(
+                            commentsSheet = s.copy(isSubmitting = false),
+                            userMessage = "Couldn't post your comment. Please try again.",
+                        )
+                    }
                 }
             }
         }
@@ -298,9 +456,7 @@ class FeedViewModel @Inject constructor(
 
     companion object {
         private const val PAGE_SIZE = 15
+        private const val MAX_CACHED_POSTS = 90
+        private val STALE_AFTER: Duration = Duration.ofMinutes(30)
     }
 }
-
-/** Returns a new list with the post matching [postId] replaced by [transform]; others untouched. */
-private fun List<FeedPost>.replacePost(postId: UUID, transform: (FeedPost) -> FeedPost): List<FeedPost> =
-    map { if (it.id == postId) transform(it) else it }

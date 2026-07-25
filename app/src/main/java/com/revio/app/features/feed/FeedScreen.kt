@@ -10,6 +10,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -32,19 +33,21 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -61,7 +64,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import coil3.ImageLoader
 import coil3.compose.AsyncImage
+import coil3.request.CachePolicy
+import coil3.request.ImageRequest
 import com.revio.app.R
 import com.revio.app.core.navigation.Screen
 import com.revio.app.core.tour.TourHostViewModel
@@ -72,6 +78,8 @@ import com.revio.app.core.ui.components.FeedNavItem
 import com.revio.app.core.ui.components.FloatingBottomNav
 import com.revio.app.core.ui.components.LikeIcon
 import com.revio.app.core.ui.components.NavSlot
+import com.revio.app.core.ui.components.OfflineStateMessage
+import com.revio.app.core.ui.components.RetryButton
 import com.revio.app.core.ui.components.StateMessage
 import com.revio.app.core.ui.components.formatCount
 import com.revio.app.core.ui.components.interactionCountWidth
@@ -86,6 +94,10 @@ import com.revio.app.features.feed.components.PostOptionsMenu
 import com.revio.app.features.feed.components.SubmitReportDialog
 import com.revio.app.features.feed.components.rememberPostCreationLauncher
 import androidx.compose.runtime.CompositionLocalProvider
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import com.revio.app.core.ui.scaling.LocalFeedScale
@@ -95,6 +107,7 @@ import com.revio.app.core.ui.scaling.rememberFeedVSpacingScale
 import com.revio.app.core.ui.scaling.scaled
 import com.revio.app.core.ui.scaling.scaledText
 import com.revio.app.core.ui.scaling.scaledV
+import javax.inject.Named
 import kotlinx.coroutines.delay
 
 private val FeedAccent = Color(0xFF34D7C4)
@@ -145,6 +158,34 @@ private val RefLikeIconSize = 30.dp
 private val RefCommentIconSize = 26.dp
 private val RefIconCountSpacing = 6.dp
 private val RefEngagementCountFontSize = 14.sp
+
+/**
+ * The feed's isolated image loader (see `di/ImageModule.kt`'s `@Named("feedImageLoader")`
+ * binding), so cached post/avatar images have their own disk cache separate from every other
+ * `AsyncImage` in the app. Must only be read within [FeedScreen]'s composition, where it's
+ * provided below — `static` because the underlying Hilt singleton never changes once resolved.
+ */
+val LocalFeedImageLoader = staticCompositionLocalOf<ImageLoader> {
+    error("LocalFeedImageLoader not provided — must be read within FeedScreen's composition")
+}
+
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface FeedImageLoaderEntryPoint {
+    @Named("feedImageLoader")
+    fun feedImageLoader(): ImageLoader
+}
+
+/** Resolves the feed's isolated [ImageLoader] from the Hilt application graph. */
+@Composable
+private fun rememberFeedImageLoader(): ImageLoader {
+    val applicationContext = LocalContext.current.applicationContext
+    return remember {
+        EntryPointAccessors
+            .fromApplication(applicationContext, FeedImageLoaderEntryPoint::class.java)
+            .feedImageLoader()
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -202,10 +243,32 @@ fun FeedScreen(
     LaunchedEffect(shouldLoadMore) {
         if (shouldLoadMore) viewModel.loadNextPage()
     }
+    // Lets the ViewModel gate a reconnect-triggered silent refresh to when the list is near the top.
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.firstVisibleItemIndex }.collect { index ->
+            viewModel.onScrollPositionChanged(index)
+        }
+    }
+
+    // saveState/restoreState (tab switches) restores LazyListState against an empty list in the
+    // first frames — before the cache hydrates — which clamps the index back to 0. Track the
+    // index ourselves across that gap and re-apply it once hydration actually populates the list.
+    var savedScrollIndex by rememberSaveable { mutableIntStateOf(0) }
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.firstVisibleItemIndex }.collect { index ->
+            savedScrollIndex = index
+        }
+    }
+    LaunchedEffect(uiState.isCacheHydrated) {
+        if (uiState.isCacheHydrated && savedScrollIndex > 0) {
+            listState.scrollToItem(savedScrollIndex)
+        }
+    }
 
     CompositionLocalProvider(
         LocalFeedScale provides rememberFeedScale(),
         LocalFeedVSpacingScale provides rememberFeedVSpacingScale(),
+        LocalFeedImageLoader provides rememberFeedImageLoader(),
     ) {
     AppScreenBackground(
         foreground = {
@@ -297,18 +360,34 @@ fun FeedScreen(
                     bottom = bottomClearance,
                 ),
             ) {
-                when {
-                    uiState.isLoadingInitial -> items(SKELETON_COUNT, key = { "skeleton-$it" }) {
+                when (val content = uiState.content) {
+                    FeedContent.Skeletons -> items(SKELETON_COUNT, key = { "skeleton-$it" }) {
                         FeedPostSkeleton()
                         Spacer(modifier = Modifier.height(30.dp))
                     }
 
-                    uiState.isEmpty && uiState.errorMessage != null -> item(key = "error") {
+                    FeedContent.NoInternet -> item(key = "no-internet") {
+                        OfflineStateMessage(
+                            modifier = Modifier.padding(vertical = RefFeedMessagePaddingV.scaled()),
+                            icon = {
+                                Image(
+                                    painter = painterResource(R.drawable.no_wifi),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(60.dp),
+                                )
+                            },
+                            title = "No internet connection",
+                            subtitle = "Please connect to the internet and we'll load your feed automatically.",
+                            onRetry = null,
+                        )
+                    }
+
+                    is FeedContent.Error -> item(key = "error") {
                         StateMessage(
                             title = "Couldn't load the feed",
-                            subtitle = uiState.errorMessage,
+                            subtitle = content.message,
                             actionLabel = "Retry",
-                            onAction = { viewModel.retry() },
+                            onAction = { viewModel.onInitialRetry() },
                             accentColor = FeedAccent,
                             verticalPadding = RefFeedMessagePaddingV.scaled(),
                             titleFontSize = RefFeedMessageTitleFontSize.scaledText(),
@@ -318,7 +397,7 @@ fun FeedScreen(
                         )
                     }
 
-                    uiState.isEmpty -> item(key = "empty") {
+                    FeedContent.Empty -> item(key = "empty") {
                         StateMessage(
                             title = "No spots yet",
                             subtitle = "Be the first to share a find.",
@@ -331,7 +410,7 @@ fun FeedScreen(
                         )
                     }
 
-                    else -> {
+                    FeedContent.Posts -> {
                         items(uiState.feedPosts, key = { it.id }) { post ->
                             FeedPostCard(
                                 post = post,
@@ -350,15 +429,14 @@ fun FeedScreen(
                                         navController.navigate(Screen.Profile.createRoute(post.userId))
                                     }
                                 },
+                                isOffline = uiState.isOffline,
                             )
                             Spacer(modifier = Modifier.height(30.dp))
                         }
                         item(key = "footer") {
                             FeedFooter(
-                                isLoadingMore = uiState.isLoadingMore,
-                                hasMore = uiState.hasMore,
-                                loadMoreError = uiState.errorMessage,
-                                onRetry = { viewModel.retry() },
+                                state = uiState.footer,
+                                onRetry = { viewModel.onFooterRetry() },
                             )
                         }
                     }
@@ -377,6 +455,7 @@ private fun FeedPostCard(
     onShare: () -> Unit,
     onReportReasonSelected: (ReportReason) -> Unit,
     onAuthorClick: () -> Unit,
+    isOffline: Boolean,
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         // ---- Header: avatar · username · car (+ location) · more ----
@@ -408,6 +487,7 @@ private fun FeedPostCard(
 
         // ---- Main image (375×468 ≈ aspect 0.80, 18dp radius, soft shadow) ----
         val imageCorner = RefImageCornerRadius.scaled()
+        var imageLoadFailed by remember(post.imageUrl) { mutableStateOf(false) }
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -417,13 +497,39 @@ private fun FeedPostCard(
                 .background(ImagePlaceholder),
         ) {
             AsyncImage(
-                model = post.imageUrl,
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(post.imageUrl)
+                    .networkCachePolicy(if (isOffline) CachePolicy.DISABLED else CachePolicy.ENABLED)
+                    .build(),
                 contentDescription = post.carName,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
+                imageLoader = LocalFeedImageLoader.current,
+                onLoading = { imageLoadFailed = false },
+                onSuccess = { imageLoadFailed = false },
+                onError = { imageLoadFailed = true },
                 error = painterResource(R.drawable.post_placeholder),
                 fallback = painterResource(R.drawable.post_placeholder),
             )
+            if (isOffline && imageLoadFailed) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Image(
+                        painter = painterResource(R.drawable.no_wifi),
+                        contentDescription = null,
+                        modifier = Modifier.size(28.dp),
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Image unavailable offline",
+                        color = Color.White.copy(alpha = 0.7f),
+                        fontSize = 12.sp,
+                    )
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(RefImageBottomSpacing.scaledV()))
@@ -544,6 +650,7 @@ private fun AuthorAvatar(url: String?, username: String, isEarlySpotter: Boolean
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = imageModifier,
+                    imageLoader = LocalFeedImageLoader.current,
                     placeholder = painterResource(R.drawable.profile_picture),
                     fallback = painterResource(R.drawable.profile_picture),
                     error = painterResource(R.drawable.profile_picture),
@@ -565,9 +672,7 @@ private fun AuthorAvatar(url: String?, username: String, isEarlySpotter: Boolean
 
 @Composable
 private fun FeedFooter(
-    isLoadingMore: Boolean,
-    hasMore: Boolean,
-    loadMoreError: String?,
+    state: FeedFooterState,
     onRetry: () -> Unit,
 ) {
     Box(
@@ -576,20 +681,31 @@ private fun FeedFooter(
             .padding(vertical = RefFooterPaddingV.scaled()),
         contentAlignment = Alignment.Center,
     ) {
-        when {
-            isLoadingMore -> CircularProgressIndicator(
-                color = FeedAccent,
-                modifier = Modifier.size(RefFooterSpinnerSize.scaled()),
+        when (state) {
+            FeedFooterState.Hidden, FeedFooterState.Idle -> Unit
+
+            // The rotation itself is the loading indicator, per the spinning retry icon design.
+            FeedFooterState.Loading -> RetryButton(
+                onClick = onRetry,
+                spinning = true,
+                label = null,
+                tint = FeedAccent,
+                iconSize = RefFooterSpinnerSize.scaled(),
             )
 
-            loadMoreError != null -> Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Couldn't load more", color = Color.White.copy(alpha = 0.7f), fontSize = RefFooterFontSize.scaledText())
-                TextButton(onClick = onRetry) {
-                    Text("Retry", color = FeedAccent, fontWeight = FontWeight.SemiBold)
-                }
+            FeedFooterState.OfflineRetry -> Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("No internet connection", color = Color.White.copy(alpha = 0.7f), fontSize = RefFooterFontSize.scaledText())
+                Spacer(modifier = Modifier.width(8.dp))
+                RetryButton(onClick = onRetry, spinning = false, tint = FeedAccent)
             }
 
-            !hasMore -> Text(
+            is FeedFooterState.ErrorRetry -> Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Couldn't load more", color = Color.White.copy(alpha = 0.7f), fontSize = RefFooterFontSize.scaledText())
+                Spacer(modifier = Modifier.width(8.dp))
+                RetryButton(onClick = onRetry, spinning = false, tint = FeedAccent)
+            }
+
+            FeedFooterState.CaughtUp -> Text(
                 "You're all caught up",
                 color = Color.White.copy(alpha = 0.5f),
                 fontSize = RefFooterFontSize.scaledText(),

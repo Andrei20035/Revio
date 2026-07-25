@@ -9,6 +9,7 @@ import com.revio.app.data.remote.dto.post.toDomain
 import com.revio.app.data.model.FeedPost
 import com.revio.app.data.model.Post
 import com.revio.app.core.network.ApiResult
+import com.revio.app.core.network.map
 import com.revio.app.core.network.safeApiCall
 import com.revio.app.core.network.safeApiCallNoContent
 import kotlinx.serialization.json.Json
@@ -54,39 +55,24 @@ class PostRepositoryImpl @Inject constructor(
             filename = "post.jpg",
             body = imageBytes.toRequestBody(mimeType.toMediaTypeOrNull()),
         )
-        return when (val result = safeApiCall { postApi.createPost(metadataPart, imagePart) }) {
-            is ApiResult.Success -> ApiResult.Success(Unit)
-            is ApiResult.Error -> ApiResult.Error(result.message)
-        }
+        return safeApiCall { postApi.createPost(metadataPart, imagePart) }.map { Unit }
     }
 
     override suspend fun getPostDetail(postId: UUID): ApiResult<FeedPost> {
-        return when (val result = safeApiCall { postApi.getPostById(postId) }) {
-            is ApiResult.Success -> ApiResult.Success(result.data.toDomain())
-            is ApiResult.Error -> ApiResult.Error(result.message)
-        }
+        return safeApiCall { postApi.getPostById(postId) }.map { it.toDomain() }
     }
 
     override suspend fun getAllPosts(): ApiResult<List<Post>> {
-        return when (val result = safeApiCall { postApi.getAllPosts()}) {
-            is ApiResult.Success -> ApiResult.Success(result.data)
-            is ApiResult.Error -> ApiResult.Error(result.message)
-        }
+        return safeApiCall { postApi.getAllPosts() }.map { it }
     }
 
     override suspend fun getCurrentDayPostsForUser(): ApiResult<List<Post>> {
         val timeZone = TimeZone.getDefault().id
-        return when (val result = safeApiCall { postApi.getCurrentDayPostsForUser(timeZone) }) {
-            is ApiResult.Success -> ApiResult.Success(result.data)
-            is ApiResult.Error -> ApiResult.Error(result.message)
-        }
+        return safeApiCall { postApi.getCurrentDayPostsForUser(timeZone) }.map { it }
     }
 
     override suspend fun updatePost(postId: UUID, request: UpdatePostRequest): ApiResult<FeedPost> {
-        return when (val result = safeApiCall { postApi.updatePost(postId, request) }) {
-            is ApiResult.Success -> ApiResult.Success(result.data.toDomain())
-            is ApiResult.Error -> ApiResult.Error(result.message)
-        }
+        return safeApiCall { postApi.updatePost(postId, request) }.map { it.toDomain() }
     }
 
     override suspend fun deletePost(postId: UUID): ApiResult<Unit> {
@@ -94,33 +80,23 @@ class PostRepositoryImpl @Inject constructor(
     }
 
     override suspend fun getFeedPosts(limit: Int, cursor: FeedCursor?): ApiResult<FeedResult> {
-        return when (
-            val result = safeApiCall {
-                postApi.getFeedPosts(
-                    limit = limit,
-                    cursorCreatedAt = cursor?.lastCreatedAt?.toString(),
-                    cursorPostId = cursor?.lastPostId?.toString()
-                )
-            }
-        ) {
-            is ApiResult.Success -> ApiResult.Success(result.data.toDomain())
-            is ApiResult.Error -> ApiResult.Error(result.message)
-        }
+        return safeApiCall {
+            postApi.getFeedPosts(
+                limit = limit,
+                cursorCreatedAt = cursor?.lastCreatedAt?.toString(),
+                cursorPostId = cursor?.lastPostId?.toString()
+            )
+        }.map { it.toDomain() }
     }
 
     override suspend fun getUserPosts(userId: UUID, limit: Int, cursor: FeedCursor?): ApiResult<FeedResult> {
-        return when (
-            val result = safeApiCall {
-                postApi.getUserPosts(
-                    userId = userId,
-                    limit = limit,
-                    cursorCreatedAt = cursor?.lastCreatedAt?.toString(),
-                    cursorPostId = cursor?.lastPostId?.toString()
-                )
-            }
-        ) {
-            is ApiResult.Success -> ApiResult.Success(result.data.toDomain())
-            is ApiResult.Error -> ApiResult.Error(result.message)
-        }
+        return safeApiCall {
+            postApi.getUserPosts(
+                userId = userId,
+                limit = limit,
+                cursorCreatedAt = cursor?.lastCreatedAt?.toString(),
+                cursorPostId = cursor?.lastPostId?.toString()
+            )
+        }.map { it.toDomain() }
     }
 }

@@ -1,5 +1,7 @@
 package com.revio.app.di
 
+import com.revio.app.data.local.cache.FeedCache
+import com.revio.app.data.local.cache.RoomFeedCache
 import com.revio.app.data.repository.ActivityRepository
 import com.revio.app.data.repository.ActivityRepositoryImpl
 import com.revio.app.data.repository.AuthRepository
@@ -112,4 +114,10 @@ abstract class RepositoryModule {
     abstract fun bindActivityRepository(
         impl: ActivityRepositoryImpl
     ): ActivityRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindFeedCache(
+        impl: RoomFeedCache
+    ): FeedCache
 }

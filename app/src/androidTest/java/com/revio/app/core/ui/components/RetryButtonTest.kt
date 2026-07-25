@@ -1,0 +1,200 @@
+package com.revio.app.core.ui.components
+
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import kotlin.math.abs
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+
+/**
+ * Exercises the actual animation curve behind [RetryButton] via [rememberRetrySpin], per the
+ * implementation plan §5: one clean revolution for a `true`->`false` blip while offline, a
+ * seam-free constant-velocity spin while loading, and a prompt, clean stop. Mirrors
+ * [RetryButton]'s own timing constants (ONE_SHOT_MS=600, SPIN_MS=800, STOP_MS=400,
+ * STEP_DEG=30) since those stay `private` to RetryButton.kt.
+ *
+ * [androidx.compose.ui.test.MainTestClock.waitForIdle] is used after every state mutation (not
+ * [androidx.compose.ui.test.MainTestClock.advanceTimeByFrame]) so a mutation is always fully
+ * settled — including any state changes cascading out of the effect it triggers — before virtual
+ * time is advanced for the animation itself.
+ */
+@RunWith(AndroidJUnit4::class)
+class RetryButtonTest {
+
+    @get:Rule
+    val composeTestRule = createComposeRule()
+
+    private var originalAnimatorScale: String? = null
+
+    @Before
+    fun setup() {
+        // Make sure "reduced motion" isn't accidentally on for the non-reduced-motion cases —
+        // rememberRetrySpin reads Settings.Global.ANIMATOR_DURATION_SCALE directly.
+        originalAnimatorScale = readAnimatorScale()
+        setAnimatorScale("1")
+    }
+
+    @After
+    fun tearDown() {
+        setAnimatorScale(originalAnimatorScale ?: "1")
+    }
+
+    private fun readAnimatorScale(): String {
+        val pfd = InstrumentationRegistry.getInstrumentation().uiAutomation
+            .executeShellCommand("settings get global animator_duration_scale")
+        return android.os.ParcelFileDescriptor.AutoCloseInputStream(pfd).bufferedReader().readText().trim()
+    }
+
+    private fun setAnimatorScale(scale: String) {
+        InstrumentationRegistry.getInstrumentation().uiAutomation
+            .executeShellCommand("settings put global animator_duration_scale $scale")
+        InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+    }
+
+    @Test
+    fun `un blip true apoi false joaca exact o rotatie si se opreste la 0`() {
+        composeTestRule.mainClock.autoAdvance = false
+        val spinning = mutableStateOf(false)
+        var currentRotation = 0f
+        composeTestRule.setContent {
+            val rotation by rememberRetrySpin(spinning.value)
+            currentRotation = rotation
+        }
+        composeTestRule.waitForIdle()
+
+        spinning.value = true
+        composeTestRule.waitForIdle()
+        spinning.value = false
+        composeTestRule.waitForIdle()
+
+        // ONE_SHOT_MS = 600 in RetryButton.kt.
+        composeTestRule.mainClock.advanceTimeBy(650)
+        composeTestRule.waitForIdle()
+
+        assertEquals(0f, currentRotation, 0.01f)
+    }
+
+    @Test
+    fun `un tap in mijlocul unei rotatii reporneste animatia de la 0`() {
+        composeTestRule.mainClock.autoAdvance = false
+        val spinning = mutableStateOf(false)
+        var currentRotation = 0f
+        composeTestRule.setContent {
+            val rotation by rememberRetrySpin(spinning.value)
+            currentRotation = rotation
+        }
+        composeTestRule.waitForIdle()
+
+        spinning.value = true
+        composeTestRule.waitForIdle()
+        spinning.value = false
+        composeTestRule.waitForIdle()
+        composeTestRule.mainClock.advanceTimeBy(300) // mid-revolution (ONE_SHOT_MS = 600)
+        composeTestRule.waitForIdle()
+        val midRotation = currentRotation
+        assertTrue("ar trebui sa fie in miscare la jumatatea rotatiei: $midRotation", midRotation > 0f && midRotation < 360f)
+
+        // A second blip restarts from 0 rather than continuing/queuing the interrupted one.
+        spinning.value = true
+        composeTestRule.waitForIdle()
+        spinning.value = false
+        composeTestRule.waitForIdle()
+
+        assertEquals(0f, currentRotation, 1f)
+    }
+
+    @Test
+    fun `spinning true roteste continuu cu viteza unghiulara constanta fara hitch`() {
+        composeTestRule.mainClock.autoAdvance = false
+        val spinning = mutableStateOf(false)
+        var currentRotation = 0f
+        composeTestRule.setContent {
+            val rotation by rememberRetrySpin(spinning.value)
+            currentRotation = rotation
+        }
+        composeTestRule.waitForIdle()
+
+        spinning.value = true
+        composeTestRule.waitForIdle()
+
+        // Sample the rotation every 20ms across ~2 full revolutions (SPIN_MS = 800 per turn).
+        val samples = mutableListOf(currentRotation)
+        repeat(90) {
+            composeTestRule.mainClock.advanceTimeBy(20)
+            composeTestRule.waitForIdle()
+            samples.add(currentRotation)
+        }
+
+        assertTrue("animatia ar trebui sa fie inca activa", spinning.value)
+
+        // Frame-to-frame deltas, unwrapped across the 360->0 resets (which are invisible resets,
+        // not the animation slowing down): a genuine hitch would show up as a near-zero delta
+        // that ISN'T immediately followed by a wrap.
+        val deltas = samples.zipWithNext { a, b -> if (b < a) (b + 360f) - a else b - a }
+        val nonWrapDeltas = deltas.filter { it in 0.5f..40f } // drop the (rare) exact-wrap sample
+        assertTrue("ar trebui sa avem suficiente esantioane de miscare (deltas=$deltas)", nonWrapDeltas.size > 20)
+
+        val avg = nonWrapDeltas.average()
+        val maxDeviation = nonWrapDeltas.maxOf { abs(it - avg) }
+        assertTrue(
+            "deltele ar trebui sa fie aproape constante (viteza unghiulara constanta, fara hitch); avg=$avg maxDeviation=$maxDeviation",
+            maxDeviation < avg * 0.5 + 1.0,
+        )
+    }
+
+    @Test
+    fun `spinning true urmat de false se opreste curat si prompt`() {
+        composeTestRule.mainClock.autoAdvance = false
+        val spinning = mutableStateOf(false)
+        var currentRotation = 0f
+        composeTestRule.setContent {
+            val rotation by rememberRetrySpin(spinning.value)
+            currentRotation = rotation
+        }
+        composeTestRule.waitForIdle()
+
+        spinning.value = true
+        composeTestRule.waitForIdle()
+        composeTestRule.mainClock.advanceTimeBy(1600) // a couple of full turns
+        composeTestRule.waitForIdle()
+
+        spinning.value = false
+        composeTestRule.waitForIdle()
+        // STOP_MS = 400, plus slack for the in-flight 30°-step tween to finish first.
+        composeTestRule.mainClock.advanceTimeBy(700)
+        composeTestRule.waitForIdle()
+
+        assertEquals(0f, currentRotation, 0.01f)
+    }
+
+    @Test
+    fun `reduced motion tine rotatia la 0`() {
+        setAnimatorScale("0")
+        composeTestRule.mainClock.autoAdvance = false
+        val spinning = mutableStateOf(false)
+        var currentRotation = -1f
+        composeTestRule.setContent {
+            val rotation by rememberRetrySpin(spinning.value)
+            currentRotation = rotation
+        }
+        composeTestRule.waitForIdle()
+
+        spinning.value = true
+        composeTestRule.waitForIdle()
+        spinning.value = false
+        composeTestRule.waitForIdle()
+        composeTestRule.mainClock.advanceTimeBy(1000)
+        composeTestRule.waitForIdle()
+
+        assertEquals(0f, currentRotation, 0.01f)
+    }
+}
