@@ -32,6 +32,12 @@ data class ProfileDashboardUiState(
     val showEarlySpotterInfo: Boolean = false,
     /** Post id whose delete request is in flight — guards against double-tap. */
     val deleteInFlight: UUID? = null,
+    /** Images that failed to load (per post + imageUrl), pending retry or placeholder display. */
+    val failedImages: Set<PostImageKey> = emptySet(),
+    /** Retry generation per image — bumping the token forces the AsyncImage request to restart. */
+    val imageRetryTokens: Map<PostImageKey, Int> = emptyMap(),
+    /** Images already covered by the one-shot auto-retry on screen entry. */
+    val autoRetriedImages: Set<PostImageKey> = emptySet(),
 ) {
     val isAnyLoading: Boolean
         get() = isLoadingInitial || isLoadingMore || isRefreshing

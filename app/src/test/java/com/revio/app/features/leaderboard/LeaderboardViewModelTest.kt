@@ -2,6 +2,7 @@ package com.revio.app.features.leaderboard
 
 import com.revio.app.MainDispatcherRule
 import com.revio.app.core.network.ApiResult
+import com.revio.app.core.network.NetworkConnectivityManager
 import com.revio.app.data.repository.LeaderboardRepository
 import com.revio.app.data.repository.UserRepository
 import io.mockk.coEvery
@@ -30,6 +31,10 @@ class LeaderboardViewModelTest {
     private val userRepository: UserRepository = mockk {
         every { currentUser } returns MutableStateFlow(null)
     }
+    private val networkAvailable = MutableStateFlow(true)
+    private val connectivity: NetworkConnectivityManager = mockk {
+        every { isNetworkAvailable } returns networkAvailable
+    }
 
     private fun entry(rank: Int) = LeaderboardEntry(
         userId = UUID.randomUUID(),
@@ -54,7 +59,7 @@ class LeaderboardViewModelTest {
     @Test
     fun `load success splits and sorts entries into podium and rest`() = runTest {
         coEvery { repository.getLeaderboard() } returns ApiResult.Success(successResult)
-        val vm = LeaderboardViewModel(repository, userRepository)
+        val vm = LeaderboardViewModel(repository, userRepository, connectivity)
         advanceUntilIdle()
 
         val state = vm.uiState.value
@@ -70,7 +75,7 @@ class LeaderboardViewModelTest {
     @Test
     fun `load error sets errorMessage and clears loading`() = runTest {
         coEvery { repository.getLeaderboard() } returns ApiResult.Error("Server error")
-        val vm = LeaderboardViewModel(repository, userRepository)
+        val vm = LeaderboardViewModel(repository, userRepository, connectivity)
         advanceUntilIdle()
 
         val state = vm.uiState.value
@@ -86,7 +91,7 @@ class LeaderboardViewModelTest {
             ApiResult.Error("fail"),
             ApiResult.Success(successResult),
         )
-        val vm = LeaderboardViewModel(repository, userRepository)
+        val vm = LeaderboardViewModel(repository, userRepository, connectivity)
         advanceUntilIdle()
 
         vm.refresh()
@@ -102,7 +107,7 @@ class LeaderboardViewModelTest {
     @Test
     fun `refresh is no-op when already refreshing`() = runTest {
         coEvery { repository.getLeaderboard() } returns ApiResult.Success(successResult)
-        val vm = LeaderboardViewModel(repository, userRepository)
+        val vm = LeaderboardViewModel(repository, userRepository, connectivity)
         advanceUntilIdle()
 
         // first call completes, state.isRefreshing=false, second refresh proceeds normally
@@ -120,7 +125,7 @@ class LeaderboardViewModelTest {
             ApiResult.Error("fail"),
             ApiResult.Success(successResult),
         )
-        val vm = LeaderboardViewModel(repository, userRepository)
+        val vm = LeaderboardViewModel(repository, userRepository, connectivity)
         advanceUntilIdle()
 
         vm.retry()
@@ -130,5 +135,37 @@ class LeaderboardViewModelTest {
         assertNull(state.errorMessage)
         assertEquals(3, state.podium.size)
         coVerify(exactly = 2) { repository.getLeaderboard() }
+    }
+
+    @Test
+    fun `reconnecting after a network error reloads automatically`() = runTest {
+        networkAvailable.value = false
+        coEvery { repository.getLeaderboard() } returnsMany listOf(
+            ApiResult.Error("Network error", code = "network_unavailable"),
+            ApiResult.Success(successResult),
+        )
+        val vm = LeaderboardViewModel(repository, userRepository, connectivity)
+        advanceUntilIdle()
+
+        networkAvailable.value = true
+        advanceUntilIdle()
+
+        val state = vm.uiState.value
+        assertNull(state.errorMessage)
+        assertEquals(3, state.podium.size)
+        coVerify(exactly = 2) { repository.getLeaderboard() }
+    }
+
+    @Test
+    fun `reconnecting does not reload when there was no error`() = runTest {
+        networkAvailable.value = false
+        coEvery { repository.getLeaderboard() } returns ApiResult.Success(successResult)
+        val vm = LeaderboardViewModel(repository, userRepository, connectivity)
+        advanceUntilIdle()
+
+        networkAvailable.value = true
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { repository.getLeaderboard() }
     }
 }

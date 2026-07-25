@@ -305,4 +305,137 @@ class ProfileDashboardViewModelTest {
 
         coVerify(exactly = 2) { postRepository.getUserPosts(foreignUserId, any(), any()) }
     }
+
+    // ── Retry per imagine (grid tiles) ───────────────────────────────────────
+
+    @Test
+    fun `onImageLoadFailed adauga cheia in failedImages, onImageLoadSucceeded o curata din toate colectiile`() = runTest {
+        val postId = UUID.randomUUID()
+        val post = feedPost(id = postId)
+        coEvery { userRepository.getUserById(foreignUserId) } returns ApiResult.Success(foreignUser())
+        coEvery { postRepository.getUserPosts(foreignUserId, any(), any()) } returns
+            ApiResult.Success(FeedResult(posts = listOf(post), nextCursor = null, hasMore = false))
+
+        val vm = buildVm(foreignSavedStateHandle())
+        advanceUntilIdle()
+
+        val key = PostImageKey(postId, post.imageUrl)
+        vm.onImageLoadFailed(key)
+        assertTrue(key in vm.uiState.value.failedImages)
+
+        vm.retryImage(key)
+        assertEquals(1, vm.uiState.value.imageRetryTokens[key])
+        assertFalse(key in vm.uiState.value.failedImages)
+
+        vm.onImageLoadSucceeded(key)
+        val state = vm.uiState.value
+        assertFalse(key in state.failedImages)
+        assertFalse(key in state.autoRetriedImages)
+        assertFalse(state.imageRetryTokens.containsKey(key))
+    }
+
+    @Test
+    fun `retryFailedImagesOnce apelat de doua ori consecutiv creste tokenul o singura data`() = runTest {
+        val postId = UUID.randomUUID()
+        val post = feedPost(id = postId)
+        coEvery { userRepository.getUserById(foreignUserId) } returns ApiResult.Success(foreignUser())
+        coEvery { postRepository.getUserPosts(foreignUserId, any(), any()) } returns
+            ApiResult.Success(FeedResult(posts = listOf(post), nextCursor = null, hasMore = false))
+
+        val vm = buildVm(foreignSavedStateHandle())
+        advanceUntilIdle()
+
+        val key = PostImageKey(postId, post.imageUrl)
+        vm.onImageLoadFailed(key)
+
+        vm.retryFailedImagesOnce()
+        assertEquals(1, vm.uiState.value.imageRetryTokens[key])
+        assertTrue(key in vm.uiState.value.autoRetriedImages)
+
+        vm.retryFailedImagesOnce()
+        assertEquals(1, vm.uiState.value.imageRetryTokens[key])
+    }
+
+    @Test
+    fun `retryFailedImagesOnce nu atinge nicio cheie care nu e in failedImages`() = runTest {
+        val postId = UUID.randomUUID()
+        val post = feedPost(id = postId)
+        coEvery { userRepository.getUserById(foreignUserId) } returns ApiResult.Success(foreignUser())
+        coEvery { postRepository.getUserPosts(foreignUserId, any(), any()) } returns
+            ApiResult.Success(FeedResult(posts = listOf(post), nextCursor = null, hasMore = false))
+
+        val vm = buildVm(foreignSavedStateHandle())
+        advanceUntilIdle()
+
+        // Simulates an image that loaded successfully on the first try — never registered as failed.
+        val key = PostImageKey(postId, post.imageUrl)
+        vm.onImageLoadSucceeded(key)
+
+        vm.retryFailedImagesOnce()
+
+        val state = vm.uiState.value
+        assertFalse(state.imageRetryTokens.containsKey(key))
+        assertFalse(key in state.autoRetriedImages)
+    }
+
+    @Test
+    fun `refresh reseteaza imediat toate registrele de imagini`() = runTest {
+        val postId = UUID.randomUUID()
+        val post = feedPost(id = postId)
+        coEvery { userRepository.getUserById(foreignUserId) } returns ApiResult.Success(foreignUser())
+        coEvery { postRepository.getUserPosts(foreignUserId, any(), any()) } returns
+            ApiResult.Success(FeedResult(posts = listOf(post), nextCursor = null, hasMore = false))
+
+        val vm = buildVm(foreignSavedStateHandle())
+        advanceUntilIdle()
+
+        val key = PostImageKey(postId, post.imageUrl)
+        vm.onImageLoadFailed(key)
+        vm.retryImage(key)
+        assertTrue(vm.uiState.value.imageRetryTokens.containsKey(key))
+
+        vm.refresh()
+
+        // Registries are cleared synchronously, before the reload network call even resolves.
+        val stateRightAfterCall = vm.uiState.value
+        assertTrue(stateRightAfterCall.failedImages.isEmpty())
+        assertTrue(stateRightAfterCall.imageRetryTokens.isEmpty())
+        assertTrue(stateRightAfterCall.autoRetriedImages.isEmpty())
+
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `load elimina din registre cheile ale caror postari nu mai exista in rezultatul nou`() = runTest {
+        coEvery { userRepository.getUserById(foreignUserId) } returns ApiResult.Success(foreignUser())
+        coEvery { postRepository.getUserPosts(foreignUserId, any(), any()) } returns
+            ApiResult.Error("Server error")
+
+        val vm = buildVm(foreignSavedStateHandle())
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.isEmpty)
+
+        val survivingPostId = UUID.randomUUID()
+        val survivingPost = feedPost(id = survivingPostId)
+        val survivingKey = PostImageKey(survivingPostId, survivingPost.imageUrl)
+        val goneKey = PostImageKey(UUID.randomUUID(), "https://example.com/gone.jpg")
+
+        vm.onImageLoadFailed(goneKey)
+        vm.onImageLoadFailed(survivingKey)
+        vm.retryImage(survivingKey)
+        assertEquals(setOf(goneKey), vm.uiState.value.failedImages)
+        assertTrue(vm.uiState.value.imageRetryTokens.containsKey(survivingKey))
+
+        coEvery { postRepository.getUserPosts(foreignUserId, any(), any()) } returns
+            ApiResult.Success(FeedResult(posts = listOf(survivingPost), nextCursor = null, hasMore = false))
+
+        // `retry()` doesn't reset the image registries itself — this exercises load()'s own pruning.
+        vm.retry()
+        advanceUntilIdle()
+
+        val state = vm.uiState.value
+        assertEquals(listOf(survivingPostId), state.posts.map { it.id })
+        assertFalse(goneKey in state.failedImages)
+        assertTrue(state.imageRetryTokens.containsKey(survivingKey))
+    }
 }

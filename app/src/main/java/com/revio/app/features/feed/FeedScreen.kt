@@ -421,6 +421,8 @@ private fun FeedPostCard(
                 contentDescription = post.carName,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
+                error = painterResource(R.drawable.post_placeholder),
+                fallback = painterResource(R.drawable.post_placeholder),
             )
         }
 

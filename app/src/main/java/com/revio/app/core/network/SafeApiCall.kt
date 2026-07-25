@@ -18,7 +18,7 @@ suspend fun safeApiCallNoContent(apiCall: suspend () -> Response<Unit>): ApiResu
             ApiResult.Error(error.first, error.second)
         }
     } catch (e: IOException) {
-        ApiResult.Error("Network error: ${e.message}")
+        ApiResult.Error(NETWORK_ERROR_MESSAGE, code = ERROR_CODE_NETWORK)
     } catch (e: Exception) {
         ApiResult.Error("Unexpected error: ${e.message}")
     }
@@ -40,7 +40,7 @@ suspend fun <T> safeApiCall(apiCall: suspend () -> Response<T>): ApiResult<T> {
         }
 
     } catch (e: IOException) {
-        ApiResult.Error("Network error: ${e.message}")
+        ApiResult.Error(NETWORK_ERROR_MESSAGE, code = ERROR_CODE_NETWORK)
     } catch (e: Exception) {
         ApiResult.Error("Unexpected error: ${e.message}")
     }

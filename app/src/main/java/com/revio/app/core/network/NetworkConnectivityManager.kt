@@ -40,7 +40,7 @@ class NetworkConnectivityManager @Inject constructor(
             
         connectivityManager.registerNetworkCallback(networkRequest, object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
-                _isNetworkAvailable.value = true
+                _isNetworkAvailable.value = checkNetworkAvailability()
             }
 
             override fun onLost(network: Network) {

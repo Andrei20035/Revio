@@ -50,6 +50,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -58,6 +59,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
 import com.revio.app.R
 import com.revio.app.core.navigation.Screen
 import com.revio.app.core.tour.TourHostViewModel
@@ -81,6 +83,7 @@ import com.revio.app.core.ui.scaling.rememberProfileDashScale
 import com.revio.app.core.ui.scaling.rememberProfileDashVSpacingScale
 import com.revio.app.features.feed.components.CommentsSheet
 import com.revio.app.features.feed.components.rememberPostCreationLauncher
+import java.util.UUID
 
 // Figma tokens — ProfileDashboardScreen (node 790:1216, frame 402×874dp)
 private val CardSurface        = Color(0xFF131929)   // tile / button background (unchanged)
@@ -93,8 +96,6 @@ private val BadgeBackground    = Color(0xFF242424)   // Figma Early Spotter badg
 // Reference dimensions for bottom clearance (Pixel 9 Pro baseline), matching FeedScreen's pattern.
 private val RefNavBarHeight = 64.dp
 private val RefNavBottomPadding = 16.dp
-
-private enum class TileState { Loading, Success, Error }
 
 @Composable
 fun ProfileDashboardScreen(
@@ -131,6 +132,11 @@ fun ProfileDashboardScreen(
                     viewModel.refresh()
                 }
             }
+    }
+
+    // Retry any images that failed to load, once per screen entry — never for already-succeeded ones.
+    LaunchedEffect(Unit) {
+        viewModel.retryFailedImagesOnce()
     }
 
     val shouldLoadMore by remember {
@@ -295,9 +301,16 @@ fun ProfileDashboardScreen(
 
                 else -> {
                     items(uiState.posts, key = { it.id }) { post ->
+                        val imageKey = PostImageKey(post.id, post.imageUrl)
                         ProfilePostTile(
+                            postId = post.id,
                             imageUrl = post.imageUrl,
                             contentDescription = "${post.brand} ${post.model}",
+                            retryToken = uiState.imageRetryTokens[imageKey] ?: 0,
+                            initialFailed = imageKey in uiState.failedImages,
+                            onLoadSucceeded = { viewModel.onImageLoadSucceeded(imageKey) },
+                            onLoadFailed = { viewModel.onImageLoadFailed(imageKey) },
+                            onRetry = { viewModel.retryImage(imageKey) },
                             onClick = { viewModel.onPostClick(post.id) },
                         )
                     }
@@ -380,11 +393,60 @@ private fun ProfileGridSkeletonTile() {
 
 @Composable
 private fun ProfilePostTile(
+    postId: UUID,
     imageUrl: String,
     contentDescription: String,
+    retryToken: Int,
+    initialFailed: Boolean,
+    onLoadSucceeded: () -> Unit,
+    onLoadFailed: () -> Unit,
+    onRetry: () -> Unit,
     onClick: () -> Unit,
 ) {
-    var tileState by remember(imageUrl) { mutableStateOf(TileState.Loading) }
+    if (imageUrl.isBlank()) {
+        Box(
+            modifier = Modifier
+                .aspectRatio(121f / 154f)
+                .clip(RoundedCornerShape(8.dp))
+                .background(CardSurface),
+        ) {
+            Image(
+                painter = painterResource(R.drawable.post_placeholder),
+                contentDescription = contentDescription,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+        return
+    }
+
+    var tileState by remember(imageUrl, retryToken) {
+        mutableStateOf(
+            when {
+                initialFailed -> TileImageState.Error
+                retryToken > 0 -> TileImageState.Retrying
+                else -> TileImageState.Loading
+            }
+        )
+    }
+
+    LaunchedEffect(imageUrl, retryToken) {
+        delay(IMAGE_LOAD_TIMEOUT_MS)
+        if (tileState == TileImageState.Loading || tileState == TileImageState.Retrying) {
+            tileState = TileImageState.Error
+            onLoadFailed()
+        }
+    }
+
+    val context = LocalContext.current
+    val request = remember(imageUrl, retryToken) {
+        ImageRequest.Builder(context)
+            .data(imageUrl)
+            .memoryCacheKey(imageUrl)
+            .diskCacheKey(imageUrl)
+            .build()
+    }
+
     Box(
         modifier = Modifier
             .aspectRatio(121f / 154f)
@@ -393,19 +455,27 @@ private fun ProfilePostTile(
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
-                onClick = onClick,
+                onClick = { if (tileState == TileImageState.Error) onRetry() else onClick() },
             ),
     ) {
         AsyncImage(
-            model = imageUrl,
+            model = request,
             contentDescription = contentDescription,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize(),
-            onSuccess = { tileState = TileState.Success },
-            onError = { tileState = TileState.Error },
+            error = painterResource(R.drawable.post_placeholder),
+            fallback = painterResource(R.drawable.post_placeholder),
+            onSuccess = {
+                tileState = TileImageState.Success
+                onLoadSucceeded()
+            },
+            onError = {
+                tileState = TileImageState.Error
+                onLoadFailed()
+            },
         )
-        if (tileState == TileState.Loading) {
-            Box(Modifier.matchParentSize().shimmer(RoundedCornerShape(4.dp)))
+        if (tileState == TileImageState.Loading || tileState == TileImageState.Retrying) {
+            Box(Modifier.matchParentSize().shimmer(RoundedCornerShape(8.dp)))
         }
     }
 }
@@ -442,7 +512,7 @@ private fun ProfileHeaderSection(
                     .clip(CircleShape),
             )
         } else {
-            var avatarState by remember(avatarUrl) { mutableStateOf(TileState.Loading) }
+            var avatarState by remember(avatarUrl) { mutableStateOf(TileImageState.Loading) }
             Box(
                 modifier = Modifier
                     .size(121.dp.dashScaled())
@@ -456,10 +526,10 @@ private fun ProfileHeaderSection(
                     placeholder = painterResource(R.drawable.profile_picture),
                     fallback = painterResource(R.drawable.profile_picture),
                     error = painterResource(R.drawable.profile_picture),
-                    onSuccess = { avatarState = TileState.Success },
-                    onError = { avatarState = TileState.Error },
+                    onSuccess = { avatarState = TileImageState.Success },
+                    onError = { avatarState = TileImageState.Error },
                 )
-                if (avatarState == TileState.Loading) {
+                if (avatarState == TileImageState.Loading) {
                     Box(Modifier.matchParentSize().shimmer(CircleShape))
                 }
             }

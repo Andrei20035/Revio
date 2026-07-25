@@ -93,6 +93,8 @@ fun CommentActivityCard(item: ActivityItem.CommentItem, modifier: Modifier = Mod
             model = item.postThumbnailUrl,
             contentDescription = null,
             contentScale = ContentScale.Crop,
+            error = painterResource(R.drawable.post_placeholder),
+            fallback = painterResource(R.drawable.post_placeholder),
             modifier = Modifier
                 .width(36.dp.actScaled())
                 .height(45.dp.actScaled())

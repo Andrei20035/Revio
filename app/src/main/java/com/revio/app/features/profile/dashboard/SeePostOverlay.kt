@@ -177,8 +177,8 @@ fun SeePostOverlay(
                             indication = null,
                             onClick = {},
                         ),
-                    placeholder = painterResource(R.drawable.profile_picture),
-                    error = painterResource(R.drawable.profile_picture),
+                    placeholder = painterResource(R.drawable.post_placeholder),
+                    error = painterResource(R.drawable.post_placeholder),
                 )
 
                 if (!post.caption.isNullOrBlank()) {

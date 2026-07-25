@@ -4,10 +4,12 @@ import kotlinx.coroutines.test.runTest
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import retrofit2.Response
 import java.io.IOException
+import java.net.UnknownHostException
 
 /**
  * safeApiCall e singurul punct prin care toate erorile de network ajung la UI.
@@ -108,6 +110,34 @@ class SafeApiCallTest {
 
         assertTrue(result is ApiResult.Error)
         assertTrue((result as ApiResult.Error).message.startsWith("Network error"))
+    }
+
+    @Test
+    fun `UnknownHostException e marcata ca eroare de retea`() = runTest {
+        val result = safeApiCall<String> { throw UnknownHostException("api.joinrevio.app") }
+
+        assertTrue(result is ApiResult.Error)
+        assertTrue((result as ApiResult.Error).isNetworkError)
+        assertEquals(ERROR_CODE_NETWORK, result.code)
+    }
+
+    @Test
+    fun `NoConnectivityException e marcata ca eroare de retea`() = runTest {
+        val result = safeApiCall<String> { throw NoConnectivityException() }
+
+        assertTrue(result is ApiResult.Error)
+        assertTrue((result as ApiResult.Error).isNetworkError)
+        assertEquals(ERROR_CODE_NETWORK, result.code)
+    }
+
+    @Test
+    fun `eroare HTTP 500 nu e marcata ca eroare de retea`() = runTest {
+        val body = "".toResponseBody(jsonMedia)
+
+        val result = safeApiCall<String> { Response.error(500, body) }
+
+        assertTrue(result is ApiResult.Error)
+        assertFalse((result as ApiResult.Error).isNetworkError)
     }
 
     @Test

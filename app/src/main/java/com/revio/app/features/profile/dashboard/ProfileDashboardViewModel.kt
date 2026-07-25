@@ -118,6 +118,7 @@ class ProfileDashboardViewModel @Inject constructor(
     private fun loadFirstPage(userId: UUID) = load(userId, reset = true, isRefresh = false)
 
     fun refresh() {
+        resetImageRetryState()
         val state = _uiState.value
         val userId = state.user?.id
         if (userId != null) {
@@ -135,6 +136,7 @@ class ProfileDashboardViewModel @Inject constructor(
     }
 
     fun onPostCreated() {
+        resetImageRetryState()
         val state = _uiState.value
         refreshCurrentUser()
         val userId = state.user?.id
@@ -182,6 +184,7 @@ class ProfileDashboardViewModel @Inject constructor(
                     } else {
                         (state.posts + incoming).distinctBy { it.id }
                     }
+                    val livePostIds = merged.mapTo(mutableSetOf()) { it.id }
                     state.copy(
                         posts = merged,
                         nextCursor = result.data.nextCursor,
@@ -189,6 +192,9 @@ class ProfileDashboardViewModel @Inject constructor(
                         isLoadingInitial = false,
                         isRefreshing = false,
                         isLoadingMore = false,
+                        failedImages = state.failedImages.filterTo(mutableSetOf()) { it.postId in livePostIds },
+                        imageRetryTokens = state.imageRetryTokens.filterKeys { it.postId in livePostIds },
+                        autoRetriedImages = state.autoRetriedImages.filterTo(mutableSetOf()) { it.postId in livePostIds },
                     )
                 }
                 is ApiResult.Error -> _uiState.update {
@@ -388,6 +394,50 @@ class ProfileDashboardViewModel @Inject constructor(
                     )
                 }
             }
+        }
+    }
+
+    // ---- Per-image retry (grid tiles) ----
+
+    fun onImageLoadFailed(key: PostImageKey) {
+        _uiState.update { it.copy(failedImages = it.failedImages + key) }
+    }
+
+    fun onImageLoadSucceeded(key: PostImageKey) {
+        _uiState.update {
+            it.copy(
+                failedImages = it.failedImages - key,
+                autoRetriedImages = it.autoRetriedImages - key,
+                imageRetryTokens = it.imageRetryTokens - key,
+            )
+        }
+    }
+
+    fun retryImage(key: PostImageKey) {
+        _uiState.update { state ->
+            val nextToken = (state.imageRetryTokens[key] ?: 0) + 1
+            state.copy(
+                failedImages = state.failedImages - key,
+                imageRetryTokens = state.imageRetryTokens + (key to nextToken),
+            )
+        }
+    }
+
+    fun retryFailedImagesOnce() {
+        val state = _uiState.value
+        val candidates = state.failedImages - state.autoRetriedImages
+        if (candidates.isEmpty()) return
+        candidates.forEach { retryImage(it) }
+        _uiState.update { it.copy(autoRetriedImages = it.autoRetriedImages + candidates) }
+    }
+
+    private fun resetImageRetryState() {
+        _uiState.update {
+            it.copy(
+                failedImages = emptySet(),
+                imageRetryTokens = emptyMap(),
+                autoRetriedImages = emptySet(),
+            )
         }
     }
 

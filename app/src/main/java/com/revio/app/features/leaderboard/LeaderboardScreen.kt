@@ -31,6 +31,7 @@ import com.revio.app.core.ui.components.AppScreenBackground
 import com.revio.app.core.ui.components.FeedNavItem
 import com.revio.app.core.ui.components.FloatingBottomNav
 import com.revio.app.core.ui.components.NavSlot
+import com.revio.app.core.ui.components.OfflineStateMessage
 import com.revio.app.core.ui.components.StateMessage
 import com.revio.app.core.ui.tour.TourOverlay
 import com.revio.app.features.feed.components.rememberPostCreationLauncher
@@ -121,6 +122,12 @@ fun LeaderboardScreen(
             uiState.isLoading -> {
                 CircularProgressIndicator(
                     color = Color.White,
+                    modifier = Modifier.align(Alignment.Center),
+                )
+            }
+            uiState.isOffline -> {
+                OfflineStateMessage(
+                    onRetry = { viewModel.retry() },
                     modifier = Modifier.align(Alignment.Center),
                 )
             }

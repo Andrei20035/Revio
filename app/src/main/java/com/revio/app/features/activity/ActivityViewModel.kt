@@ -3,6 +3,9 @@ package com.revio.app.features.activity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.revio.app.core.network.ApiResult
+import com.revio.app.core.network.NetworkConnectivityManager
+import com.revio.app.core.network.isNetworkError
+import com.revio.app.core.network.onReconnected
 import com.revio.app.data.repository.ActivityRepository
 import com.revio.app.data.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -18,6 +21,7 @@ import javax.inject.Inject
 class ActivityViewModel @Inject constructor(
     private val activityRepository: ActivityRepository,
     private val userRepository: UserRepository,
+    private val connectivity: NetworkConnectivityManager,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ActivityUiState())
@@ -31,12 +35,17 @@ class ActivityViewModel @Inject constructor(
                 _uiState.update { it.copy(currentUser = user) }
             }
         }
+        viewModelScope.launch {
+            connectivity.onReconnected().collect {
+                if (_uiState.value.errorMessage != null) load()
+            }
+        }
     }
 
     fun refresh() {
         if (_uiState.value.isRefreshing) return
         viewModelScope.launch {
-            _uiState.update { it.copy(isRefreshing = true, errorMessage = null) }
+            _uiState.update { it.copy(isRefreshing = true, errorMessage = null, isOffline = false) }
             handleResult(isRefresh = true)
         }
     }
@@ -65,7 +74,7 @@ class ActivityViewModel @Inject constructor(
 
     private fun load() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            _uiState.update { it.copy(isLoading = true, errorMessage = null, isOffline = false) }
             handleResult(isRefresh = false)
         }
     }
@@ -82,6 +91,7 @@ class ActivityViewModel @Inject constructor(
                         isLoading = false,
                         isRefreshing = false,
                         errorMessage = null,
+                        isOffline = false,
                     )
                 }
             }
@@ -90,6 +100,7 @@ class ActivityViewModel @Inject constructor(
                     isLoading = false,
                     isRefreshing = false,
                     errorMessage = result.message,
+                    isOffline = result.isNetworkError,
                 )
             }
         }
