@@ -1,8 +1,13 @@
 package com.revio.app.features.upload
 
 import android.Manifest
+import android.app.Activity
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.app.ActivityCompat
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -43,6 +48,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -56,6 +62,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -64,10 +73,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.layout.ContentScale
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavController
 import coil3.compose.AsyncImage
 import com.revio.app.R
 import com.revio.app.core.ui.components.CustomSnackbar
+import com.revio.app.core.ui.components.RetryButton
 import com.revio.app.features.profile.components.DropdownOverlay
 import com.revio.app.features.profile.components.EditableImageContainer
 import kotlinx.coroutines.delay
@@ -101,12 +113,19 @@ fun ImageUploadScreen(
 
     // Optional location: request foreground permission once on entry, then resolve best-effort.
     // Not needed when editing — an existing post's location never changes.
+    val context = LocalContext.current
+    val activity = context as? Activity
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { result ->
         val granted = result[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
             result[Manifest.permission.ACCESS_COARSE_LOCATION] == true
-        viewModel.onLocationPermissionResult(granted)
+        // After a denial, the OS rationale check returns false only once "don't ask again"
+        // has taken effect — i.e. the denial was permanent.
+        val permanentlyDenied = !granted && activity != null &&
+            !ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.ACCESS_FINE_LOCATION) &&
+            !ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.ACCESS_COARSE_LOCATION)
+        viewModel.onLocationPermissionResult(granted, permanentlyDenied)
     }
     LaunchedEffect(Unit) {
         if (uiState.isEditMode) return@LaunchedEffect
@@ -119,6 +138,55 @@ fun ImageUploadScreen(
                     Manifest.permission.ACCESS_COARSE_LOCATION,
                 )
             )
+        }
+    }
+
+    // Returning from Settings (location toggled on, or permission granted from the app's
+    // details screen) doesn't recompose this effect on its own — react on resume, but only
+    // for the two failure reasons a Settings trip can actually fix. Resolving/Resolved never
+    // trigger this, so there's no retry loop.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event != Lifecycle.Event.ON_RESUME || uiState.isEditMode) return@LifecycleEventObserver
+            when (val status = uiState.locationStatus) {
+                is LocationStatus.Unavailable -> when (status.reason) {
+                    LocationFailure.ServicesDisabled -> viewModel.onRetryLocation()
+                    LocationFailure.PermissionDeniedPermanently -> {
+                        if (viewModel.hasLocationPermission()) viewModel.onRetryLocation()
+                    }
+                    LocationFailure.PermissionDenied, LocationFailure.NoFix -> Unit
+                }
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    fun onLocationRetryClick() {
+        when (val status = uiState.locationStatus) {
+            is LocationStatus.Unavailable -> when (status.reason) {
+                LocationFailure.NoFix -> viewModel.onRetryLocation()
+                LocationFailure.PermissionDenied -> locationPermissionLauncher.launch(
+                    arrayOf(
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION,
+                    )
+                )
+                LocationFailure.PermissionDeniedPermanently -> {
+                    context.startActivity(
+                        Intent(
+                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.fromParts("package", context.packageName, null),
+                        )
+                    )
+                }
+                LocationFailure.ServicesDisabled -> {
+                    context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                }
+            }
+            else -> Unit
         }
     }
 
@@ -166,6 +234,7 @@ fun ImageUploadScreen(
                         status = uiState.locationStatus,
                         town = uiState.town,
                         country = uiState.country,
+                        onRetry = ::onLocationRetryClick,
                     )
                 }
             }
@@ -385,17 +454,22 @@ private fun PinchHintOverlay(visible: Boolean) {
 
 /**
  * Subtle, non-blocking location indicator shown in the top bar — never obstructs posting.
- * Hidden while [LocationStatus.Idle].
+ * Hidden while [LocationStatus.Idle]. Internal (not private) so Compose UI tests can render it
+ * directly instead of driving the whole screen.
  */
 @Composable
-private fun LocationStatusChip(
+internal fun LocationStatusChip(
     status: LocationStatus,
     town: String?,
     country: String?,
+    onRetry: () -> Unit,
 ) {
     if (status == LocationStatus.Idle) return
 
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.testTag("location_chip"),
+    ) {
         when (status) {
             LocationStatus.Resolving -> {
                 CircularProgressIndicator(
@@ -407,18 +481,31 @@ private fun LocationStatusChip(
                 LocationStatusText("Getting location…")
             }
 
-            LocationStatus.Added -> {
+            LocationStatus.Resolved -> {
                 Image(
                     painter = painterResource(R.drawable.ic_gps),
                     contentDescription = null,
                     modifier = Modifier.size(13.dp),
                 )
-                Spacer(modifier = Modifier.width(6.dp))
                 val place = listOfNotNull(town, country).joinToString(", ")
-                LocationStatusText(place.ifBlank { "Location added" })
+                if (place.isNotBlank()) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    LocationStatusText(place)
+                }
             }
 
-            LocationStatus.Unavailable -> LocationStatusText("Posting without location")
+            is LocationStatus.Unavailable -> {
+                LocationStatusText("Posting without location")
+                Spacer(modifier = Modifier.width(6.dp))
+                RetryButton(
+                    onClick = onRetry,
+                    spinning = false,
+                    label = null,
+                    tint = Color.White.copy(alpha = 0.6f),
+                    iconSize = 14.dp,
+                    modifier = Modifier.testTag("location_retry"),
+                )
+            }
 
             LocationStatus.Idle -> Unit
         }

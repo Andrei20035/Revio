@@ -27,7 +27,7 @@ class TourOverlayTest {
     val composeTestRule = createComposeRule()
 
     @Test
-    fun `fiecare pas afiseaza titlul si textul corespunzator`() {
+    fun `fiecare_pas_afiseaza_titlul_si_textul_corespunzator`() {
         TourStep.entries.forEach { step ->
             val copy = tourCopyFor(step)
             composeTestRule.setContent {
@@ -45,7 +45,7 @@ class TourOverlayTest {
     }
 
     @Test
-    fun `tap oriunde pe ecran avanseaza turul pentru pasii 1-4`() {
+    fun `tap_oriunde_pe_ecran_avanseaza_turul_pentru_pasii_1-4`() {
         listOf(TourStep.Feed, TourStep.Leaderboard, TourStep.Activity, TourStep.Profile).forEach { step ->
             var advanced = false
             composeTestRule.setContent {
@@ -64,7 +64,7 @@ class TourOverlayTest {
     }
 
     @Test
-    fun `pe PostCta tap in afara cutout-ului nu declanseaza onPostCta`() {
+    fun `pe_PostCta_tap_in_afara_cutout-ului_nu_declanseaza_onPostCta`() {
         var ctaFired = false
         val spotlight = Rect(100f, 100f, 200f, 200f)
         composeTestRule.setContent {
@@ -82,7 +82,7 @@ class TourOverlayTest {
     }
 
     @Test
-    fun `pe PostCta tap in interiorul cutout-ului declanseaza onPostCta`() {
+    fun `pe_PostCta_tap_in_interiorul_cutout-ului_declanseaza_onPostCta`() {
         var ctaFired = false
         val spotlight = Rect(100f, 100f, 200f, 200f)
         composeTestRule.setContent {
@@ -101,7 +101,7 @@ class TourOverlayTest {
     }
 
     @Test
-    fun `nu exista niciun buton Skip`() {
+    fun `nu_exista_niciun_buton_Skip`() {
         composeTestRule.setContent {
             TourOverlay(
                 step = TourStep.Feed,

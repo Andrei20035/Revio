@@ -16,7 +16,7 @@ class FloatingBottomNavBoundsTest {
     val composeTestRule = createComposeRule()
 
     @Test
-    fun `toate cele cinci sloturi raporteaza bounds nevide, iar Plus e aproape de centrul barei`() {
+    fun `toate_cele_cinci_sloturi_raporteaza_bounds_nevide_iar_Plus_e_aproape_de_centrul_barei`() {
         val bounds = mutableMapOf<NavSlot, Rect>()
 
         composeTestRule.setContent {

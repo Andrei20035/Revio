@@ -43,6 +43,29 @@ sealed interface FeedContent {
     data object Posts : FeedContent
 }
 
+/**
+ * The authoritative result of the first page — the single source of truth for
+ * Skeletons/Empty/NoInternet/Error. Unlike the old boolean flags, [Empty] and the error variants
+ * are only reachable through an explicit transition driven by a first-page result, never as a
+ * derived fallback.
+ */
+sealed interface FeedPhase {
+    /** The cache hasn't been read yet — we know nothing. */
+    data object HydratingCache : FeedPhase
+
+    /** Confirmed-empty cache, first page in flight (or cache hasn't propagated to the UI yet). */
+    data object LoadingFirstPage : FeedPhase
+
+    /** We authoritatively know there is at least one post, from cache or from the network. */
+    data object ShowingPosts : FeedPhase
+
+    /** The first page succeeded and returned zero posts. */
+    data object ConfirmedEmpty : FeedPhase
+
+    /** The first page failed and there's no content to show. */
+    data class FirstPageFailed(val error: LoadError) : FeedPhase
+}
+
 /** What the list's trailing footer item should render. */
 sealed interface FeedFooterState {
     data object Hidden : FeedFooterState
@@ -60,13 +83,12 @@ data class FeedUiState(
     val nextCursor: FeedCursor? = null,
     val hasMore: Boolean = true,
 
-    // The cache read has completed (empty or not) — gates the skeleton so it can't outlive hydration.
-    val isCacheHydrated: Boolean = false,
     // Mirrors NetworkConnectivityManager.isInternetValidated, inverted.
     val isOffline: Boolean = false,
 
-    // First page into an empty list — show a full-screen loader.
-    val isLoadingInitial: Boolean = false,
+    // Authoritative first-page result — single source of truth for Skeletons/Empty/NoInternet/Error.
+    val phase: FeedPhase = FeedPhase.HydratingCache,
+
     // Pull-to-refresh while content may already be on screen.
     val isRefreshing: Boolean = false,
     // Appending the next page — show a footer loader.
@@ -95,16 +117,26 @@ data class FeedUiState(
         get() = feedPosts.isEmpty()
 
     val isAnyLoading: Boolean
-        get() = isLoadingInitial || isRefreshing || isLoadingMore || isSyncing
+        get() = phase is FeedPhase.LoadingFirstPage || isRefreshing || isLoadingMore || isSyncing
 
-    /** What the main content area should render. */
+    /**
+     * What the main content area should render, driven entirely by [phase]. [FeedContent.Empty]
+     * is reachable only through [FeedPhase.ConfirmedEmpty] — an explicit transition set from a
+     * successful first-page result — never as a derived fallback for "nothing else matched".
+     */
     val content: FeedContent
-        get() = when {
-            !isCacheHydrated || isLoadingInitial -> FeedContent.Skeletons
-            feedPosts.isNotEmpty() -> FeedContent.Posts
-            initialLoadError is LoadError.Offline -> FeedContent.NoInternet
-            initialLoadError is LoadError.Generic -> FeedContent.Error(initialLoadError.message)
-            else -> FeedContent.Empty
+        get() = when (val currentPhase = phase) {
+            FeedPhase.HydratingCache, FeedPhase.LoadingFirstPage -> FeedContent.Skeletons
+            // We authoritatively have posts, but the cache flow hasn't emitted them into
+            // feedPosts yet — keep showing the shimmer instead of a transient Empty.
+            FeedPhase.ShowingPosts ->
+                if (feedPosts.isEmpty()) FeedContent.Skeletons else FeedContent.Posts
+            FeedPhase.ConfirmedEmpty -> FeedContent.Empty
+            is FeedPhase.FirstPageFailed -> when {
+                feedPosts.isNotEmpty() -> FeedContent.Posts
+                currentPhase.error is LoadError.Offline -> FeedContent.NoInternet
+                else -> FeedContent.Error((currentPhase.error as LoadError.Generic).message)
+            }
         }
 
     /** What the list's trailing footer item should render. */

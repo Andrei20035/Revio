@@ -26,6 +26,9 @@ interface FeedCache {
     /** Appends a page; call only after a successful network response. */
     suspend fun appendPage(page: FeedResult, syncedAt: Instant)
 
+    /** Advances the freshness timestamp without touching posts or pagination; for a silent sync that returned zero posts. */
+    suspend fun markSynced(syncedAt: Instant)
+
     /** Writes a like toggle's outcome (optimistic or server-confirmed) into the cached post. */
     suspend fun updateLike(postId: UUID, liked: Boolean, likeCount: Long)
 

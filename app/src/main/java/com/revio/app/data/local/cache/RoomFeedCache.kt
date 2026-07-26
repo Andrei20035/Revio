@@ -55,6 +55,8 @@ class RoomFeedCache @Inject constructor(
         feedDao.appendPage(entities, meta)
     }
 
+    override suspend fun markSynced(syncedAt: Instant) = feedDao.markSynced(syncedAt.toEpochMilli())
+
     override suspend fun updateLike(postId: UUID, liked: Boolean, likeCount: Long) {
         feedDao.updateLike(postId.toString(), liked, likeCount)
     }

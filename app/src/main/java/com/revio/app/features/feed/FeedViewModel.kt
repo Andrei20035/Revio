@@ -19,14 +19,18 @@ import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 @HiltViewModel
 class FeedViewModel @Inject constructor(
@@ -79,33 +83,59 @@ class FeedViewModel @Inject constructor(
      * silent freshness sync.
      */
     private suspend fun hydrateFromCache() {
-        ownerUserId = userPreferences.userId.first()
+        try {
+            ownerUserId = resolveOwnerUserId()
 
-        val meta = feedCache.readMeta()
-        val ownerMismatch = meta?.ownerUserId != null && meta.ownerUserId != ownerUserId
-        if (ownerMismatch) {
-            feedCache.clear()
-        } else {
-            feedCache.trimTo(MAX_CACHED_POSTS)
-        }
+            val meta = feedCache.readMeta()
+            val cachedPostsAtHydration = feedCache.observePosts().first()
+            // A cache persisted without an owner (see resolveOwnerUserId()) can't be attributed to
+            // anyone, so a non-empty cache with a null owner is treated as a mismatch too — it must
+            // not be shown to whichever user happens to log in next.
+            val ownerMismatch = meta != null &&
+                cachedPostsAtHydration.isNotEmpty() &&
+                meta.ownerUserId != ownerUserId
+            if (ownerMismatch) {
+                feedCache.clear()
+            } else {
+                feedCache.trimTo(MAX_CACHED_POSTS)
+            }
 
-        val effectiveMeta = if (ownerMismatch) null else feedCache.readMeta()
-        val cachedPosts = feedCache.observePosts().first()
+            val effectiveMeta = if (ownerMismatch) null else feedCache.readMeta()
+            val cachedPosts = feedCache.observePosts().first()
 
-        _uiState.update {
-            it.copy(
-                isCacheHydrated = true,
-                nextCursor = effectiveMeta?.nextCursor,
-                hasMore = effectiveMeta?.hasMore ?: true,
-            )
-        }
+            _uiState.update {
+                it.copy(
+                    feedPosts = cachedPosts,
+                    phase = if (cachedPosts.isEmpty()) FeedPhase.LoadingFirstPage else FeedPhase.ShowingPosts,
+                    nextCursor = effectiveMeta?.nextCursor,
+                    hasMore = effectiveMeta?.hasMore ?: true,
+                )
+            }
 
-        if (cachedPosts.isEmpty()) {
+            if (cachedPosts.isEmpty()) {
+                loadFirstPage()
+            } else {
+                maybeSyncSilently()
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // A corrupt/failing cache (e.g. the first-ever Room DB creation, or a malformed
+            // persisted value) must not leave the UI stuck in HydratingCache forever — fall back
+            // to a normal first-page load against an assumed-empty cache.
+            runCatching { feedCache.clear() }
+            _uiState.update { it.copy(phase = FeedPhase.LoadingFirstPage) }
             loadFirstPage()
-        } else {
-            maybeSyncSilently()
         }
     }
+
+    /**
+     * Resolves the logged-in user's id with a short wait for it to become non-null. A cache
+     * written with a `null` owner can never be recognized as belonging to a *different* future
+     * user, so it's worth a brief wait here rather than persisting an unattributable cache.
+     */
+    private suspend fun resolveOwnerUserId(): UUID? =
+        withTimeoutOrNull(OWNER_ID_WAIT.toMillis()) { userPreferences.userId.filterNotNull().firstOrNull() }
 
     /**
      * Reacts to a validated reconnect. Auto-retry is only ever mandatory for the empty
@@ -136,7 +166,7 @@ class FeedViewModel @Inject constructor(
         val state = _uiState.value
         if (feedLoadJob?.isActive == true) return
         if (state.feedPosts.isEmpty()) return
-        if (state.initialLoadError != null || state.loadMoreError != null) return
+        if (state.phase is FeedPhase.FirstPageFailed || state.loadMoreError != null) return
         if (!connectivity.isNetworkAvailable.value) return
         if (firstVisibleItemIndex > PAGE_SIZE) return
 
@@ -161,27 +191,32 @@ class FeedViewModel @Inject constructor(
     /** Infinite scroll: append the next page if there is one and nothing is already in flight. */
     fun loadNextPage() {
         val state = _uiState.value
+        if (state.phase !is FeedPhase.ShowingPosts) return
         if (!state.hasMore || state.isAnyLoading) return
         load(reset = false, isRefresh = false)
     }
 
     /** Footer Retry tap — retries the next page only; offline, it never reaches the network. */
-    fun onFooterRetry() = load(reset = false, isRefresh = false)
+    fun onFooterRetry() = loadNextPage()
 
     /** Retry from the full-screen error state (the [LoadError.Generic] case — NoInternet auto-retries on its own). */
     fun onInitialRetry() = load(reset = true, isRefresh = false)
 
     private fun load(reset: Boolean, isRefresh: Boolean, isSilent: Boolean = false) {
-        if (feedLoadJob?.isActive == true) return
-
         val isInitial = reset && !isRefresh && !isSilent
+        val previousJob = feedLoadJob
+        if (previousJob?.isActive == true && !isInitial) return
 
         _uiState.update { state ->
             val base = state.copy(
-                isLoadingInitial = isInitial && state.isEmpty,
                 isRefreshing = isRefresh,
                 isLoadingMore = !reset,
                 isSyncing = isSilent,
+                phase = if (isInitial && state.phase !is FeedPhase.ShowingPosts) {
+                    FeedPhase.LoadingFirstPage
+                } else {
+                    state.phase
+                },
             )
             when {
                 isSilent -> base
@@ -193,10 +228,18 @@ class FeedViewModel @Inject constructor(
 
         if (!connectivity.isNetworkAvailable.value) {
             _uiState.update { state ->
-                val cleared = state.copy(isLoadingInitial = false, isRefreshing = false, isLoadingMore = false, isSyncing = false)
+                val cleared = state.copy(
+                    isRefreshing = false,
+                    isLoadingMore = false,
+                    isSyncing = false,
+                    phase = if (isInitial) FeedPhase.FirstPageFailed(LoadError.Offline) else state.phase,
+                )
                 when {
                     isSilent -> cleared
-                    isRefresh -> cleared.copy(refreshError = LoadError.Offline)
+                    isRefresh -> cleared.copy(
+                        refreshError = LoadError.Offline,
+                        userMessage = refreshErrorMessage(LoadError.Offline),
+                    )
                     !reset -> cleared.copy(loadMoreError = LoadError.Offline)
                     else -> cleared.copy(initialLoadError = LoadError.Offline)
                 }
@@ -205,28 +248,50 @@ class FeedViewModel @Inject constructor(
         }
 
         feedLoadJob = viewModelScope.launch {
+            if (isInitial) previousJob?.cancelAndJoin()
+
             val cursor = if (reset) null else _uiState.value.nextCursor
 
             when (val result = postRepository.getFeedPosts(limit = PAGE_SIZE, cursor = cursor)) {
                 is ApiResult.Success -> {
                     val syncedAt = Instant.now()
-                    if (reset) {
+                    val silentEmptySync = isSilent && reset && result.data.posts.isEmpty()
+                    if (reset && !silentEmptySync) {
+                        if (ownerUserId == null) {
+                            ownerUserId = resolveOwnerUserId()
+                        }
+                        // A cache persisted with a null owner is recognized as unattributable and
+                        // wiped as a mismatch the next time hydrateFromCache() resolves a real
+                        // owner id (see the ownerMismatch check there), so it's still safe to
+                        // persist this page even when the owner id hasn't resolved yet — the
+                        // alternative (skipping the write) leaves the UI showing skeletons forever.
                         feedCache.replaceWithFirstPage(
                             page = result.data,
                             ownerUserId = ownerUserId,
                             syncedAt = syncedAt,
                         )
-                    } else {
+                    } else if (!reset) {
                         feedCache.appendPage(page = result.data, syncedAt = syncedAt)
+                    } else if (silentEmptySync) {
+                        // A silent sync (not user-initiated) that came back empty must not wipe a
+                        // cached feed, but freshness still needs to advance — otherwise
+                        // maybeSyncSilently() sees the same stale timestamp and re-fires this
+                        // exact empty sync on every reconnect, forever.
+                        feedCache.markSynced(syncedAt)
                     }
                     _uiState.update { state ->
                         val cleared = state.copy(
                             nextCursor = result.data.nextCursor,
                             hasMore = result.data.hasMore,
-                            isLoadingInitial = false,
                             isRefreshing = false,
                             isLoadingMore = false,
                             isSyncing = false,
+                            phase = when {
+                                !reset -> state.phase
+                                result.data.posts.isNotEmpty() -> FeedPhase.ShowingPosts
+                                isSilent -> state.phase
+                                else -> FeedPhase.ConfirmedEmpty
+                            },
                         )
                         when {
                             isSilent -> cleared
@@ -240,10 +305,22 @@ class FeedViewModel @Inject constructor(
                 is ApiResult.Error -> {
                     val error = if (result.isNetworkError) LoadError.Offline else LoadError.Generic(result.message)
                     _uiState.update { state ->
-                        val cleared = state.copy(isLoadingInitial = false, isRefreshing = false, isLoadingMore = false, isSyncing = false)
+                        val cleared = state.copy(
+                            isRefreshing = false,
+                            isLoadingMore = false,
+                            isSyncing = false,
+                            phase = if (isInitial && state.feedPosts.isEmpty()) {
+                                FeedPhase.FirstPageFailed(error)
+                            } else {
+                                state.phase
+                            },
+                        )
                         when {
                             isSilent -> cleared
-                            isRefresh -> cleared.copy(refreshError = error)
+                            isRefresh -> cleared.copy(
+                                refreshError = error,
+                                userMessage = refreshErrorMessage(error),
+                            )
                             !reset -> cleared.copy(loadMoreError = error)
                             else -> cleared.copy(initialLoadError = error)
                         }
@@ -305,6 +382,17 @@ class FeedViewModel @Inject constructor(
     /** Acknowledge a one-shot snackbar message so it isn't shown again on recomposition. */
     fun consumeUserMessage() {
         _uiState.update { it.copy(userMessage = null) }
+    }
+
+    /** Clears the typed refresh-error slot once its snackbar message has been shown. */
+    fun consumeRefreshError() {
+        _uiState.update { it.copy(refreshError = null) }
+    }
+
+    /** Snackbar copy for a failed pull-to-refresh; the full-screen states never use this. */
+    private fun refreshErrorMessage(error: LoadError): String = when (error) {
+        LoadError.Offline -> "You're offline — couldn't refresh your feed."
+        is LoadError.Generic -> "Couldn't refresh your feed. Pull to try again."
     }
 
     // ---- Likes ----
@@ -458,5 +546,6 @@ class FeedViewModel @Inject constructor(
         private const val PAGE_SIZE = 15
         private const val MAX_CACHED_POSTS = 90
         private val STALE_AFTER: Duration = Duration.ofMinutes(30)
+        private val OWNER_ID_WAIT: Duration = Duration.ofSeconds(2)
     }
 }

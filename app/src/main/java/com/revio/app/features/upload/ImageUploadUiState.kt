@@ -5,8 +5,16 @@ import com.revio.app.data.remote.dto.car_model.CarModelOption
 import com.revio.app.features.profile.components.ImageTransformState
 import java.util.UUID
 
+/** Why the optional location capture didn't resolve. */
+enum class LocationFailure { PermissionDenied, PermissionDeniedPermanently, ServicesDisabled, NoFix }
+
 /** Subtle, non-blocking state of the optional location capture. */
-enum class LocationStatus { Idle, Resolving, Added, Unavailable }
+sealed interface LocationStatus {
+    data object Idle : LocationStatus
+    data object Resolving : LocationStatus
+    data object Resolved : LocationStatus
+    data class Unavailable(val reason: LocationFailure) : LocationStatus
+}
 
 /**
  * UI state for the Upload Photo screen. Immutable; mutated only by [ImageUploadViewModel].
@@ -56,6 +64,10 @@ data class ImageUploadUiState(
     /** True when the screen was opened to edit an existing post rather than create a new one. */
     val isEditMode: Boolean
         get() = postId != null
+
+    /** True once coordinates have resolved, regardless of whether a place name was found. */
+    val hasCoordinates: Boolean
+        get() = latitude != null && longitude != null
 
     /** The model dropdown is interactive only once a brand is selected. */
     val isModelDropdownEnabled: Boolean

@@ -27,14 +27,20 @@ import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -128,6 +134,32 @@ class FeedViewModelTest {
         hasMore: Boolean = false,
     ) = FeedResult(posts = posts, nextCursor = nextCursor, hasMore = hasMore)
 
+    /**
+     * Collects the full, consecutively-deduplicated sequence of [FeedContent] the ViewModel
+     * emits, for asserting transitions rather than only the final state. Uses
+     * [UnconfinedTestDispatcher] so every emission is observed — [MainDispatcherRule] already
+     * runs `viewModelScope` unconfined, but the collector itself must be too, or conflation could
+     * hide the exact race this is meant to catch. Launched on [backgroundScope] so the never-
+     * completing `collect` doesn't fail the test with an [kotlinx.coroutines.test.UncompletedCoroutinesError] —
+     * `backgroundScope` is cancelled automatically when the test body returns.
+     */
+    private fun TestScope.collectContent(vm: FeedViewModel): List<FeedContent> {
+        val seen = mutableListOf<FeedContent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            vm.uiState.collect { state -> if (seen.lastOrNull() != state.content) seen += state.content }
+        }
+        return seen
+    }
+
+    /** Empty is only ever allowed to be the final content — never a transient value passed through. */
+    private fun List<FeedContent>.assertNoTransientEmpty() {
+        val emptyIndex = indexOfFirst { it is FeedContent.Empty }
+        assertTrue(
+            "Empty nu are voie sa apara decat ca stare finala: $this",
+            emptyIndex == -1 || emptyIndex == lastIndex,
+        )
+    }
+
     // ---- 1. cache gol + offline ----
 
     @Test
@@ -169,14 +201,17 @@ class FeedViewModelTest {
             syncedAt = Instant.now(),
         )
 
-        val loadingValues = mutableListOf<Boolean>()
+        val contentValues = mutableListOf<FeedContent>()
         val vm = createViewModel()
-        val job = launch { vm.uiState.collect { loadingValues.add(it.isLoadingInitial) } }
+        val job = launch { vm.uiState.collect { contentValues.add(it.content) } }
         advanceUntilIdle()
         job.cancel()
 
         assertEquals(FeedContent.Posts, vm.uiState.value.content)
-        assertTrue("isLoadingInitial nu ar trebui sa devina niciodata true", loadingValues.none { it })
+        assertTrue(
+            "continutul nu ar trebui sa arate skeletonuri cand cache-ul are deja postari",
+            contentValues.none { it is FeedContent.Skeletons },
+        )
         coVerify(exactly = 0) { postRepository.getFeedPosts(any(), any()) }
     }
 
@@ -238,6 +273,28 @@ class FeedViewModelTest {
         coVerify(exactly = 1) { postRepository.getFeedPosts(limit = 15, cursor = cursor) }
     }
 
+    // ---- 5b. footer retry cu hasMore = false nu face niciun apel ----
+
+    @Test
+    fun `footer retry cu hasMore false nu face niciun apel`() = runTest {
+        feedCache.replaceWithFirstPage(
+            page = feedResult(posts = listOf(post()), hasMore = false),
+            ownerUserId = ownerUserId,
+            syncedAt = Instant.now(),
+        )
+        networkAvailable.value = true
+        internetValidated.value = true
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+        assertEquals(FeedFooterState.CaughtUp, vm.uiState.value.footer)
+
+        vm.onFooterRetry()
+        advanceUntilIdle()
+
+        coVerify(exactly = 0) { postRepository.getFeedPosts(any(), any()) }
+    }
+
     // ---- 6. loadNextPage() + onFooterRetry() in aceeasi fereastra ----
 
     @Test
@@ -289,6 +346,73 @@ class FeedViewModelTest {
         advanceUntilIdle()
 
         assertEquals(listOf(originalPost), vm.uiState.value.feedPosts)
+    }
+
+    // ---- 7b. refresh() esuat (eroare server) afiseaza mesaj si poate fi consumat ----
+
+    @Test
+    fun `refresh esuat cu eroare server afiseaza mesaj consumabil`() = runTest {
+        val originalPost = post()
+        feedCache.replaceWithFirstPage(
+            page = feedResult(posts = listOf(originalPost), hasMore = false),
+            ownerUserId = ownerUserId,
+            syncedAt = Instant.now(),
+        )
+        networkAvailable.value = true
+        internetValidated.value = true
+        coEvery { postRepository.getFeedPosts(limit = 15, cursor = null) } returns
+            ApiResult.Error("Server error")
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        vm.refresh()
+        advanceUntilIdle()
+
+        assertEquals(listOf(originalPost), vm.uiState.value.feedPosts)
+        assertEquals(FeedContent.Posts, vm.uiState.value.content)
+        assertFalse(vm.uiState.value.isRefreshing)
+        assertNotNull(vm.uiState.value.refreshError)
+        assertNotNull(vm.uiState.value.userMessage)
+
+        vm.consumeRefreshError()
+        vm.consumeUserMessage()
+
+        assertNull(vm.uiState.value.refreshError)
+        assertNull(vm.uiState.value.userMessage)
+    }
+
+    // ---- 7c. refresh() offline afiseaza mesaj si poate fi consumat ----
+
+    @Test
+    fun `refresh offline afiseaza mesaj consumabil`() = runTest {
+        val originalPost = post()
+        feedCache.replaceWithFirstPage(
+            page = feedResult(posts = listOf(originalPost), hasMore = false),
+            ownerUserId = ownerUserId,
+            syncedAt = Instant.now(),
+        )
+        networkAvailable.value = false
+        internetValidated.value = false
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        vm.refresh()
+        advanceUntilIdle()
+
+        assertEquals(listOf(originalPost), vm.uiState.value.feedPosts)
+        assertEquals(FeedContent.Posts, vm.uiState.value.content)
+        assertFalse(vm.uiState.value.isRefreshing)
+        assertEquals(LoadError.Offline, vm.uiState.value.refreshError)
+        assertNotNull(vm.uiState.value.userMessage)
+        coVerify(exactly = 0) { postRepository.getFeedPosts(any(), any()) }
+
+        vm.consumeRefreshError()
+        vm.consumeUserMessage()
+
+        assertNull(vm.uiState.value.refreshError)
+        assertNull(vm.uiState.value.userMessage)
     }
 
     // ---- 8. reconectare cu cache proaspat (< 30 min) nu declanseaza nimic ----
@@ -375,6 +499,42 @@ class FeedViewModelTest {
         assertNull(vm.uiState.value.refreshError)
     }
 
+    // ---- 10b. sync silentios care intoarce zero postari avanseaza freshness fara sa goleasca cache-ul ----
+
+    @Test
+    fun `sync silentios gol avanseaza freshness fara sa goleasca cache-ul`() = runTest {
+        val staleSyncedAt = Instant.now().minus(Duration.ofMinutes(31))
+        val originalPost = post()
+        feedCache.replaceWithFirstPage(
+            page = feedResult(posts = listOf(originalPost), hasMore = false),
+            ownerUserId = ownerUserId,
+            syncedAt = staleSyncedAt,
+        )
+        val vm = createViewModel()
+        advanceUntilIdle()
+        vm.onScrollPositionChanged(0)
+
+        coEvery { postRepository.getFeedPosts(limit = 15, cursor = null) } returns
+            ApiResult.Success(feedResult(posts = emptyList(), hasMore = false))
+
+        networkAvailable.value = true
+        internetValidated.value = true
+        advanceUntilIdle()
+
+        assertEquals(1, feedCache.markSyncedCount)
+        assertEquals(0, feedCache.clearCount)
+        assertEquals(listOf(originalPost), vm.uiState.value.feedPosts)
+        assertEquals(FeedContent.Posts, vm.uiState.value.content)
+        assertEquals(FeedPhase.ShowingPosts, vm.uiState.value.phase)
+
+        // A second validated reconnect right after should not re-fire: the TTL was consumed.
+        internetValidated.value = false
+        internetValidated.value = true
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { postRepository.getFeedPosts(limit = 15, cursor = null) }
+    }
+
     // ---- 11. cache stale, dar derulat departe de varf -> fara apel ----
 
     @Test
@@ -434,6 +594,95 @@ class FeedViewModelTest {
         assertEquals(1, feedCache.clearCount)
         assertEquals(FeedContent.NoInternet, vm.uiState.value.content)
         coVerify(exactly = 0) { postRepository.getFeedPosts(any(), any()) }
+    }
+
+    // ---- 13b. userId intarziat, dar sub timeout -> owner-ul intarziat e totusi scris in meta ----
+
+    @Test
+    fun `userId intarziat dar sub timeout este scris corect in meta la primul load`() = runTest {
+        val delayedUserId = MutableStateFlow<UUID?>(null)
+        userPreferences = mockk {
+            every { userId } returns delayedUserId
+        }
+        networkAvailable.value = true
+        internetValidated.value = true
+        coEvery { postRepository.getFeedPosts(limit = 15, cursor = null) } returns
+            ApiResult.Success(feedResult(posts = listOf(post()), hasMore = false))
+
+        val vm = createViewModel()
+        advanceTimeBy(500)
+        delayedUserId.value = ownerUserId
+        advanceUntilIdle()
+
+        assertEquals(FeedContent.Posts, vm.uiState.value.content)
+        assertEquals(ownerUserId, feedCache.meta?.ownerUserId)
+    }
+
+    // ---- 13c. userId ramane null dincolo de timeout -> pagina e totusi scrisa, cu owner null in meta ----
+
+    @Test
+    fun `userId ramas null dupa timeout scrie pagina cu owner null in meta`() = runTest {
+        userPreferences = mockk {
+            every { userId } returns MutableStateFlow<UUID?>(null)
+        }
+        networkAvailable.value = true
+        internetValidated.value = true
+        val freshPost = post()
+        coEvery { postRepository.getFeedPosts(limit = 15, cursor = null) } returns
+            ApiResult.Success(feedResult(posts = listOf(freshPost), hasMore = false))
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        // Skipping the write here would leave the UI stuck on skeletons forever (see plan §"cauze
+        // secundare"); a cache persisted with a null owner is instead treated as a mismatch and
+        // wiped the next time hydrateFromCache() resolves a real owner id.
+        assertEquals(FeedContent.Posts, vm.uiState.value.content)
+        assertEquals(listOf(freshPost), vm.uiState.value.feedPosts)
+        assertNull(feedCache.meta?.ownerUserId)
+    }
+
+    // ---- 13d. owner null in meta pe cache nevid -> tratat ca mismatch implicit ----
+
+    @Test
+    fun `owner null in meta pe cache nevid goleste cache-ul ca un mismatch`() = runTest {
+        feedCache.replaceWithFirstPage(
+            page = feedResult(posts = listOf(post()), hasMore = false),
+            ownerUserId = null,
+            syncedAt = Instant.now(),
+        )
+        networkAvailable.value = true
+        internetValidated.value = true
+        val freshPost = post()
+        coEvery { postRepository.getFeedPosts(limit = 15, cursor = null) } returns
+            ApiResult.Success(feedResult(posts = listOf(freshPost), hasMore = false))
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        assertEquals(1, feedCache.clearCount)
+        assertEquals(FeedContent.Posts, vm.uiState.value.content)
+        assertEquals(listOf(freshPost), vm.uiState.value.feedPosts)
+        coVerify(exactly = 1) { postRepository.getFeedPosts(limit = 15, cursor = null) }
+    }
+
+    // ---- 13e. owner potrivit in meta -> fara wipe (fara regresie pe calea fericita) ----
+
+    @Test
+    fun `owner potrivit in meta nu declanseaza clear`() = runTest {
+        val cachedPost = post()
+        feedCache.replaceWithFirstPage(
+            page = feedResult(posts = listOf(cachedPost), hasMore = false),
+            ownerUserId = ownerUserId,
+            syncedAt = Instant.now(),
+        )
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        assertEquals(0, feedCache.clearCount)
+        assertEquals(FeedContent.Posts, vm.uiState.value.content)
+        assertEquals(listOf(cachedPost), vm.uiState.value.feedPosts)
     }
 
     // ---- 14. like online: optimist, revert la eroare, autoritativ la succes ----
@@ -616,5 +865,219 @@ class FeedViewModelTest {
 
         assertEquals(preciseCursor.lastCreatedAt, capturedCursor.captured.lastCreatedAt)
         assertEquals(preciseCursor.lastPostId, capturedCursor.captured.lastPostId)
+    }
+
+    // ---- 20. cache gol + succes cu postari, emisia cache-ului intarziata -> fara Empty tranzitoriu ----
+
+    @Test
+    fun `succes cu postari nu trece tranzitoriu prin Empty cand emisia cache-ului e intarziata`() = runTest {
+        feedCache = FakeFeedCache(emissionScope = this, emissionDelayMs = 50)
+        networkAvailable.value = true
+        internetValidated.value = true
+        val freshPost = post()
+        coEvery { postRepository.getFeedPosts(limit = 15, cursor = null) } returns
+            ApiResult.Success(feedResult(posts = listOf(freshPost), hasMore = false))
+
+        val vm = createViewModel()
+        val contents = collectContent(vm)
+        advanceUntilIdle()
+
+        assertFalse("continutul nu ar trebui sa treaca niciodata prin Empty", contents.any { it is FeedContent.Empty })
+        contents.assertNoTransientEmpty()
+        assertEquals(FeedContent.Posts, contents.last())
+    }
+
+    // ---- 21. cache gol + succes cu zero postari -> Empty doar ca stare finala ----
+
+    @Test
+    fun `succes cu zero postari ajunge la Empty fara pas intermediar gresit`() = runTest {
+        networkAvailable.value = true
+        internetValidated.value = true
+        coEvery { postRepository.getFeedPosts(limit = 15, cursor = null) } returns
+            ApiResult.Success(feedResult(posts = emptyList(), hasMore = false))
+
+        val vm = createViewModel()
+        val contents = collectContent(vm)
+        advanceUntilIdle()
+
+        assertEquals(FeedContent.Empty, contents.last())
+        contents.assertNoTransientEmpty()
+        assertTrue(
+            "Empty trebuie precedat doar de Skeletons",
+            contents.dropLast(1).all { it is FeedContent.Skeletons },
+        )
+    }
+
+    // ---- 22. cache nevid + offline -> fara Empty sau NoInternet in secventa ----
+
+    @Test
+    fun `cache nevid si offline la startup nu trece niciodata prin Empty sau NoInternet`() = runTest {
+        feedCache.replaceWithFirstPage(
+            page = feedResult(posts = listOf(post()), hasMore = false),
+            ownerUserId = ownerUserId,
+            syncedAt = Instant.now(),
+        )
+        // networkAvailable/internetValidated stay false (offline at startup).
+
+        val vm = createViewModel()
+        val contents = collectContent(vm)
+        advanceUntilIdle()
+
+        assertFalse(contents.any { it is FeedContent.Empty })
+        assertFalse(contents.any { it is FeedContent.NoInternet })
+        assertEquals(FeedContent.Posts, contents.last())
+    }
+
+    // ---- 23. refresh esuat peste postari existente -> content ramane Posts tot timpul ----
+
+    @Test
+    fun `refresh esuat peste postari existente nu paraseste niciodata Posts`() = runTest {
+        val originalPost = post()
+        feedCache.replaceWithFirstPage(
+            page = feedResult(posts = listOf(originalPost), hasMore = false),
+            ownerUserId = ownerUserId,
+            syncedAt = Instant.now(),
+        )
+        networkAvailable.value = true
+        internetValidated.value = true
+        coEvery { postRepository.getFeedPosts(limit = 15, cursor = null) } returns
+            ApiResult.Error("Server error")
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+        val contents = collectContent(vm)
+
+        vm.refresh()
+        advanceUntilIdle()
+
+        assertEquals(listOf(FeedContent.Posts), contents.distinct())
+    }
+
+    // ---- 24. owner mismatch -> secventa nu expune niciodata postarile vechi ----
+
+    @Test
+    fun `owner mismatch nu expune niciodata postarile vechi in secventa de continut`() = runTest {
+        val otherOwner = UUID.randomUUID()
+        feedCache.replaceWithFirstPage(
+            page = feedResult(posts = listOf(post()), hasMore = false),
+            ownerUserId = otherOwner,
+            syncedAt = Instant.now(),
+        )
+
+        val vm = createViewModel()
+        val contents = collectContent(vm)
+        advanceUntilIdle()
+
+        assertFalse("postarile altui user nu trebuie randate niciodata", contents.any { it is FeedContent.Posts })
+        assertEquals(FeedContent.NoInternet, contents.last())
+    }
+
+    // ---- 25. shimmer infinit la prima instalare — verificarea din planul de implementare ----
+
+    @Test
+    fun `loadNextPage inainte de hidratare nu porneste nicio cerere si nu blocheaza prima pagina`() = runTest {
+        val delayedUserId = flow {
+            delay(100)
+            emit(ownerUserId)
+        }
+        userPreferences = mockk {
+            every { userId } returns delayedUserId
+        }
+        networkAvailable.value = true
+        internetValidated.value = true
+        val freshPost = post()
+        coEvery { postRepository.getFeedPosts(limit = 15, cursor = null) } returns
+            ApiResult.Success(feedResult(posts = listOf(freshPost), hasMore = false))
+
+        val vm = createViewModel()
+        // Hydration hasn't resolved ownerUserId yet at this point — phase is still HydratingCache.
+        vm.loadNextPage()
+        advanceUntilIdle()
+
+        assertEquals(FeedContent.Posts, vm.uiState.value.content)
+        assertEquals(FeedPhase.ShowingPosts, vm.uiState.value.phase)
+        coVerify(exactly = 1) { postRepository.getFeedPosts(limit = 15, cursor = null) }
+    }
+
+    @Test
+    fun `cache gol si prima pagina cu postari ajunge la content Posts`() = runTest {
+        networkAvailable.value = true
+        internetValidated.value = true
+        val freshPost = post()
+        coEvery { postRepository.getFeedPosts(limit = 15, cursor = null) } returns
+            ApiResult.Success(feedResult(posts = listOf(freshPost), hasMore = false))
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        assertEquals(FeedContent.Posts, vm.uiState.value.content)
+        assertEquals(listOf(freshPost), vm.uiState.value.feedPosts)
+    }
+
+    @Test
+    fun `cache gol si prima pagina goala ajunge la content Empty nu Skeletons`() = runTest {
+        networkAvailable.value = true
+        internetValidated.value = true
+        coEvery { postRepository.getFeedPosts(limit = 15, cursor = null) } returns
+            ApiResult.Success(feedResult(posts = emptyList(), hasMore = false))
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        assertEquals(FeedContent.Empty, vm.uiState.value.content)
+        assertEquals(FeedPhase.ConfirmedEmpty, vm.uiState.value.phase)
+    }
+
+    @Test
+    fun `prima pagina cu eroare de server ajunge la FirstPageFailed si content Error nu Skeletons`() = runTest {
+        networkAvailable.value = true
+        internetValidated.value = true
+        coEvery { postRepository.getFeedPosts(limit = 15, cursor = null) } returns
+            ApiResult.Error("Server error")
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        val phase = vm.uiState.value.phase
+        assertTrue("faza ar trebui sa fie FirstPageFailed", phase is FeedPhase.FirstPageFailed)
+        assertTrue(
+            "continutul ar trebui sa fie Error, nu Skeletons",
+            vm.uiState.value.content is FeedContent.Error,
+        )
+    }
+
+    @Test
+    fun `ownerUserId nerezolvat nu impiedica postarile sa ajunga in cache si pe ecran`() = runTest {
+        userPreferences = mockk {
+            every { userId } returns MutableStateFlow<UUID?>(null)
+        }
+        networkAvailable.value = true
+        internetValidated.value = true
+        val freshPost = post()
+        coEvery { postRepository.getFeedPosts(limit = 15, cursor = null) } returns
+            ApiResult.Success(feedResult(posts = listOf(freshPost), hasMore = false))
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        assertEquals(FeedContent.Posts, vm.uiState.value.content)
+        assertEquals(listOf(freshPost), vm.uiState.value.feedPosts)
+        assertEquals(listOf(freshPost), feedCache.observePosts().first())
+    }
+
+    @Test
+    fun `hydrateFromCache cu cache care arunca se recupereaza prin loadFirstPage`() = runTest {
+        feedCache.failNextReadMeta = true
+        networkAvailable.value = true
+        internetValidated.value = true
+        val freshPost = post()
+        coEvery { postRepository.getFeedPosts(limit = 15, cursor = null) } returns
+            ApiResult.Success(feedResult(posts = listOf(freshPost), hasMore = false))
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        assertEquals(FeedContent.Posts, vm.uiState.value.content)
+        assertEquals(listOf(freshPost), vm.uiState.value.feedPosts)
     }
 }

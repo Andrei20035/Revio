@@ -61,7 +61,7 @@ class RetryButtonTest {
     }
 
     @Test
-    fun `un blip true apoi false joaca exact o rotatie si se opreste la 0`() {
+    fun `un_blip_true_apoi_false_joaca_exact_o_rotatie_si_se_opreste_la_0`() {
         composeTestRule.mainClock.autoAdvance = false
         val spinning = mutableStateOf(false)
         var currentRotation = 0f
@@ -84,7 +84,7 @@ class RetryButtonTest {
     }
 
     @Test
-    fun `un tap in mijlocul unei rotatii reporneste animatia de la 0`() {
+    fun `un_tap_in_mijlocul_unei_rotatii_reporneste_animatia_de_la_0`() {
         composeTestRule.mainClock.autoAdvance = false
         val spinning = mutableStateOf(false)
         var currentRotation = 0f
@@ -113,7 +113,7 @@ class RetryButtonTest {
     }
 
     @Test
-    fun `spinning true roteste continuu cu viteza unghiulara constanta fara hitch`() {
+    fun `spinning_true_roteste_continuu_cu_viteza_unghiulara_constanta_fara_hitch`() {
         composeTestRule.mainClock.autoAdvance = false
         val spinning = mutableStateOf(false)
         var currentRotation = 0f
@@ -152,7 +152,7 @@ class RetryButtonTest {
     }
 
     @Test
-    fun `spinning true urmat de false se opreste curat si prompt`() {
+    fun `spinning_true_urmat_de_false_se_opreste_curat_si_prompt`() {
         composeTestRule.mainClock.autoAdvance = false
         val spinning = mutableStateOf(false)
         var currentRotation = 0f
@@ -177,7 +177,7 @@ class RetryButtonTest {
     }
 
     @Test
-    fun `reduced motion tine rotatia la 0`() {
+    fun `reduced_motion_tine_rotatia_la_0`() {
         setAnimatorScale("0")
         composeTestRule.mainClock.autoAdvance = false
         val spinning = mutableStateOf(false)

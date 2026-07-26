@@ -43,7 +43,7 @@ class SeePostOverlayTest {
     )
 
     @Test
-    fun `canDelete true - butonul de optiuni post este afisat`() {
+    fun `canDelete_true_-_butonul_de_optiuni_post_este_afisat`() {
         composeTestRule.setContent {
             SeePostOverlay(
                 post = feedPost(),
@@ -52,6 +52,7 @@ class SeePostOverlayTest {
                 showDeleteConfirm = false,
                 onLikeToggle = {},
                 onOpenComments = {},
+                onEditClick = {},
                 onDeleteClick = {},
                 onConfirmDelete = {},
                 onDismissDeleteConfirm = {},
@@ -66,7 +67,7 @@ class SeePostOverlayTest {
     }
 
     @Test
-    fun `canDelete false - butonul de optiuni post nu este randat`() {
+    fun `canDelete_false_-_butonul_de_optiuni_post_nu_este_randat`() {
         composeTestRule.setContent {
             SeePostOverlay(
                 post = feedPost(),
@@ -75,6 +76,7 @@ class SeePostOverlayTest {
                 showDeleteConfirm = false,
                 onLikeToggle = {},
                 onOpenComments = {},
+                onEditClick = {},
                 onDeleteClick = {},
                 onConfirmDelete = {},
                 onDismissDeleteConfirm = {},

@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.location.Address
 import android.location.Geocoder
 import android.location.Location
+import android.location.LocationManager
 import android.os.Build
 import androidx.core.content.ContextCompat
 import com.revio.app.data.model.Coordinates
@@ -38,6 +39,9 @@ interface LocationRepository {
 
     /** Reverse-geocode coordinates to a town/country via Android's [Geocoder]; null on failure. */
     suspend fun reverseGeocode(coordinates: Coordinates): PlaceName?
+
+    /** True if any location provider (GPS or network) is currently enabled system-wide. */
+    fun locationServicesEnabled(): Boolean
 }
 
 @Singleton
@@ -57,18 +61,25 @@ class LocationRepositoryImpl @Inject constructor(
 
     override fun hasLocationPermission(): Boolean = hasFine || hasCoarse
 
+    override fun locationServicesEnabled(): Boolean = runCatching {
+        val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
+            locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+    }.getOrDefault(true)
+
     override suspend fun getCurrentLocation(): Coordinates? {
         if (!hasLocationPermission()) return null
         // Precise fix when fine is granted; coarse-only still works at balanced power.
         val priority = if (hasFine) Priority.PRIORITY_HIGH_ACCURACY else Priority.PRIORITY_BALANCED_POWER_ACCURACY
 
-        return withTimeoutOrNull(LOCATION_TIMEOUT_MS) {
-            try {
-                val location = awaitCurrentLocation(priority) ?: awaitLastLocation()
-                location?.let { Coordinates(it.latitude, it.longitude) }
-            } catch (_: SecurityException) {
-                null
-            }
+        return try {
+            // Separate budgets so a slow cold-start fix (common right after permission is
+            // granted) doesn't consume the whole timeout and starve the lastLocation fallback.
+            val location = withTimeoutOrNull(FRESH_FIX_TIMEOUT_MS) { awaitCurrentLocation(priority) }
+                ?: withTimeoutOrNull(LAST_LOCATION_TIMEOUT_MS) { awaitLastLocation() }
+            location?.let { Coordinates(it.latitude, it.longitude) }
+        } catch (_: SecurityException) {
+            null
         }
     }
 
@@ -87,6 +98,7 @@ class LocationRepositoryImpl @Inject constructor(
             fusedClient.lastLocation
                 .addOnSuccessListener { cont.resume(it) }
                 .addOnFailureListener { cont.resume(null) }
+            cont.invokeOnCancellation { }
         }
 
     override suspend fun reverseGeocode(coordinates: Coordinates): PlaceName? {
@@ -133,7 +145,8 @@ class LocationRepositoryImpl @Inject constructor(
         }
 
     companion object {
-        private const val LOCATION_TIMEOUT_MS = 4_000L
+        private const val FRESH_FIX_TIMEOUT_MS = 8_000L
+        private const val LAST_LOCATION_TIMEOUT_MS = 1_500L
         private const val GEOCODE_TIMEOUT_MS = 3_000L
     }
 }

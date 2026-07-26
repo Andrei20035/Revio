@@ -234,6 +234,7 @@ fun FeedScreen(
     // Prefetch the next page once the last few items become visible.
     val shouldLoadMore by remember {
         derivedStateOf {
+            if (uiState.content !is FeedContent.Posts) return@derivedStateOf false
             val layoutInfo = listState.layoutInfo
             val total = layoutInfo.totalItemsCount
             val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
@@ -259,8 +260,9 @@ fun FeedScreen(
             savedScrollIndex = index
         }
     }
-    LaunchedEffect(uiState.isCacheHydrated) {
-        if (uiState.isCacheHydrated && savedScrollIndex > 0) {
+    val hasPosts = uiState.feedPosts.isNotEmpty()
+    LaunchedEffect(hasPosts) {
+        if (hasPosts && savedScrollIndex > 0) {
             listState.scrollToItem(savedScrollIndex)
         }
     }
@@ -326,6 +328,7 @@ fun FeedScreen(
                 LaunchedEffect(message) {
                     delay(3000)
                     viewModel.consumeUserMessage()
+                    viewModel.consumeRefreshError()
                 }
                 Box(
                     modifier = Modifier

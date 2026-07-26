@@ -48,7 +48,7 @@ class FeedNoInternetStateTest {
     }
 
     @Test
-    fun `arata titlul si subtitlul feed-ului pentru starea fara internet`() {
+    fun `arata_titlul_si_subtitlul_feed-ului_pentru_starea_fara_internet`() {
         setFeedNoInternetContent()
 
         composeTestRule.onNodeWithText("No internet connection").assertIsDisplayed()
@@ -58,7 +58,7 @@ class FeedNoInternetStateTest {
     }
 
     @Test
-    fun `nu exista niciun nod clickable - fara buton Retry`() {
+    fun `nu_exista_niciun_nod_clickable_-_fara_buton_Retry`() {
         setFeedNoInternetContent()
 
         composeTestRule.onAllNodes(hasClickAction()).assertCountEquals(0)

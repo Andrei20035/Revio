@@ -61,6 +61,10 @@ interface FeedDao {
     @Upsert
     suspend fun upsertMeta(meta: FeedMetaEntity)
 
+    /** Advances the freshness timestamp without touching posts or pagination — for a silent sync that found nothing new. */
+    @Query("UPDATE feed_meta SET lastSyncedAtEpochMs = :epochMs WHERE id = 0")
+    suspend fun markSynced(epochMs: Long)
+
     @Query("UPDATE feed_posts SET likedByCurrentUser = :liked, likeCount = :likeCount WHERE id = :postId")
     suspend fun updateLike(postId: String, liked: Boolean, likeCount: Long)
 

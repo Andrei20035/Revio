@@ -15,6 +15,7 @@ import com.revio.app.data.repository.CarModelRepository
 import com.revio.app.data.repository.LocationRepository
 import com.revio.app.data.repository.PostRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,8 +34,9 @@ class ImageUploadViewModel @Inject constructor(
     private val locationRepository: LocationRepository,
 ) : ViewModel() {
 
-    // Guards against re-resolving location on recomposition / repeated permission callbacks.
-    private var locationResolutionStarted = false
+    // In-flight location resolution, if any. Prevents concurrent requests but allows retries
+    // once the previous attempt has finished (unlike the one-shot latch this replaced).
+    private var locationJob: Job? = null
 
     private val _uiState = MutableStateFlow(ImageUploadUiState())
     val uiState: StateFlow<ImageUploadUiState> = _uiState.asStateFlow()
@@ -199,7 +201,7 @@ class ImageUploadViewModel @Inject constructor(
     fun hasLocationPermission(): Boolean = locationRepository.hasLocationPermission()
 
     /** Called once with the outcome of the foreground-location permission request. */
-    fun onLocationPermissionResult(granted: Boolean) {
+    fun onLocationPermissionResult(granted: Boolean, permanentlyDenied: Boolean = false) {
         // Editing an existing post never touches its location.
         if (_uiState.value.isEditMode) return
 
@@ -207,21 +209,39 @@ class ImageUploadViewModel @Inject constructor(
             resolveLocation()
         } else {
             // Denied → keep location null and let the user post normally.
-            _uiState.update { it.copy(locationStatus = LocationStatus.Unavailable) }
+            val reason = if (permanentlyDenied) {
+                LocationFailure.PermissionDeniedPermanently
+            } else {
+                LocationFailure.PermissionDenied
+            }
+            _uiState.update { it.copy(locationStatus = LocationStatus.Unavailable(reason)) }
         }
     }
 
-    private fun resolveLocation() {
-        if (locationResolutionStarted || _uiState.value.isEditMode) return
-        locationResolutionStarted = true
+    /**
+     * User-initiated retry from the location chip. No-op while a resolution is already in
+     * flight or in edit mode; otherwise starts a fresh best-effort resolution.
+     */
+    fun onRetryLocation() {
+        if (locationJob?.isActive == true || _uiState.value.isEditMode) return
+        resolveLocation()
+    }
 
-        viewModelScope.launch {
+    private fun resolveLocation() {
+        if (locationJob?.isActive == true || _uiState.value.isEditMode) return
+
+        locationJob = viewModelScope.launch {
             _uiState.update { it.copy(locationStatus = LocationStatus.Resolving) }
 
             val coordinates = locationRepository.getCurrentLocation()
             if (coordinates == null) {
                 // No fix / disabled / timeout → silently post without location.
-                _uiState.update { it.copy(locationStatus = LocationStatus.Unavailable) }
+                val reason = if (!locationRepository.locationServicesEnabled()) {
+                    LocationFailure.ServicesDisabled
+                } else {
+                    LocationFailure.NoFix
+                }
+                _uiState.update { it.copy(locationStatus = LocationStatus.Unavailable(reason)) }
                 return@launch
             }
 
@@ -233,7 +253,7 @@ class ImageUploadViewModel @Inject constructor(
                     longitude = coordinates.longitude,
                     town = place?.town,
                     country = place?.country,
-                    locationStatus = LocationStatus.Added,
+                    locationStatus = LocationStatus.Resolved,
                 )
             }
         }
