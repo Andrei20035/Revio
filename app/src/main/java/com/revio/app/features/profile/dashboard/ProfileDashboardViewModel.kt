@@ -119,33 +119,44 @@ class ProfileDashboardViewModel @Inject constructor(
 
     fun refresh() {
         resetImageRetryState()
-        val state = _uiState.value
-        val userId = state.user?.id
-        if (userId != null) {
-            load(userId, reset = true, isRefresh = true)
-            return
-        }
-        if (state.isLoadingUser) return
-        if (state.isOwnProfile) {
-            loadCurrentUser()
-        } else {
-            val rawUserId = savedStateHandle.get<String>(Screen.Profile.ARG_USER_ID)
-            val targetUserId = rawUserId?.let { runCatching { UUID.fromString(it) }.getOrNull() }
-            if (targetUserId != null) loadForeignProfile(targetUserId)
-        }
+        refreshAll()
     }
 
     fun onPostCreated() {
         resetImageRetryState()
+        refreshAll()
+    }
+
+    /**
+     * Coordinated refresh: fetches the profile (current or foreign) and the first page of posts
+     * together, so pull-to-refresh and post_created always see both updated in one cycle instead
+     * of the posts page silently completing while the profile fetch is skipped or lost.
+     */
+    private fun refreshAll() {
         val state = _uiState.value
-        refreshCurrentUser()
         val userId = state.user?.id
-        if (userId != null) {
-            load(userId, reset = true, isRefresh = true)
-            return
+        viewModelScope.launch {
+            val userResult = if (state.isOwnProfile) {
+                userRepository.getCurrentUser()
+            } else {
+                val rawUserId = savedStateHandle.get<String>(Screen.Profile.ARG_USER_ID)
+                val targetUserId = rawUserId?.let { runCatching { UUID.fromString(it) }.getOrNull() }
+                targetUserId?.let { userRepository.getUserById(it) }
+            }
+
+            when (userResult) {
+                is ApiResult.Success -> _uiState.update {
+                    it.copy(user = userResult.data, currentUserId = it.currentUserId ?: userResult.data.id)
+                }
+                is ApiResult.Error -> Unit
+                null -> Unit
+            }
+
+            val postsUserId = (userResult as? ApiResult.Success)?.data?.id ?: userId
+            if (postsUserId != null) {
+                load(postsUserId, reset = true, isRefresh = true)
+            }
         }
-        if (state.isLoadingUser) return
-        loadCurrentUser()
     }
 
     fun loadNextPage() {
@@ -195,6 +206,7 @@ class ProfileDashboardViewModel @Inject constructor(
                         failedImages = state.failedImages.filterTo(mutableSetOf()) { it.postId in livePostIds },
                         imageRetryTokens = state.imageRetryTokens.filterKeys { it.postId in livePostIds },
                         autoRetriedImages = state.autoRetriedImages.filterTo(mutableSetOf()) { it.postId in livePostIds },
+                        postDetailFetchedAt = if (reset) emptyMap() else state.postDetailFetchedAt,
                     )
                 }
                 is ApiResult.Error -> _uiState.update {
@@ -213,6 +225,50 @@ class ProfileDashboardViewModel @Inject constructor(
 
     fun onPostClick(postId: UUID) {
         _uiState.update { it.copy(selectedPostId = postId) }
+        refreshPostDetail(postId)
+    }
+
+    /**
+     * Refreshes engagement fields (like/comment counts, liked-by-current-user) for [postId] in the
+     * background so the see-post overlay corrects stale counts without blocking on a request.
+     * Deduped per post via [ProfileDashboardUiState.postDetailInFlight] and rate-limited via
+     * [ProfileDashboardUiState.postDetailFetchedAt] so repeated opens within [DETAIL_TTL_MS] are free.
+     */
+    private fun refreshPostDetail(postId: UUID) {
+        val state = _uiState.value
+        if (postId in state.postDetailInFlight) return
+        val lastFetchedAt = state.postDetailFetchedAt[postId]
+        if (lastFetchedAt != null && System.currentTimeMillis() - lastFetchedAt < DETAIL_TTL_MS) return
+
+        _uiState.update { it.copy(postDetailInFlight = it.postDetailInFlight + postId) }
+
+        viewModelScope.launch {
+            when (val result = postRepository.getPostDetail(postId)) {
+                is ApiResult.Success -> {
+                    val fresh = result.data
+                    _uiState.update { s ->
+                        s.copy(
+                            posts = s.posts.replacePost(postId) { post ->
+                                if (postId in s.likeInFlight) {
+                                    post
+                                } else {
+                                    post.copy(
+                                        likeCount = fresh.likeCount,
+                                        commentCount = fresh.commentCount,
+                                        likedByCurrentUser = fresh.likedByCurrentUser,
+                                    )
+                                }
+                            },
+                            postDetailInFlight = s.postDetailInFlight - postId,
+                            postDetailFetchedAt = s.postDetailFetchedAt + (postId to System.currentTimeMillis()),
+                        )
+                    }
+                }
+                is ApiResult.Error -> _uiState.update { s ->
+                    s.copy(postDetailInFlight = s.postDetailInFlight - postId)
+                }
+            }
+        }
     }
 
     fun clearSelectedPost() {
@@ -244,6 +300,8 @@ class ProfileDashboardViewModel @Inject constructor(
                             commentsSheet = null,
                             showDeleteConfirm = false,
                             deleteInFlight = null,
+                            postDetailInFlight = state.postDetailInFlight - postId,
+                            postDetailFetchedAt = state.postDetailFetchedAt - postId,
                         )
                     }
                     refreshCurrentUser()
@@ -347,7 +405,12 @@ class ProfileDashboardViewModel @Inject constructor(
                     commentsSheet = when (result) {
                         is ApiResult.Success -> sheet.copy(comments = result.data, isLoading = false, errorMessage = null)
                         is ApiResult.Error -> sheet.copy(isLoading = false, errorMessage = result.message)
-                    }
+                    },
+                    posts = if (result is ApiResult.Success) {
+                        state.posts.replacePost(postId) { it.copy(commentCount = result.data.size.toLong()) }
+                    } else {
+                        state.posts
+                    },
                 )
             }
         }
@@ -443,6 +506,7 @@ class ProfileDashboardViewModel @Inject constructor(
 
     companion object {
         private const val PAGE_SIZE = 15
+        private const val DETAIL_TTL_MS = 30_000L
     }
 }
 

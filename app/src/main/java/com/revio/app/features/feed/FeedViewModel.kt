@@ -458,6 +458,10 @@ class FeedViewModel @Inject constructor(
     private fun loadComments(postId: UUID) {
         viewModelScope.launch {
             val result = commentRepository.getCommentsForPost(postId)
+            // Keep the feed's comment count consistent with the authoritative server total.
+            if (result is ApiResult.Success) {
+                feedCache.setCommentCount(postId, result.data.size.toLong())
+            }
             _uiState.update { state ->
                 // Ignore if the sheet was closed or switched to another post meanwhile.
                 val sheet = state.commentsSheet?.takeIf { it.postId == postId } ?: return@update state

@@ -38,6 +38,10 @@ data class ProfileDashboardUiState(
     val imageRetryTokens: Map<PostImageKey, Int> = emptyMap(),
     /** Images already covered by the one-shot auto-retry on screen entry. */
     val autoRetriedImages: Set<PostImageKey> = emptySet(),
+    /** Posts with an in-flight post-detail refresh (triggered by opening the see-post overlay). */
+    val postDetailInFlight: Set<UUID> = emptySet(),
+    /** Wall-clock time (ms) of the last successful post-detail refresh per post, for TTL-based dedup. */
+    val postDetailFetchedAt: Map<UUID, Long> = emptyMap(),
 ) {
     val isAnyLoading: Boolean
         get() = isLoadingInitial || isLoadingMore || isRefreshing

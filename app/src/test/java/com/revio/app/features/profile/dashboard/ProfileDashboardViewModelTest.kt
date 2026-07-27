@@ -5,7 +5,9 @@ import com.revio.app.MainDispatcherRule
 import com.revio.app.core.navigation.Screen
 import com.revio.app.core.network.ApiResult
 import com.revio.app.data.local.preferences.UserPreferences
+import com.revio.app.data.model.Comment
 import com.revio.app.data.model.FeedPost
+import com.revio.app.data.model.LikeStatus
 import com.revio.app.data.model.User
 import com.revio.app.data.remote.dto.post.FeedResult
 import com.revio.app.data.repository.CommentRepository
@@ -16,6 +18,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
@@ -83,6 +86,16 @@ class ProfileDashboardViewModelTest {
         likeCount = 0,
         commentCount = 0,
         likedByCurrentUser = false,
+    )
+
+    private fun fakeComment(postId: UUID, text: String = "nice!") = Comment(
+        id = UUID.randomUUID(),
+        userId = foreignUserId,
+        postId = postId,
+        username = "someone",
+        profilePictureUrl = null,
+        text = text,
+        createdAt = Instant.now(),
     )
 
     private fun ownerSavedStateHandle() = SavedStateHandle()
@@ -221,6 +234,8 @@ class ProfileDashboardViewModelTest {
 
         val vm = buildVm(foreignSavedStateHandle())
         advanceUntilIdle()
+
+        coEvery { postRepository.getPostDetail(postId) } returns ApiResult.Success(feedPost(id = postId))
 
         vm.onPostClick(postId)
         vm.requestDeletePost()
@@ -437,5 +452,197 @@ class ProfileDashboardViewModelTest {
         assertEquals(listOf(survivingPostId), state.posts.map { it.id })
         assertFalse(goneKey in state.failedImages)
         assertTrue(state.imageRetryTokens.containsKey(survivingKey))
+    }
+
+    // ── Refresh detaliu postare la deschiderea overlay-ului ─────────────────
+
+    @Test
+    fun `onPostClick apeleaza getPostDetail si actualizeaza likeCount, commentCount, likedByCurrentUser`() = runTest {
+        val postId = UUID.randomUUID()
+        val stalePost = feedPost(id = postId).copy(likeCount = 1, commentCount = 0, likedByCurrentUser = false)
+        val freshPost = stalePost.copy(likeCount = 5, commentCount = 3, likedByCurrentUser = true)
+        coEvery { userRepository.getUserById(foreignUserId) } returns ApiResult.Success(foreignUser())
+        coEvery { postRepository.getUserPosts(foreignUserId, any(), any()) } returns
+            ApiResult.Success(FeedResult(posts = listOf(stalePost), nextCursor = null, hasMore = false))
+        coEvery { postRepository.getPostDetail(postId) } returns ApiResult.Success(freshPost)
+
+        val vm = buildVm(foreignSavedStateHandle())
+        advanceUntilIdle()
+
+        vm.onPostClick(postId)
+        advanceUntilIdle()
+
+        val updated = vm.uiState.value.posts.single { it.id == postId }
+        assertEquals(5L, updated.likeCount)
+        assertEquals(3L, updated.commentCount)
+        assertTrue(updated.likedByCurrentUser)
+        coVerify(exactly = 1) { postRepository.getPostDetail(postId) }
+    }
+
+    @Test
+    fun `doua onPostClick consecutive fara raspuns intermediar - un singur apel getPostDetail (dedup)`() = runTest {
+        val postId = UUID.randomUUID()
+        val post = feedPost(id = postId)
+        coEvery { userRepository.getUserById(foreignUserId) } returns ApiResult.Success(foreignUser())
+        coEvery { postRepository.getUserPosts(foreignUserId, any(), any()) } returns
+            ApiResult.Success(FeedResult(posts = listOf(post), nextCursor = null, hasMore = false))
+        val detailDeferred = CompletableDeferred<ApiResult<FeedPost>>()
+        coEvery { postRepository.getPostDetail(postId) } coAnswers { detailDeferred.await() }
+
+        val vm = buildVm(foreignSavedStateHandle())
+        advanceUntilIdle()
+
+        vm.onPostClick(postId)
+        vm.onPostClick(postId)
+        detailDeferred.complete(ApiResult.Success(post))
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { postRepository.getPostDetail(postId) }
+    }
+
+    @Test
+    fun `onPostClick redeschis imediat dupa un fetch reusit - TTL evita un al doilea apel`() = runTest {
+        val postId = UUID.randomUUID()
+        val post = feedPost(id = postId)
+        coEvery { userRepository.getUserById(foreignUserId) } returns ApiResult.Success(foreignUser())
+        coEvery { postRepository.getUserPosts(foreignUserId, any(), any()) } returns
+            ApiResult.Success(FeedResult(posts = listOf(post), nextCursor = null, hasMore = false))
+        coEvery { postRepository.getPostDetail(postId) } returns ApiResult.Success(post)
+
+        val vm = buildVm(foreignSavedStateHandle())
+        advanceUntilIdle()
+
+        vm.onPostClick(postId)
+        advanceUntilIdle()
+        vm.clearSelectedPost()
+        vm.onPostClick(postId)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { postRepository.getPostDetail(postId) }
+    }
+
+    @Test
+    fun `getPostDetail esueaza - counturile vechi raman, fara userMessage`() = runTest {
+        val postId = UUID.randomUUID()
+        val post = feedPost(id = postId).copy(likeCount = 2, commentCount = 1, likedByCurrentUser = false)
+        coEvery { userRepository.getUserById(foreignUserId) } returns ApiResult.Success(foreignUser())
+        coEvery { postRepository.getUserPosts(foreignUserId, any(), any()) } returns
+            ApiResult.Success(FeedResult(posts = listOf(post), nextCursor = null, hasMore = false))
+        coEvery { postRepository.getPostDetail(postId) } returns ApiResult.Error("Server error")
+
+        val vm = buildVm(foreignSavedStateHandle())
+        advanceUntilIdle()
+
+        vm.onPostClick(postId)
+        advanceUntilIdle()
+
+        val state = vm.uiState.value
+        val unchanged = state.posts.single { it.id == postId }
+        assertEquals(2L, unchanged.likeCount)
+        assertEquals(1L, unchanged.commentCount)
+        assertNull(state.userMessage)
+    }
+
+    @Test
+    fun `like optimist in zbor cand getPostDetail lent raspunde - valoarea optimista nu e calcata`() = runTest {
+        val postId = UUID.randomUUID()
+        val post = feedPost(id = postId).copy(likeCount = 1, commentCount = 0, likedByCurrentUser = false)
+        coEvery { userRepository.getUserById(foreignUserId) } returns ApiResult.Success(foreignUser())
+        coEvery { postRepository.getUserPosts(foreignUserId, any(), any()) } returns
+            ApiResult.Success(FeedResult(posts = listOf(post), nextCursor = null, hasMore = false))
+        val detailDeferred = CompletableDeferred<ApiResult<FeedPost>>()
+        coEvery { postRepository.getPostDetail(postId) } coAnswers { detailDeferred.await() }
+        val likeDeferred = CompletableDeferred<ApiResult<LikeStatus>>()
+        coEvery { likeRepository.toggleLike(postId) } coAnswers { likeDeferred.await() }
+
+        val vm = buildVm(foreignSavedStateHandle())
+        advanceUntilIdle()
+
+        vm.onPostClick(postId)
+        vm.onLikeToggle(postId)
+        // Stale detail response arrives while the like toggle is still in flight.
+        detailDeferred.complete(ApiResult.Success(post.copy(likeCount = 1, likedByCurrentUser = false)))
+        advanceUntilIdle()
+
+        val duringLike = vm.uiState.value.posts.single { it.id == postId }
+        assertTrue(duringLike.likedByCurrentUser)
+        assertEquals(2L, duringLike.likeCount)
+
+        likeDeferred.complete(ApiResult.Success(LikeStatus(liked = true, count = 2)))
+        advanceUntilIdle()
+
+        val after = vm.uiState.value.posts.single { it.id == postId }
+        assertTrue(after.likedByCurrentUser)
+        assertEquals(2L, after.likeCount)
+    }
+
+    @Test
+    fun `clearSelectedPost inainte ca getPostDetail sa raspunda - fara crash, posts actualizat`() = runTest {
+        val postId = UUID.randomUUID()
+        val post = feedPost(id = postId)
+        coEvery { userRepository.getUserById(foreignUserId) } returns ApiResult.Success(foreignUser())
+        coEvery { postRepository.getUserPosts(foreignUserId, any(), any()) } returns
+            ApiResult.Success(FeedResult(posts = listOf(post), nextCursor = null, hasMore = false))
+        val detailDeferred = CompletableDeferred<ApiResult<FeedPost>>()
+        coEvery { postRepository.getPostDetail(postId) } coAnswers { detailDeferred.await() }
+
+        val vm = buildVm(foreignSavedStateHandle())
+        advanceUntilIdle()
+
+        vm.onPostClick(postId)
+        vm.clearSelectedPost()
+        detailDeferred.complete(ApiResult.Success(post.copy(likeCount = 9)))
+        advanceUntilIdle()
+
+        val state = vm.uiState.value
+        assertNull(state.selectedPostId)
+        assertEquals(9L, state.posts.single { it.id == postId }.likeCount)
+    }
+
+    @Test
+    fun `post sters cat timp getPostDetail e in zbor - postarea nu reapare`() = runTest {
+        val postId = UUID.randomUUID()
+        val post = feedPost(id = postId, userId = currentUserId)
+        coEvery { userRepository.getCurrentUser() } returns ApiResult.Success(currentUser())
+        coEvery { postRepository.getUserPosts(currentUserId, any(), any()) } returns
+            ApiResult.Success(FeedResult(posts = listOf(post), nextCursor = null, hasMore = false))
+        coEvery { postRepository.deletePost(postId) } returns ApiResult.Success(Unit)
+        val detailDeferred = CompletableDeferred<ApiResult<FeedPost>>()
+        coEvery { postRepository.getPostDetail(postId) } coAnswers { detailDeferred.await() }
+
+        val vm = buildVm(ownerSavedStateHandle())
+        advanceUntilIdle()
+
+        vm.onPostClick(postId)
+        vm.confirmDeletePost()
+        advanceUntilIdle()
+        assertFalse(vm.uiState.value.posts.any { it.id == postId })
+
+        detailDeferred.complete(ApiResult.Success(post.copy(likeCount = 9)))
+        advanceUntilIdle()
+
+        assertFalse(vm.uiState.value.posts.any { it.id == postId })
+    }
+
+    // ── Reconciliere commentCount din comments sheet ─────────────────────────
+
+    @Test
+    fun `loadComments success actualizeaza commentCount cu numarul autoritar de comentarii`() = runTest {
+        val postId = UUID.randomUUID()
+        val post = feedPost(id = postId).copy(commentCount = 0)
+        coEvery { userRepository.getUserById(foreignUserId) } returns ApiResult.Success(foreignUser())
+        coEvery { postRepository.getUserPosts(foreignUserId, any(), any()) } returns
+            ApiResult.Success(FeedResult(posts = listOf(post), nextCursor = null, hasMore = false))
+        coEvery { commentRepository.getCommentsForPost(postId) } returns
+            ApiResult.Success(listOf(fakeComment(postId), fakeComment(postId)))
+        coEvery { postRepository.getPostDetail(postId) } returns ApiResult.Success(post)
+
+        val vm = buildVm(foreignSavedStateHandle())
+        advanceUntilIdle()
+
+        vm.openComments(postId)
+        advanceUntilIdle()
+
+        assertEquals(2L, vm.uiState.value.posts.single { it.id == postId }.commentCount)
     }
 }
