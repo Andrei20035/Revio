@@ -38,7 +38,8 @@ interface PostRepository {
 }
 @Singleton
 class PostRepositoryImpl @Inject constructor(
-    private val postApi: PostApi
+    private val postApi: PostApi,
+    private val userRepository: UserRepository,
 ) : PostRepository {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -55,7 +56,11 @@ class PostRepositoryImpl @Inject constructor(
             filename = "post.jpg",
             body = imageBytes.toRequestBody(mimeType.toMediaTypeOrNull()),
         )
-        return safeApiCall { postApi.createPost(metadataPart, imagePart) }.map { Unit }
+        return safeApiCall { postApi.createPost(metadataPart, imagePart) }
+            .map { response ->
+                response.user?.let { userRepository.setCurrentUser(it) }
+                Unit
+            }
     }
 
     override suspend fun getPostDetail(postId: UUID): ApiResult<FeedPost> {

@@ -7,12 +7,14 @@ import com.revio.app.core.navigation.Screen
 import com.revio.app.core.network.ApiResult
 import com.revio.app.data.local.preferences.UserPreferences
 import com.revio.app.data.model.FeedPost
+import com.revio.app.data.model.User
 import com.revio.app.data.repository.CommentRepository
 import com.revio.app.data.repository.LikeRepository
 import com.revio.app.data.repository.PostRepository
 import com.revio.app.data.repository.UserRepository
 import com.revio.app.features.feed.CommentsSheetState
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -37,9 +39,20 @@ class ProfileDashboardViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(ProfileDashboardUiState())
     val uiState: StateFlow<ProfileDashboardUiState> = _uiState.asStateFlow()
 
+    /**
+     * Foreign profile target, resolved once from nav args. Null means "own profile" — the single
+     * source of truth for which endpoint (getCurrentUser vs getUserById) a refresh should use,
+     * instead of re-parsing savedStateHandle or inferring it from uiState.
+     */
+    private val targetUserId: UUID? = savedStateHandle.get<String>(Screen.Profile.ARG_USER_ID)
+        ?.let { runCatching { UUID.fromString(it) }.getOrNull() }
+
+    /** The in-flight refreshAll() coroutine, if any — cancelled by a newer refresh so a stale
+     * result can never land after (and overwrite) a more recent one. */
+    private var refreshJob: Job? = null
+
     init {
         val rawUserId = savedStateHandle.get<String>(Screen.Profile.ARG_USER_ID)
-        val targetUserId = rawUserId?.let { runCatching { UUID.fromString(it) }.getOrNull() }
         when {
             rawUserId != null && targetUserId == null ->
                 _uiState.update { it.copy(errorMessage = "Invalid profile ID") }
@@ -53,7 +66,7 @@ class ProfileDashboardViewModel @Inject constructor(
 
         viewModelScope.launch {
             userRepository.currentUser.filterNotNull().collect { user ->
-                if (_uiState.value.isOwnProfile) {
+                if (targetUserId == null) {
                     _uiState.update { it.copy(user = user) }
                 }
             }
@@ -106,16 +119,31 @@ class ProfileDashboardViewModel @Inject constructor(
         }
     }
 
-    private fun refreshCurrentUser() {
-        viewModelScope.launch {
-            when (val result = userRepository.getCurrentUser()) {
-                is ApiResult.Success -> _uiState.update { it.copy(user = result.data) }
-                is ApiResult.Error -> Unit
+    /**
+     * Fetches the current or foreign profile (per [targetUserId]) and applies the result to
+     * [uiState]: success replaces the profile, failure surfaces a transient message without
+     * touching the existing one. The single path for updating [ProfileDashboardUiState.user],
+     * shared by refreshAll() and confirmDeletePost() — replaces the former standalone
+     * refreshCurrentUser(), which silently dropped errors.
+     */
+    private suspend fun refreshUser(): ApiResult<User> {
+        val result = if (targetUserId == null) {
+            userRepository.getCurrentUser()
+        } else {
+            userRepository.getUserById(targetUserId)
+        }
+        when (result) {
+            is ApiResult.Success -> _uiState.update {
+                it.copy(user = result.data, currentUserId = it.currentUserId ?: result.data.id)
+            }
+            is ApiResult.Error -> _uiState.update {
+                it.copy(userMessage = "Couldn't refresh your profile. Please try again.")
             }
         }
+        return result
     }
 
-    private fun loadFirstPage(userId: UUID) = load(userId, reset = true, isRefresh = false)
+    private suspend fun loadFirstPage(userId: UUID) = load(userId, reset = true, isRefresh = false)
 
     fun refresh() {
         resetImageRetryState()
@@ -135,26 +163,26 @@ class ProfileDashboardViewModel @Inject constructor(
     private fun refreshAll() {
         val state = _uiState.value
         val userId = state.user?.id
-        viewModelScope.launch {
-            val userResult = if (state.isOwnProfile) {
-                userRepository.getCurrentUser()
-            } else {
-                val rawUserId = savedStateHandle.get<String>(Screen.Profile.ARG_USER_ID)
-                val targetUserId = rawUserId?.let { runCatching { UUID.fromString(it) }.getOrNull() }
-                targetUserId?.let { userRepository.getUserById(it) }
-            }
-
-            when (userResult) {
-                is ApiResult.Success -> _uiState.update {
-                    it.copy(user = userResult.data, currentUserId = it.currentUserId ?: userResult.data.id)
-                }
-                is ApiResult.Error -> Unit
-                null -> Unit
-            }
+        refreshJob?.cancel()
+        _uiState.update { it.copy(isRefreshing = true) }
+        refreshJob = viewModelScope.launch {
+            val userResult = refreshUser()
 
             val postsUserId = (userResult as? ApiResult.Success)?.data?.id ?: userId
             if (postsUserId != null) {
+                // load() only turns isRefreshing off once its own fetch finishes; since it always
+                // runs after the user fetch above, isRefreshing stays on for the whole cycle.
+                // On a posts-fetch failure, load() leaves the existing posts list untouched.
                 load(postsUserId, reset = true, isRefresh = true)
+            } else {
+                // No posts fetch will run (no known user id) — nothing left to clear isRefreshing,
+                // and there's nothing on screen at all, so this is a blocking error, not a snackbar.
+                _uiState.update {
+                    it.copy(
+                        isRefreshing = false,
+                        errorMessage = (userResult as? ApiResult.Error)?.message ?: it.errorMessage,
+                    )
+                }
             }
         }
     }
@@ -163,60 +191,63 @@ class ProfileDashboardViewModel @Inject constructor(
         val state = _uiState.value
         val userId = state.user?.id ?: return
         if (!state.hasMore || state.isAnyLoading) return
-        load(userId, reset = false, isRefresh = false)
+        viewModelScope.launch { load(userId, reset = false, isRefresh = false) }
     }
 
     fun retry() {
         val state = _uiState.value
         val userId = state.user?.id ?: return
         if (state.isAnyLoading) return
-        load(userId, reset = state.isEmpty, isRefresh = false)
+        viewModelScope.launch { load(userId, reset = state.isEmpty, isRefresh = false) }
     }
 
-    private fun load(userId: UUID, reset: Boolean, isRefresh: Boolean) {
-        viewModelScope.launch {
-            _uiState.update {
-                it.copy(
-                    isLoadingInitial = reset && !isRefresh && it.isEmpty,
-                    isRefreshing = isRefresh,
-                    isLoadingMore = !reset,
-                    errorMessage = null,
-                )
-            }
+    /**
+     * Suspends until the posts page request completes, so a caller (refreshAll) that runs this
+     * after another await can keep isRefreshing on for the whole coordinated cycle instead of
+     * this function turning it off as soon as its own fetch — but not the sibling one — finishes.
+     */
+    private suspend fun load(userId: UUID, reset: Boolean, isRefresh: Boolean) {
+        _uiState.update {
+            it.copy(
+                isLoadingInitial = reset && !isRefresh && it.isEmpty,
+                isRefreshing = isRefresh,
+                isLoadingMore = !reset,
+                errorMessage = null,
+            )
+        }
 
-            val cursor = if (reset) null else _uiState.value.nextCursor
+        val cursor = if (reset) null else _uiState.value.nextCursor
 //            delay(2500) // TEMP: simulates a slow server for manual lag testing — remove after testing.
 
-            when (val result = postRepository.getUserPosts(userId, PAGE_SIZE, cursor)) {
-                is ApiResult.Success -> _uiState.update { state ->
-                    val incoming = result.data.posts
-                    val merged = if (reset) {
-                        incoming
-                    } else {
-                        (state.posts + incoming).distinctBy { it.id }
-                    }
-                    val livePostIds = merged.mapTo(mutableSetOf()) { it.id }
-                    state.copy(
-                        posts = merged,
-                        nextCursor = result.data.nextCursor,
-                        hasMore = result.data.hasMore,
-                        isLoadingInitial = false,
-                        isRefreshing = false,
-                        isLoadingMore = false,
-                        failedImages = state.failedImages.filterTo(mutableSetOf()) { it.postId in livePostIds },
-                        imageRetryTokens = state.imageRetryTokens.filterKeys { it.postId in livePostIds },
-                        autoRetriedImages = state.autoRetriedImages.filterTo(mutableSetOf()) { it.postId in livePostIds },
-                        postDetailFetchedAt = if (reset) emptyMap() else state.postDetailFetchedAt,
-                    )
+        when (val result = postRepository.getUserPosts(userId, PAGE_SIZE, cursor)) {
+            is ApiResult.Success -> _uiState.update { state ->
+                val incoming = result.data.posts
+                val merged = if (reset) {
+                    incoming
+                } else {
+                    (state.posts + incoming).distinctBy { it.id }
                 }
-                is ApiResult.Error -> _uiState.update {
-                    it.copy(
-                        isLoadingInitial = false,
-                        isRefreshing = false,
-                        isLoadingMore = false,
-                        errorMessage = result.message,
-                    )
-                }
+                val livePostIds = merged.mapTo(mutableSetOf()) { it.id }
+                state.copy(
+                    posts = merged,
+                    nextCursor = result.data.nextCursor,
+                    hasMore = result.data.hasMore,
+                    isLoadingInitial = false,
+                    isRefreshing = false,
+                    isLoadingMore = false,
+                    failedImages = state.failedImages.filterTo(mutableSetOf()) { it.postId in livePostIds },
+                    imageRetryTokens = state.imageRetryTokens.filterKeys { it.postId in livePostIds },
+                    autoRetriedImages = state.autoRetriedImages.filterTo(mutableSetOf()) { it.postId in livePostIds },
+                    postDetailFetchedAt = if (reset) emptyMap() else state.postDetailFetchedAt,
+                )
+            }
+            is ApiResult.Error -> _uiState.update {
+                it.copy(
+                    isLoadingInitial = false,
+                    isRefreshing = false,
+                    isLoadingMore = false,
+                    errorMessage = result.message,
+                )
             }
         }
     }
@@ -304,7 +335,7 @@ class ProfileDashboardViewModel @Inject constructor(
                             postDetailFetchedAt = state.postDetailFetchedAt - postId,
                         )
                     }
-                    refreshCurrentUser()
+                    refreshUser()
                 }
                 is ApiResult.Error -> _uiState.update {
                     it.copy(

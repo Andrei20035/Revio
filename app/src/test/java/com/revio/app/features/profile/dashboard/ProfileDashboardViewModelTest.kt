@@ -23,6 +23,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -319,6 +320,303 @@ class ProfileDashboardViewModelTest {
         advanceUntilIdle()
 
         coVerify(exactly = 2) { postRepository.getUserPosts(foreignUserId, any(), any()) }
+    }
+
+    // ── Restanțe: refresh coordonat & onPostCreated (pașii 1–7) ─────────────
+
+    @Test
+    fun `pull-to-refresh pe profil propriu apeleaza getCurrentUser si getUserPosts`() = runTest {
+        coEvery { userRepository.getCurrentUser() } returns ApiResult.Success(currentUser())
+        coEvery { postRepository.getUserPosts(currentUserId, any(), any()) } returns
+            ApiResult.Success(emptyFeedResult())
+
+        val vm = buildVm(ownerSavedStateHandle())
+        advanceUntilIdle()
+
+        vm.refresh()
+        advanceUntilIdle()
+
+        coVerify(exactly = 2) { userRepository.getCurrentUser() }
+        coVerify(exactly = 2) { postRepository.getUserPosts(currentUserId, any(), any()) }
+    }
+
+    @Test
+    fun `pull-to-refresh pe profil strain apeleaza getUserById si getUserPosts, niciodata getCurrentUser`() = runTest {
+        coEvery { userRepository.getUserById(foreignUserId) } returns ApiResult.Success(foreignUser())
+        coEvery { postRepository.getUserPosts(foreignUserId, any(), any()) } returns
+            ApiResult.Success(emptyFeedResult())
+
+        val vm = buildVm(foreignSavedStateHandle())
+        advanceUntilIdle()
+
+        vm.refresh()
+        advanceUntilIdle()
+
+        coVerify(exactly = 2) { userRepository.getUserById(foreignUserId) }
+        coVerify(exactly = 2) { postRepository.getUserPosts(foreignUserId, any(), any()) }
+        coVerify(exactly = 0) { userRepository.getCurrentUser() }
+    }
+
+    @Test
+    fun `onPostCreated actualizeaza spotScore, postCount, streakDays si posts`() = runTest {
+        coEvery { userRepository.getCurrentUser() } returns ApiResult.Success(currentUser())
+        coEvery { postRepository.getUserPosts(currentUserId, any(), any()) } returns
+            ApiResult.Success(emptyFeedResult())
+
+        val vm = buildVm(ownerSavedStateHandle())
+        advanceUntilIdle()
+
+        val updatedUser = currentUser(streakDays = 1).copy(spotScore = 10, postCount = 1)
+        val newPost = feedPost(userId = currentUserId)
+        coEvery { userRepository.getCurrentUser() } returns ApiResult.Success(updatedUser)
+        coEvery { postRepository.getUserPosts(currentUserId, any(), any()) } returns
+            ApiResult.Success(FeedResult(posts = listOf(newPost), nextCursor = null, hasMore = false))
+
+        vm.onPostCreated()
+        advanceUntilIdle()
+
+        val state = vm.uiState.value
+        assertEquals(10, state.user?.spotScore)
+        assertEquals(1, state.postCount)
+        assertEquals(1, state.streakDays)
+        assertEquals(listOf(newPost.id), state.posts.map { it.id })
+    }
+
+    @Test
+    fun `isRefreshing ramane true pana cand ambele apeluri s-au incheiat`() = runTest {
+        coEvery { userRepository.getCurrentUser() } returns ApiResult.Success(currentUser())
+        coEvery { postRepository.getUserPosts(currentUserId, any(), any()) } returns
+            ApiResult.Success(emptyFeedResult())
+
+        val vm = buildVm(ownerSavedStateHandle())
+        advanceUntilIdle()
+
+        val userDeferred = CompletableDeferred<ApiResult<User>>()
+        val postsDeferred = CompletableDeferred<ApiResult<FeedResult>>()
+        coEvery { userRepository.getCurrentUser() } coAnswers { userDeferred.await() }
+        coEvery { postRepository.getUserPosts(currentUserId, any(), any()) } coAnswers { postsDeferred.await() }
+
+        vm.refresh()
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.isRefreshing)
+
+        userDeferred.complete(ApiResult.Success(currentUser()))
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.isRefreshing)
+
+        postsDeferred.complete(ApiResult.Success(emptyFeedResult()))
+        advanceUntilIdle()
+        assertFalse(vm.uiState.value.isRefreshing)
+    }
+
+    @Test
+    fun `refresh - profil ok si postari eroare - statistici noi pastrate, postari vechi intacte, errorMessage setat`() = runTest {
+        val oldPost = feedPost(userId = currentUserId)
+        coEvery { userRepository.getCurrentUser() } returns ApiResult.Success(currentUser())
+        coEvery { postRepository.getUserPosts(currentUserId, any(), any()) } returns
+            ApiResult.Success(FeedResult(posts = listOf(oldPost), nextCursor = null, hasMore = false))
+
+        val vm = buildVm(ownerSavedStateHandle())
+        advanceUntilIdle()
+
+        coEvery { userRepository.getCurrentUser() } returns ApiResult.Success(currentUser(streakDays = 3))
+        coEvery { postRepository.getUserPosts(currentUserId, any(), any()) } returns
+            ApiResult.Error("Server error")
+
+        vm.refresh()
+        advanceUntilIdle()
+
+        val state = vm.uiState.value
+        assertEquals(3, state.streakDays)
+        assertEquals(listOf(oldPost.id), state.posts.map { it.id })
+        assertNotNull(state.errorMessage)
+    }
+
+    @Test
+    fun `refresh - postari ok si profil eroare - postari noi pastrate, statistici vechi vizibile, userMessage setat`() = runTest {
+        coEvery { userRepository.getCurrentUser() } returns ApiResult.Success(currentUser(streakDays = 2))
+        coEvery { postRepository.getUserPosts(currentUserId, any(), any()) } returns
+            ApiResult.Success(emptyFeedResult())
+
+        val vm = buildVm(ownerSavedStateHandle())
+        advanceUntilIdle()
+
+        val newPost = feedPost(userId = currentUserId)
+        coEvery { userRepository.getCurrentUser() } returns ApiResult.Error("Server error")
+        coEvery { postRepository.getUserPosts(currentUserId, any(), any()) } returns
+            ApiResult.Success(FeedResult(posts = listOf(newPost), nextCursor = null, hasMore = false))
+
+        vm.refresh()
+        advanceUntilIdle()
+
+        val state = vm.uiState.value
+        assertEquals(listOf(newPost.id), state.posts.map { it.id })
+        assertEquals(2, state.streakDays)
+        assertNotNull(state.userMessage)
+    }
+
+    @Test
+    fun `doua refresh-uri suprapuse - rezultatul vechi nu suprascrie rezultatul nou`() = runTest {
+        coEvery { userRepository.getCurrentUser() } returns ApiResult.Success(currentUser())
+        coEvery { postRepository.getUserPosts(currentUserId, any(), any()) } returns
+            ApiResult.Success(emptyFeedResult())
+
+        val vm = buildVm(ownerSavedStateHandle())
+        advanceUntilIdle()
+
+        val staleUserDeferred = CompletableDeferred<ApiResult<User>>()
+        coEvery { userRepository.getCurrentUser() } coAnswers { staleUserDeferred.await() }
+
+        vm.refresh() // first refresh gets stuck awaiting the profile fetch
+        runCurrent()
+
+        val freshUser = currentUser(streakDays = 9)
+        val freshPost = feedPost(userId = currentUserId)
+        coEvery { userRepository.getCurrentUser() } returns ApiResult.Success(freshUser)
+        coEvery { postRepository.getUserPosts(currentUserId, any(), any()) } returns
+            ApiResult.Success(FeedResult(posts = listOf(freshPost), nextCursor = null, hasMore = false))
+
+        vm.refresh() // cancels the first refresh's job before it can land
+        advanceUntilIdle()
+
+        // The stale response arrives after cancellation — must have no effect.
+        staleUserDeferred.complete(ApiResult.Success(currentUser(streakDays = 1)))
+        advanceUntilIdle()
+
+        val state = vm.uiState.value
+        assertEquals(9, state.streakDays)
+        assertEquals(listOf(freshPost.id), state.posts.map { it.id })
+    }
+
+    @Test
+    fun `doua post_created rapide - stare consistenta`() = runTest {
+        coEvery { userRepository.getCurrentUser() } returns ApiResult.Success(currentUser())
+        coEvery { postRepository.getUserPosts(currentUserId, any(), any()) } returns
+            ApiResult.Success(emptyFeedResult())
+
+        val vm = buildVm(ownerSavedStateHandle())
+        advanceUntilIdle()
+
+        val staleUserDeferred = CompletableDeferred<ApiResult<User>>()
+        coEvery { userRepository.getCurrentUser() } coAnswers { staleUserDeferred.await() }
+
+        vm.onPostCreated() // first call gets stuck awaiting the profile fetch
+        runCurrent()
+
+        val freshUser = currentUser(streakDays = 4).copy(postCount = 2)
+        val freshPost = feedPost(userId = currentUserId)
+        coEvery { userRepository.getCurrentUser() } returns ApiResult.Success(freshUser)
+        coEvery { postRepository.getUserPosts(currentUserId, any(), any()) } returns
+            ApiResult.Success(FeedResult(posts = listOf(freshPost), nextCursor = null, hasMore = false))
+
+        vm.onPostCreated() // cancels the first call's job before it can land
+        advanceUntilIdle()
+
+        staleUserDeferred.complete(ApiResult.Success(currentUser(streakDays = 1)))
+        advanceUntilIdle()
+
+        val state = vm.uiState.value
+        assertEquals(4, state.streakDays)
+        assertEquals(2, state.postCount)
+        assertEquals(listOf(freshPost.id), state.posts.map { it.id })
+        assertFalse(state.isRefreshing)
+    }
+
+    @Test
+    fun `tranzitia din gol - postCount, spotScore, streakDays si posts trec de la zero la valori noi`() = runTest {
+        coEvery { userRepository.getCurrentUser() } returns
+            ApiResult.Success(currentUser(streakDays = 0).copy(spotScore = 0, postCount = 0))
+        coEvery { postRepository.getUserPosts(currentUserId, any(), any()) } returns
+            ApiResult.Success(emptyFeedResult())
+
+        val vm = buildVm(ownerSavedStateHandle())
+        advanceUntilIdle()
+
+        val initial = vm.uiState.value
+        assertEquals(0, initial.postCount)
+        assertEquals(0, initial.user?.spotScore)
+        assertEquals(0, initial.streakDays)
+        assertTrue(initial.posts.isEmpty())
+
+        val newPost = feedPost(userId = currentUserId)
+        coEvery { userRepository.getCurrentUser() } returns
+            ApiResult.Success(currentUser(streakDays = 1).copy(spotScore = 10, postCount = 1))
+        coEvery { postRepository.getUserPosts(currentUserId, any(), any()) } returns
+            ApiResult.Success(FeedResult(posts = listOf(newPost), nextCursor = null, hasMore = false))
+
+        vm.onPostCreated()
+        advanceUntilIdle()
+
+        val state = vm.uiState.value
+        assertEquals(1, state.postCount)
+        assertEquals(10, state.user?.spotScore)
+        assertEquals(1, state.streakDays)
+        assertEquals(listOf(newPost.id), state.posts.map { it.id })
+    }
+
+    @Test
+    fun `repro bug - user cu 0 postari - onPostCreated schimba toate cele trei statistici`() = runTest {
+        coEvery { userRepository.getCurrentUser() } returns
+            ApiResult.Success(currentUser(streakDays = 0).copy(spotScore = 0, postCount = 0))
+        coEvery { postRepository.getUserPosts(currentUserId, any(), any()) } returns
+            ApiResult.Success(emptyFeedResult())
+
+        val vm = buildVm(ownerSavedStateHandle())
+        advanceUntilIdle()
+
+        coEvery { userRepository.getCurrentUser() } returns
+            ApiResult.Success(currentUser(streakDays = 1).copy(spotScore = 5, postCount = 1))
+
+        vm.onPostCreated()
+        advanceUntilIdle()
+
+        val state = vm.uiState.value
+        assertEquals(1, state.postCount)
+        assertEquals(5, state.user?.spotScore)
+        assertEquals(1, state.streakDays)
+    }
+
+    // ── Calea de push prin userRepository.currentUser (pasul 9.8) ────────────
+
+    @Test
+    fun `emiterea unui user pe currentUser actualizeaza spotScore, postCount, streakDays fara apel getCurrentUser`() = runTest {
+        val currentUserFlow = MutableStateFlow<User?>(null)
+        every { userRepository.currentUser } returns currentUserFlow
+        coEvery { userRepository.getCurrentUser() } returns ApiResult.Success(currentUser())
+        coEvery { postRepository.getUserPosts(currentUserId, any(), any()) } returns
+            ApiResult.Success(emptyFeedResult())
+
+        val vm = buildVm(ownerSavedStateHandle())
+        advanceUntilIdle()
+
+        val pushedUser = currentUser(streakDays = 7).copy(spotScore = 33, postCount = 4)
+        currentUserFlow.value = pushedUser
+        advanceUntilIdle()
+
+        val state = vm.uiState.value
+        assertEquals(33, state.user?.spotScore)
+        assertEquals(4, state.postCount)
+        assertEquals(7, state.streakDays)
+        coVerify(exactly = 1) { userRepository.getCurrentUser() }
+    }
+
+    @Test
+    fun `pe profil strain o emisie pe currentUser nu modifica uiState-ul user`() = runTest {
+        val currentUserFlow = MutableStateFlow<User?>(null)
+        every { userRepository.currentUser } returns currentUserFlow
+        coEvery { userRepository.getUserById(foreignUserId) } returns ApiResult.Success(foreignUser())
+        coEvery { postRepository.getUserPosts(foreignUserId, any(), any()) } returns
+            ApiResult.Success(emptyFeedResult())
+
+        val vm = buildVm(foreignSavedStateHandle())
+        advanceUntilIdle()
+
+        val stateBeforePush = vm.uiState.value.user
+        currentUserFlow.value = currentUser(streakDays = 7).copy(spotScore = 33, postCount = 4)
+        advanceUntilIdle()
+
+        assertEquals(stateBeforePush, vm.uiState.value.user)
+        assertEquals(foreignUserId, vm.uiState.value.user?.id)
     }
 
     // ── Retry per imagine (grid tiles) ───────────────────────────────────────

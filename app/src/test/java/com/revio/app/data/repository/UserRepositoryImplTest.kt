@@ -148,4 +148,13 @@ class UserRepositoryImplTest {
         assertTrue(result is ApiResult.Error)
         assertTrue((result as ApiResult.Error).message.startsWith("Network error"))
     }
+
+    @Test
+    fun `setCurrentUser publica userul pe currentUser StateFlow`() = runTest {
+        val u = user()
+
+        repository.setCurrentUser(u)
+
+        assertEquals(u, repository.currentUser.value)
+    }
 }

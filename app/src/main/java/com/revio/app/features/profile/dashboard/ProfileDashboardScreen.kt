@@ -110,13 +110,18 @@ fun ProfileDashboardScreen(
     val tourStep by tourHostViewModel.tourController.step.collectAsState()
     var slotBounds by remember { mutableStateOf(emptyMap<NavSlot, Rect>()) }
 
+    // Captured once at first composition of this screen, so both effects below always collect
+    // from and reset the same entry — navController.currentBackStackEntry can momentarily still
+    // point at the popping ImageUpload entry while this screen is recomposing after a pop.
+    val screenBackStackEntry = remember { navController.currentBackStackEntry }
+
     // Refresh the grid after a post is created from this screen.
     LaunchedEffect(Unit) {
-        navController.currentBackStackEntry?.savedStateHandle
+        screenBackStackEntry?.savedStateHandle
             ?.getStateFlow("post_created", false)
             ?.collect { created ->
                 if (created) {
-                    navController.currentBackStackEntry?.savedStateHandle?.set("post_created", false)
+                    screenBackStackEntry.savedStateHandle.set("post_created", false)
                     viewModel.onPostCreated()
                 }
             }
@@ -124,11 +129,11 @@ fun ProfileDashboardScreen(
 
     // Refresh the grid after a post is edited from this screen.
     LaunchedEffect(Unit) {
-        navController.currentBackStackEntry?.savedStateHandle
+        screenBackStackEntry?.savedStateHandle
             ?.getStateFlow("post_updated", false)
             ?.collect { updated ->
                 if (updated) {
-                    navController.currentBackStackEntry?.savedStateHandle?.set("post_updated", false)
+                    screenBackStackEntry.savedStateHandle.set("post_updated", false)
                     viewModel.refresh()
                 }
             }

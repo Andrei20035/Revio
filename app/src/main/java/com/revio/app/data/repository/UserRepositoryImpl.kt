@@ -17,6 +17,9 @@ import javax.inject.Singleton
 
 interface UserRepository {
     val currentUser: StateFlow<User?>
+
+    /** Publishes [user] as the current user. Intended exclusively for API responses that already carry a fresh profile. */
+    fun setCurrentUser(user: User)
     suspend fun getUserById(userId: UUID): ApiResult<User>
     suspend fun getCurrentUser(): ApiResult<User>
     suspend fun getAllUsers(): ApiResult<List<User>>
@@ -35,6 +38,10 @@ class UserRepositoryImpl @Inject constructor(
 
     private val _currentUser = MutableStateFlow<User?>(null)
     override val currentUser: StateFlow<User?> = _currentUser.asStateFlow()
+
+    override fun setCurrentUser(user: User) {
+        _currentUser.value = user
+    }
 
     override suspend fun getUserById(userId: UUID): ApiResult<User> {
         return when (val result = safeApiCall { userApi.getUserById(userId) }) {
