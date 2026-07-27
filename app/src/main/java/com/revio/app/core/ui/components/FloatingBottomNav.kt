@@ -6,6 +6,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -125,15 +127,17 @@ fun FloatingBottomNav(
             )
             .border(width = 1.dp, color = NavBarBorder, shape = navBarShape)
             .height(RefNavBarHeight * scale)
-            // Consume every pointer event over the pill's bounds so taps on gaps/background
-            // don't fall through to whatever is rendered behind this foreground overlay.
-            // Children (icons) still get first crack at Main-pass events, so their clicks work.
+            // Occupy the pointer-input hit-test slot over the whole pill so taps on gaps/background
+            // don't fall through to whatever is rendered behind this foreground overlay. Unlike the
+            // previous version of this modifier, this does NOT call `consume()`: Compose stops the
+            // Main-pass hit-test at the first ancestor pointerInput node regardless of whether it
+            // consumes anything, so presence alone is enough to block pass-through. Consuming here
+            // would instead reach children's `clickable` on the Final pass and cancel their gesture
+            // via `waitForUpOrCancellation()` on any intervening pointer change (even sub-slop jitter),
+            // which is exactly what made taps unreliable on some devices.
             .pointerInput(Unit) {
-                awaitPointerEventScope {
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        event.changes.forEach { it.consume() }
-                    }
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
                 }
             }
             // Inner padding tuned so the five slots land on the Figma icon centers.
