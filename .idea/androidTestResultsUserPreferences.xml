@@ -23,8 +23,11 @@
               <option name="preferredColumnWidths">
                 <map>
                   <entry key="Duration" value="90" />
+                  <entry key="LGE LG-H930" value="120" />
                   <entry key="OnePlus KB2003" value="120" />
+                  <entry key="Pixel_9_Pro" value="120" />
                   <entry key="Tests" value="360" />
+                  <entry key="samsung SM-S921B" value="120" />
                 </map>
               </option>
             </AndroidTestResultsTableState>

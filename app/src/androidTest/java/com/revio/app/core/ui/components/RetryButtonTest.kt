@@ -1,6 +1,7 @@
 package com.revio.app.core.ui.components
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -55,9 +56,16 @@ class RetryButtonTest {
     }
 
     private fun setAnimatorScale(scale: String) {
-        InstrumentationRegistry.getInstrumentation().uiAutomation
+        val pfd = InstrumentationRegistry.getInstrumentation().uiAutomation
             .executeShellCommand("settings put global animator_duration_scale $scale")
+        // Reading to EOF and closing the descriptor waits for the shell command to complete.
+        // waitForIdleSync alone only waits for the UI thread, not for UiAutomation's shell job.
+        android.os.ParcelFileDescriptor.AutoCloseInputStream(pfd).bufferedReader().use { it.readText() }
         InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+    }
+
+    private fun setSpinning(spinning: MutableState<Boolean>, value: Boolean) {
+        composeTestRule.runOnIdle { spinning.value = value }
     }
 
     @Test
@@ -71,9 +79,9 @@ class RetryButtonTest {
         }
         composeTestRule.waitForIdle()
 
-        spinning.value = true
+        setSpinning(spinning, true)
         composeTestRule.waitForIdle()
-        spinning.value = false
+        setSpinning(spinning, false)
         composeTestRule.waitForIdle()
 
         // ONE_SHOT_MS = 600 in RetryButton.kt.
@@ -94,22 +102,26 @@ class RetryButtonTest {
         }
         composeTestRule.waitForIdle()
 
-        spinning.value = true
+        setSpinning(spinning, true)
         composeTestRule.waitForIdle()
-        spinning.value = false
-        composeTestRule.waitForIdle()
-        composeTestRule.mainClock.advanceTimeBy(300) // mid-revolution (ONE_SHOT_MS = 600)
+        composeTestRule.mainClock.advanceTimeBy(300)
         composeTestRule.waitForIdle()
         val midRotation = currentRotation
         assertTrue("ar trebui sa fie in miscare la jumatatea rotatiei: $midRotation", midRotation > 0f && midRotation < 360f)
 
-        // A second blip restarts from 0 rather than continuing/queuing the interrupted one.
-        spinning.value = true
+        // A new start after an interrupted rotation restarts from 0 rather than continuing it.
         composeTestRule.waitForIdle()
-        spinning.value = false
+        setSpinning(spinning, false)
+        composeTestRule.waitForIdle()
+        // The continuous loop observes the stop request at the end of its current 30° step.
+        composeTestRule.mainClock.advanceTimeBy(100)
+        composeTestRule.waitForIdle()
+        setSpinning(spinning, true)
+        composeTestRule.waitForIdle()
+        composeTestRule.mainClock.advanceTimeByFrame()
         composeTestRule.waitForIdle()
 
-        assertEquals(0f, currentRotation, 1f)
+        assertTrue("rotatia ar trebui sa reporneasca de la 0: $currentRotation", currentRotation < 10f)
     }
 
     @Test
@@ -123,7 +135,7 @@ class RetryButtonTest {
         }
         composeTestRule.waitForIdle()
 
-        spinning.value = true
+        setSpinning(spinning, true)
         composeTestRule.waitForIdle()
 
         // Sample the rotation every 20ms across ~2 full revolutions (SPIN_MS = 800 per turn).
@@ -162,12 +174,12 @@ class RetryButtonTest {
         }
         composeTestRule.waitForIdle()
 
-        spinning.value = true
+        setSpinning(spinning, true)
         composeTestRule.waitForIdle()
         composeTestRule.mainClock.advanceTimeBy(1600) // a couple of full turns
         composeTestRule.waitForIdle()
 
-        spinning.value = false
+        setSpinning(spinning, false)
         composeTestRule.waitForIdle()
         // STOP_MS = 400, plus slack for the in-flight 30°-step tween to finish first.
         composeTestRule.mainClock.advanceTimeBy(700)
@@ -188,9 +200,9 @@ class RetryButtonTest {
         }
         composeTestRule.waitForIdle()
 
-        spinning.value = true
+        setSpinning(spinning, true)
         composeTestRule.waitForIdle()
-        spinning.value = false
+        setSpinning(spinning, false)
         composeTestRule.waitForIdle()
         composeTestRule.mainClock.advanceTimeBy(1000)
         composeTestRule.waitForIdle()

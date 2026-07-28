@@ -67,7 +67,7 @@ fun AppScreenBackground(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .height(146.dp)
+                    .height(120.dp)
                     .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black)))
             )
         }

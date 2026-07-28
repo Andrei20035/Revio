@@ -1,7 +1,5 @@
 package com.revio.app.features.activity.components
 
-import android.os.Build
-import android.view.WindowManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -16,22 +14,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.window.DialogWindowProvider
+import com.revio.app.core.ui.overlay.DimOnlyDialogWindow
 import com.revio.app.core.ui.theme.Poppins
 
 private val OverlayMenuSurface = Color(0xFF1B1F33)
@@ -49,22 +43,7 @@ fun TodayInteractionsInfoOverlay(
             dismissOnClickOutside = true,
         ),
     ) {
-        val context = LocalContext.current
-        val blurRadiusPx = with(LocalDensity.current) { 28.dp.roundToPx() }
-        val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
-
-        LaunchedEffect(dialogWindow) {
-            val window = dialogWindow ?: return@LaunchedEffect
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val blurEnabled = context.getSystemService(WindowManager::class.java)
-                    ?.isCrossWindowBlurEnabled == true
-                window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
-                window.attributes = window.attributes.apply { blurBehindRadius = blurRadiusPx }
-                window.setDimAmount(if (blurEnabled) 0.25f else 0.5f)
-            } else {
-                window.setDimAmount(0.5f)
-            }
-        }
+        DimOnlyDialogWindow()
 
         // Outer full-screen box: tapping outside the card dismisses.
         Box(

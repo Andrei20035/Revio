@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.revio.app.R
+import com.revio.app.core.ui.blur.rememberNavBarBlurEnabled
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
@@ -96,6 +97,7 @@ fun FloatingBottomNav(
     val scale = (LocalConfiguration.current.screenWidthDp / ReferenceWidthDp).coerceIn(MinScale, MaxScale)
     val cornerRadius = RefCornerRadius * scale
     val navBarShape = RoundedCornerShape(cornerRadius)
+    val blurEnabled = hazeState != null && rememberNavBarBlurEnabled()
 
     Row(
         modifier = modifier
@@ -113,8 +115,8 @@ fun FloatingBottomNav(
             )
             .clip(navBarShape)
             .then(
-                if (hazeState != null) {
-                    Modifier.hazeEffect(state = hazeState) {
+                if (blurEnabled) {
+                    Modifier.hazeEffect(state = hazeState!!) {
                         blurRadius = 30.dp
                         tints = listOf(
                             HazeTint(Color(0xFF00161F).copy(alpha = 0.25f)),

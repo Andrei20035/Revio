@@ -2,6 +2,7 @@ package com.revio.app.core.ui.tour
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -28,16 +29,20 @@ class TourOverlayTest {
 
     @Test
     fun `fiecare_pas_afiseaza_titlul_si_textul_corespunzator`() {
+        val displayedStep = mutableStateOf(TourStep.Feed)
+        composeTestRule.setContent {
+            TourOverlay(
+                step = displayedStep.value,
+                spotlight = null,
+                onAdvance = {},
+                onPostCta = {},
+            )
+        }
+
         TourStep.entries.forEach { step ->
             val copy = tourCopyFor(step)
-            composeTestRule.setContent {
-                TourOverlay(
-                    step = step,
-                    spotlight = null,
-                    onAdvance = {},
-                    onPostCta = {},
-                )
-            }
+            composeTestRule.runOnIdle { displayedStep.value = step }
+            composeTestRule.waitForIdle()
 
             composeTestRule.onNodeWithText(copy.title, useUnmergedTree = true).assertIsDisplayed()
             composeTestRule.onNodeWithText(copy.body, useUnmergedTree = true).assertIsDisplayed()
@@ -46,16 +51,23 @@ class TourOverlayTest {
 
     @Test
     fun `tap_oriunde_pe_ecran_avanseaza_turul_pentru_pasii_1-4`() {
+        val displayedStep = mutableStateOf(TourStep.Feed)
+        var advanced = false
+        composeTestRule.setContent {
+            TourOverlay(
+                step = displayedStep.value,
+                spotlight = null,
+                onAdvance = { advanced = true },
+                onPostCta = {},
+            )
+        }
+
         listOf(TourStep.Feed, TourStep.Leaderboard, TourStep.Activity, TourStep.Profile).forEach { step ->
-            var advanced = false
-            composeTestRule.setContent {
-                TourOverlay(
-                    step = step,
-                    spotlight = null,
-                    onAdvance = { advanced = true },
-                    onPostCta = {},
-                )
+            composeTestRule.runOnIdle {
+                advanced = false
+                displayedStep.value = step
             }
+            composeTestRule.waitForIdle()
 
             composeTestRule.onRoot().performTouchInput { click(Offset(10f, 10f)) }
 

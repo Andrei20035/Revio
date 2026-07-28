@@ -72,7 +72,7 @@ fun SettingsScreen(
         }
     }
 
-    AppScreenBackground {
+    AppScreenBackground(showBottomScrim = false) {
         CompositionLocalProvider(LocalActivityScale provides rememberActivityScale()) {
         Column(
             modifier = Modifier
