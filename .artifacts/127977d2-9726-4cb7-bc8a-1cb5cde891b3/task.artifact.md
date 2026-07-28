@@ -1,0 +1,2 @@
+- [x] Rename test functions in `FeedGatedCardTest.kt`
+- [x] Verify build succeeds with `./gradlew :app:dexBuilderDebugAndroidTest`

@@ -16,17 +16,17 @@ kotlin {
 }
 
 android {
-    namespace = "com.revio.app"
+    namespace = "com.revio.social"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.revio.app"
+        applicationId = "com.revio.social"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
 
-        testInstrumentationRunner = "com.revio.app.HiltTestRunner"
+        testInstrumentationRunner = "com.revio.social.HiltTestRunner"
         buildConfigField(
             "String",
             "WEB_CLIENT_ID",
