@@ -8,6 +8,7 @@ import com.revio.social.data.remote.dto.post.UpdatePostRequest
 import com.revio.social.data.remote.dto.post.toDomain
 import com.revio.social.data.model.FeedPost
 import com.revio.social.data.model.Post
+import com.revio.social.data.model.User
 import com.revio.social.core.network.ApiResult
 import com.revio.social.core.network.map
 import com.revio.social.core.network.safeApiCall
@@ -21,13 +22,19 @@ import java.util.*
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/** Result of a successful post creation: the new post's id and the (possibly updated) current user. */
+data class CreatePostResult(
+    val postId: UUID,
+    val user: User?,
+)
+
 interface PostRepository {
     /** Creates a post via multipart upload (JSON metadata part + image bytes part). */
     suspend fun createPost(
         metadata: CreatePostMetadata,
         imageBytes: ByteArray,
         mimeType: String,
-    ): ApiResult<Unit>
+    ): ApiResult<CreatePostResult>
     suspend fun getPostDetail(postId: UUID): ApiResult<FeedPost>
     suspend fun getAllPosts(): ApiResult<List<Post>>
     suspend fun getCurrentDayPostsForUser(): ApiResult<List<Post>>
@@ -48,7 +55,7 @@ class PostRepositoryImpl @Inject constructor(
         metadata: CreatePostMetadata,
         imageBytes: ByteArray,
         mimeType: String,
-    ): ApiResult<Unit> {
+    ): ApiResult<CreatePostResult> {
         val metadataPart = json.encodeToString(metadata)
             .toRequestBody("application/json".toMediaType())
         val imagePart = MultipartBody.Part.createFormData(
@@ -59,7 +66,7 @@ class PostRepositoryImpl @Inject constructor(
         return safeApiCall { postApi.createPost(metadataPart, imagePart) }
             .map { response ->
                 response.user?.let { userRepository.setCurrentUser(it) }
-                Unit
+                CreatePostResult(postId = UUID.fromString(response.postId), user = response.user)
             }
     }
 

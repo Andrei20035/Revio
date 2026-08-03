@@ -81,9 +81,11 @@ import com.revio.social.core.ui.components.RetryButton
 import com.revio.social.core.ui.components.StateMessage
 import com.revio.social.core.ui.components.formatCount
 import com.revio.social.core.ui.components.interactionCountWidth
+import com.revio.social.core.ui.feedback.FirstPostFeedbackHost
 import com.revio.social.core.ui.theme.Poppins
 import com.revio.social.core.ui.tour.TourOverlay
 import com.revio.social.data.model.FeedPost
+import com.revio.social.data.model.FeedbackSurface
 import com.revio.social.data.model.ReportReason
 import com.revio.social.features.feed.components.CarLocationRow
 import com.revio.social.features.feed.components.CommentsSheet
@@ -337,6 +339,13 @@ fun FeedScreen(
                     CustomSnackbar(message = message)
                 }
             }
+
+            FirstPostFeedbackHost(
+                surface = FeedbackSurface.FEED,
+                isBlocked = {
+                    uiState.reportDialog != null || uiState.commentsSheet != null || uiState.userMessage != null
+                },
+            )
         },
     ) {
         // Bottom clearance = system nav inset (untouched) + scaled nav bar height + scaled bottom padding.

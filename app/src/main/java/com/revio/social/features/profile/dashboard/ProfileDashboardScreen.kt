@@ -70,7 +70,9 @@ import com.revio.social.core.ui.components.FloatingBottomNav
 import com.revio.social.core.ui.components.NavSlot
 import com.revio.social.core.ui.components.StateMessage
 import com.revio.social.core.ui.components.shimmer
+import com.revio.social.core.ui.feedback.FirstPostFeedbackHost
 import com.revio.social.core.ui.tour.TourOverlay
+import com.revio.social.data.model.FeedbackSurface
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import androidx.compose.runtime.CompositionLocalProvider
@@ -237,6 +239,20 @@ fun ProfileDashboardScreen(
                 ) {
                     CustomSnackbar(message = message)
                 }
+            }
+
+            // Only arm once onPostCreated()'s refresh has settled, so the user sees their new
+            // post in the grid before the prompt can appear.
+            if (!uiState.isRefreshing) {
+                FirstPostFeedbackHost(
+                    surface = FeedbackSurface.PROFILE,
+                    isBlocked = {
+                        uiState.selectedPost != null ||
+                            uiState.showEarlySpotterInfo ||
+                            uiState.commentsSheet != null ||
+                            uiState.userMessage != null
+                    },
+                )
             }
         },
     ) {

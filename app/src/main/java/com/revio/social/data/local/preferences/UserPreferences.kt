@@ -5,9 +5,13 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.revio.social.data.model.PromptStatus
+import com.revio.social.data.remote.dto.feedback.SubmitFirstPostFeedbackRequest
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.json.Json
+import java.time.Instant
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -25,9 +29,30 @@ enum class TourStatus {
     Completed,
 }
 
+/** Locally cached mirror of the server's first-post feedback prompt state — see [FeedbackPromptState][com.revio.social.data.model.FeedbackPromptState]. */
+data class CachedPromptState(
+    val status: PromptStatus,
+    val shownCount: Int,
+    val lastShownAt: Instant?,
+)
+
+internal fun CachedPromptState.serialize(): String =
+    "${status.name}|$shownCount|${lastShownAt?.toEpochMilli() ?: ""}"
+
+internal fun String.toCachedPromptState(): CachedPromptState? {
+    val parts = split("|")
+    if (parts.size != 3) return null
+    val status = runCatching { PromptStatus.valueOf(parts[0]) }.getOrNull() ?: return null
+    val shownCount = parts[1].toIntOrNull() ?: return null
+    val lastShownAt = parts[2].takeIf { it.isNotEmpty() }
+        ?.toLongOrNull()?.let { Instant.ofEpochMilli(it) }
+    return CachedPromptState(status, shownCount, lastShownAt)
+}
+
 @Singleton
 class UserPreferences @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val json: Json,
 ) {
 
     companion object {
@@ -37,6 +62,15 @@ class UserPreferences @Inject constructor(
         val USERNAME_KEY = stringPreferencesKey("username")
         val EMAIL_KEY = stringPreferencesKey("email")
         val TOUR_STATUS_KEY = stringPreferencesKey("guided_tour_status")
+
+        private fun firstPostFeedbackStateKey(userId: UUID) =
+            stringPreferencesKey("first_post_feedback_state_$userId")
+
+        private fun firstPostFeedbackPendingKey(userId: UUID) =
+            stringPreferencesKey("first_post_feedback_pending_$userId")
+
+        private fun firstPostFeedbackArmedKey(userId: UUID) =
+            booleanPreferencesKey("first_post_feedback_armed_$userId")
     }
 
     val onboardingCompleted: Flow<Boolean> = context.dataStore.data
@@ -61,6 +95,26 @@ class UserPreferences @Inject constructor(
 
     val email: Flow<String?> = context.dataStore.data
         .map { it[EMAIL_KEY] }
+
+    /** Locally cached first-post feedback prompt state for [userId]. `null` if never cached. */
+    fun firstPostFeedbackState(userId: UUID): Flow<CachedPromptState?> = context.dataStore.data
+        .map { preferences -> preferences[firstPostFeedbackStateKey(userId)]?.toCachedPromptState() }
+
+    /** Feedback response awaiting resubmission for [userId] (queued while offline). `null` if none pending. */
+    fun pendingFirstPostFeedback(userId: UUID): Flow<SubmitFirstPostFeedbackRequest?> = context.dataStore.data
+        .map { preferences ->
+            preferences[firstPostFeedbackPendingKey(userId)]?.let {
+                runCatching { json.decodeFromString(SubmitFirstPostFeedbackRequest.serializer(), it) }.getOrNull()
+            }
+        }
+
+    /**
+     * Whether [userId] has an armed-but-not-yet-shown first-post feedback prompt. Survives the
+     * app being killed right after a successful first post, before the prompt had a chance to
+     * appear on the next Feed/Profile visit.
+     */
+    fun firstPostFeedbackArmed(userId: UUID): Flow<Boolean> = context.dataStore.data
+        .map { preferences -> preferences[firstPostFeedbackArmedKey(userId)] ?: false }
 
     suspend fun setOnboardingCompleted(completed: Boolean) {
         context.dataStore.edit { it[ONBOARDING_KEY] = completed }
@@ -88,6 +142,25 @@ class UserPreferences @Inject constructor(
 
     suspend fun saveEmail(userEmail: String) {
         context.dataStore.edit { it[EMAIL_KEY] = userEmail }
+    }
+
+    suspend fun setFirstPostFeedbackState(userId: UUID, state: CachedPromptState) {
+        context.dataStore.edit { it[firstPostFeedbackStateKey(userId)] = state.serialize() }
+    }
+
+    suspend fun setPendingFirstPostFeedback(userId: UUID, request: SubmitFirstPostFeedbackRequest?) {
+        context.dataStore.edit { preferences ->
+            val key = firstPostFeedbackPendingKey(userId)
+            if (request == null) {
+                preferences.remove(key)
+            } else {
+                preferences[key] = json.encodeToString(SubmitFirstPostFeedbackRequest.serializer(), request)
+            }
+        }
+    }
+
+    suspend fun setFirstPostFeedbackArmed(userId: UUID, armed: Boolean) {
+        context.dataStore.edit { it[firstPostFeedbackArmedKey(userId)] = armed }
     }
 
     suspend fun clearAuthData() {

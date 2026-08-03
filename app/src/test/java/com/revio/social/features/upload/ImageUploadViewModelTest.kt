@@ -3,6 +3,8 @@ package com.revio.social.features.upload
 import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import com.revio.social.MainDispatcherRule
+import com.revio.social.core.feedback.PostCreatedEvent
+import com.revio.social.core.feedback.PostCreationSignal
 import com.revio.social.core.image.ImageCompressor
 import com.revio.social.core.network.ApiResult
 import com.revio.social.core.navigation.Screen
@@ -11,6 +13,7 @@ import com.revio.social.data.model.PlaceName
 import com.revio.social.data.remote.dto.car_model.CarModelOption
 import com.revio.social.data.remote.dto.post.CreatePostMetadata
 import com.revio.social.data.repository.CarModelRepository
+import com.revio.social.data.repository.CreatePostResult
 import com.revio.social.data.repository.LocationRepository
 import com.revio.social.data.repository.PostRepository
 import io.mockk.coEvery
@@ -44,6 +47,7 @@ class ImageUploadViewModelTest {
     private val postRepository: PostRepository = mockk()
     private val imageCompressor: ImageCompressor = mockk()
     private val locationRepository: LocationRepository = mockk()
+    private val postCreationSignal: PostCreationSignal = mockk(relaxed = true)
 
     @Before
     fun setUp() {
@@ -65,6 +69,7 @@ class ImageUploadViewModelTest {
             postRepository = postRepository,
             imageCompressor = imageCompressor,
             locationRepository = locationRepository,
+            postCreationSignal = postCreationSignal,
         )
     }
 
@@ -206,7 +211,8 @@ class ImageUploadViewModelTest {
             coEvery { imageCompressor.compress(fakeUri, any()) } returns
                 ImageCompressor.CompressedImage(byteArrayOf(1, 2, 3), "image/jpeg")
             val metadataSlot = slot<CreatePostMetadata>()
-            coEvery { postRepository.createPost(capture(metadataSlot), any(), any()) } returns ApiResult.Success(Unit)
+            coEvery { postRepository.createPost(capture(metadataSlot), any(), any()) } returns
+                ApiResult.Success(CreatePostResult(postId = UUID.randomUUID(), user = null))
 
             val brand = "BMW"
             val model = CarModelOption(id = UUID.randomUUID(), model = "M3")
@@ -229,5 +235,88 @@ class ImageUploadViewModelTest {
         } finally {
             unmockkStatic(Uri::class)
         }
+    }
+
+    @Test
+    fun `creating a new post emits PostCreatedEvent with the returned postId`() = runTest {
+        mockkStatic(Uri::class)
+        try {
+            val fakeUri = mockk<Uri>()
+            every { Uri.parse(any()) } returns fakeUri
+            coEvery { locationRepository.getCurrentLocation() } returns null
+            every { locationRepository.locationServicesEnabled() } returns true
+            coEvery { imageCompressor.compress(fakeUri, any()) } returns
+                ImageCompressor.CompressedImage(byteArrayOf(1, 2, 3), "image/jpeg")
+
+            val createdPostId = UUID.randomUUID()
+            coEvery { postRepository.createPost(any(), any(), any()) } returns
+                ApiResult.Success(CreatePostResult(postId = createdPostId, user = null))
+
+            val brand = "BMW"
+            val model = CarModelOption(id = UUID.randomUUID(), model = "M3")
+            coEvery { carModelRepository.getModelsForBrand(brand) } returns ApiResult.Success(listOf(model))
+
+            val viewModel = viewModel(imageUri = "content://fake/image.jpg")
+            viewModel.onBrandSelected(brand)
+            viewModel.onModelSelected(model.model)
+
+            viewModel.post()
+
+            assertEquals(true, viewModel.uiState.value.postSuccess)
+            val eventSlot = slot<PostCreatedEvent>()
+            coVerify(exactly = 1) { postCreationSignal.emit(capture(eventSlot)) }
+            assertEquals(createdPostId, eventSlot.captured.postId)
+        } finally {
+            unmockkStatic(Uri::class)
+        }
+    }
+
+    @Test
+    fun `a failed create-post attempt does not emit PostCreatedEvent`() = runTest {
+        mockkStatic(Uri::class)
+        try {
+            val fakeUri = mockk<Uri>()
+            every { Uri.parse(any()) } returns fakeUri
+            coEvery { locationRepository.getCurrentLocation() } returns null
+            every { locationRepository.locationServicesEnabled() } returns true
+            coEvery { imageCompressor.compress(fakeUri, any()) } returns
+                ImageCompressor.CompressedImage(byteArrayOf(1, 2, 3), "image/jpeg")
+
+            coEvery { postRepository.createPost(any(), any(), any()) } returns
+                ApiResult.Error("server error")
+
+            val brand = "BMW"
+            val model = CarModelOption(id = UUID.randomUUID(), model = "M3")
+            coEvery { carModelRepository.getModelsForBrand(brand) } returns ApiResult.Success(listOf(model))
+
+            val viewModel = viewModel(imageUri = "content://fake/image.jpg")
+            viewModel.onBrandSelected(brand)
+            viewModel.onModelSelected(model.model)
+
+            viewModel.post()
+
+            assertEquals(false, viewModel.uiState.value.postSuccess)
+            coVerify(exactly = 0) { postCreationSignal.emit(any()) }
+        } finally {
+            unmockkStatic(Uri::class)
+        }
+    }
+
+    @Test
+    fun `editing an existing post never emits PostCreatedEvent`() = runTest {
+        val postId = UUID.randomUUID()
+        coEvery { postRepository.getPostDetail(postId) } returns ApiResult.Error("not used in this test")
+        val model = CarModelOption(id = UUID.randomUUID(), model = "M3")
+        coEvery { carModelRepository.getModelsForBrand("BMW") } returns ApiResult.Success(listOf(model))
+        coEvery { postRepository.updatePost(eq(postId), any()) } returns
+            ApiResult.Success(mockk(relaxed = true))
+
+        val viewModel = viewModel(postId = postId.toString())
+        viewModel.onBrandSelected("BMW")
+        viewModel.onModelSelected(model.model)
+
+        viewModel.post()
+
+        coVerify(exactly = 0) { postCreationSignal.emit(any()) }
     }
 }

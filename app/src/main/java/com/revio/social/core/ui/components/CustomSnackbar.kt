@@ -12,13 +12,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
+/** Background for a positive/success message — see [CustomSnackbar]'s `backgroundColor` param. */
+val SnackbarSuccessColor = Color(0xFF2E7D32)
+
 @Composable
-fun CustomSnackbar(message: String) {
+fun CustomSnackbar(message: String, backgroundColor: Color = Color(0xFFB00020)) {
     Box(
         modifier = Modifier.Companion
             .fillMaxWidth()
             .padding(16.dp)
-            .background(Color(0xFFB00020), shape = RoundedCornerShape(10.dp))
+            .background(backgroundColor, shape = RoundedCornerShape(10.dp))
             .padding(12.dp)
     ) {
         Text(

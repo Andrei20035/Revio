@@ -52,12 +52,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.revio.social.core.tour.TourStep
 import com.revio.social.core.ui.components.GradientText
+import com.revio.social.core.ui.overlay.OverlayAccent
+import com.revio.social.core.ui.overlay.OverlayBorder
+import com.revio.social.core.ui.overlay.OverlayScrim
+import com.revio.social.core.ui.overlay.OverlaySurface
 import com.revio.social.core.ui.theme.Poppins
-
-private val ScrimColor = Color.Black.copy(alpha = 0.72f)
-private val SpotlightAccent = Color(0xFF34D7C4)
-private val OverlayMenuSurface = Color(0xFF1B1F33)
-private val OverlayMenuBorder = Color(0x1FFFFFFF)
 
 /**
  * Full-screen, contextual coach-mark for the first-time guided tour. Presentational and
@@ -148,7 +147,7 @@ fun TourOverlay(
                 // instead of drawing an opaque black circle.
                 .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
                 .drawWithContent {
-                    drawRect(ScrimColor)
+                    drawRect(OverlayScrim)
                     animatedSpotlight?.let { rect ->
                         val radius = maxOf(rect.width, rect.height) / 2f + 14.dp.toPx()
                         drawCircle(
@@ -158,7 +157,7 @@ fun TourOverlay(
                             blendMode = BlendMode.Clear,
                         )
                         drawCircle(
-                            color = SpotlightAccent.copy(alpha = pulseAlpha),
+                            color = OverlayAccent.copy(alpha = pulseAlpha),
                             radius = radius,
                             center = rect.center,
                             style = Stroke(width = 2.dp.toPx()),
@@ -175,8 +174,8 @@ fun TourOverlay(
                 .padding(bottom = 104.dp)
                 .shadow(elevation = 24.dp, shape = RoundedCornerShape(20.dp))
                 .clip(RoundedCornerShape(20.dp))
-                .background(OverlayMenuSurface)
-                .border(1.dp, OverlayMenuBorder, RoundedCornerShape(20.dp))
+                .background(OverlaySurface)
+                .border(1.dp, OverlayBorder, RoundedCornerShape(20.dp))
                 .padding(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {

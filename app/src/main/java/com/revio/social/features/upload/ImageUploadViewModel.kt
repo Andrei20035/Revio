@@ -4,6 +4,8 @@ import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.revio.social.core.feedback.PostCreatedEvent
+import com.revio.social.core.feedback.PostCreationSignal
 import com.revio.social.core.image.CropTransform
 import com.revio.social.core.image.ImageCompressor
 import com.revio.social.core.network.ApiResult
@@ -32,11 +34,17 @@ class ImageUploadViewModel @Inject constructor(
     private val postRepository: PostRepository,
     private val imageCompressor: ImageCompressor,
     private val locationRepository: LocationRepository,
+    private val postCreationSignal: PostCreationSignal,
 ) : ViewModel() {
 
     // In-flight location resolution, if any. Prevents concurrent requests but allows retries
     // once the previous attempt has finished (unlike the one-shot latch this replaced).
     private var locationJob: Job? = null
+
+    // Tracks failed create-post attempts for this VM instance, surfaced on PostCreatedEvent
+    // so the first-post feedback prompt can factor upload friction into its analytics.
+    private var createPostRetryCount = 0
+    private var lastCreatePostErrorCode: String? = null
 
     private val _uiState = MutableStateFlow(ImageUploadUiState())
     val uiState: StateFlow<ImageUploadUiState> = _uiState.asStateFlow()
@@ -315,10 +323,27 @@ class ImageUploadViewModel @Inject constructor(
                 createdAtTimezone = ZoneId.systemDefault().id,
             )
 
+            val uploadStartedAt = System.currentTimeMillis()
             when (val result = postRepository.createPost(metadata, compressed.bytes, compressed.mimeType)) {
-                is ApiResult.Success -> _uiState.update { it.copy(isPosting = false, postSuccess = true) }
-                is ApiResult.Error -> _uiState.update {
-                    it.copy(isPosting = false, userMessage = result.message)
+                is ApiResult.Success -> {
+                    _uiState.update { it.copy(isPosting = false, postSuccess = true) }
+                    postCreationSignal.emit(
+                        PostCreatedEvent(
+                            postId = result.data.postId,
+                            uploadDurationMs = System.currentTimeMillis() - uploadStartedAt,
+                            retryCount = createPostRetryCount,
+                            lastErrorCode = lastCreatePostErrorCode,
+                        )
+                    )
+                    createPostRetryCount = 0
+                    lastCreatePostErrorCode = null
+                }
+                is ApiResult.Error -> {
+                    createPostRetryCount++
+                    lastCreatePostErrorCode = result.code
+                    _uiState.update {
+                        it.copy(isPosting = false, userMessage = result.message)
+                    }
                 }
             }
         }
