@@ -163,6 +163,7 @@ fun ProfileDashboardScreen(
         LocalProfileDashVSpacingScale provides rememberProfileDashVSpacingScale(),
     ) {
     AppScreenBackground(
+        showBottomScrim = uiState.isOwnProfile,
         foreground = {
             if (uiState.isOwnProfile) {
                 FloatingBottomNav(

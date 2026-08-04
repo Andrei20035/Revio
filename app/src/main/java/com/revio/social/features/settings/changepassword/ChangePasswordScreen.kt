@@ -84,7 +84,7 @@ fun ChangePasswordScreen(
         }
     }
 
-    AppScreenBackground(showBottomScrim = false) {
+    AppScreenBackground {
         CompositionLocalProvider(LocalActivityScale provides rememberActivityScale()) {
             val focusManager = LocalFocusManager.current
             val newPasswordFocusRequester = remember { FocusRequester() }

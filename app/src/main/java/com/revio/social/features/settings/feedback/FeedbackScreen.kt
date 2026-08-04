@@ -58,7 +58,7 @@ fun FeedbackScreen(
         viewModel.onAction(FeedbackAction.PreviousStep)
     }
 
-    AppScreenBackground(showBottomScrim = false) {
+    AppScreenBackground {
         val activityScale = rememberActivityScale()
         CompositionLocalProvider(
             LocalActivityScale provides activityScale,

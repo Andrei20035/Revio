@@ -43,7 +43,7 @@ private val PolicyWarningColor = Color(0xFFFFC766)
 
 @Composable
 fun PrivacyPolicyScreen(navController: NavController) {
-    AppScreenBackground(showBottomScrim = false) {
+    AppScreenBackground {
         CompositionLocalProvider(LocalActivityScale provides rememberActivityScale()) {
             Column(
                 modifier = Modifier

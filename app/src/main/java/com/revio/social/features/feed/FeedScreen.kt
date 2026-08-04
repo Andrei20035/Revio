@@ -273,6 +273,7 @@ fun FeedScreen(
         LocalFeedImageLoader provides rememberFeedImageLoader(),
     ) {
     AppScreenBackground(
+        showBottomScrim = true,
         foreground = {
             FloatingBottomNav(
                 selected = FeedNavItem.Home,

@@ -67,6 +67,7 @@ fun LeaderboardScreen(
     }
 
     AppScreenBackground(
+        showBottomScrim = true,
         foreground = {
             FloatingBottomNav(
                 selected = FeedNavItem.Leaderboard,

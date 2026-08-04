@@ -99,7 +99,7 @@ fun PersonalInfoScreen(
         }
     }
 
-    AppScreenBackground(showBottomScrim = false) {
+    AppScreenBackground {
         val activityScale = rememberActivityScale()
         CompositionLocalProvider(
             LocalActivityScale provides activityScale,

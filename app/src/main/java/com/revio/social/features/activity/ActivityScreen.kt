@@ -72,6 +72,7 @@ fun ActivityScreen(
     var slotBounds by remember { mutableStateOf(emptyMap<NavSlot, Rect>()) }
 
     AppScreenBackground(
+        showBottomScrim = true,
         foreground = {
             FloatingBottomNav(
                 selected = FeedNavItem.Activity,

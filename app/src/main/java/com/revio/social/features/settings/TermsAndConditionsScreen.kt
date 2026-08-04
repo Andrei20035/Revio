@@ -43,7 +43,7 @@ private val TermsWarningColor = Color(0xFFFFC766)
 
 @Composable
 fun TermsAndConditionsScreen(navController: NavController) {
-    AppScreenBackground(showBottomScrim = false) {
+    AppScreenBackground {
         CompositionLocalProvider(LocalActivityScale provides rememberActivityScale()) {
             Column(
                 modifier = Modifier
