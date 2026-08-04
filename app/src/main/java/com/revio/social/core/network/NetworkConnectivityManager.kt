@@ -22,6 +22,7 @@ class NetworkConnectivityManager @Inject constructor(
     private val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     private val _isNetworkAvailable = MutableStateFlow(false)
     private val _isInternetValidated = MutableStateFlow(false)
+    private val _connectionType = MutableStateFlow<String?>(null)
 
     /**
      * A StateFlow that emits the current network connectivity status.
@@ -38,6 +39,13 @@ class NetworkConnectivityManager @Inject constructor(
      * perfectly good calls exactly when a reconnect-triggered retry fires.
      */
     val isInternetValidated: StateFlow<Boolean> = _isInternetValidated.asStateFlow()
+
+    /**
+     * The transport of the active network: `"wifi"`, `"cellular"`, `"ethernet"`, `"other"`, or
+     * `null` when there is no active network. Intended for diagnostic context sent with user
+     * feedback reports, not for gating requests.
+     */
+    val connectionType: StateFlow<String?> = _connectionType.asStateFlow()
 
     init {
         refresh()
@@ -64,5 +72,12 @@ class NetworkConnectivityManager @Inject constructor(
 
         _isNetworkAvailable.value = hasInternet
         _isInternetValidated.value = isValidated
+        _connectionType.value = when {
+            capabilities == null -> null
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "wifi"
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "cellular"
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "ethernet"
+            else -> "other"
+        }
     }
 }

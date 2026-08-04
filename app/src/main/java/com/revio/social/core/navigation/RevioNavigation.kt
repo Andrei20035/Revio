@@ -26,6 +26,7 @@ import com.revio.social.features.settings.TermsAndConditionsScreen
 import com.revio.social.features.settings.personalinfo.PersonalInfoScreen
 import com.revio.social.features.settings.changepassword.ChangePasswordScreen
 import com.revio.social.features.settings.deleteaccount.DeleteAccountScreen
+import com.revio.social.features.settings.feedback.FeedbackScreen
 
 @Composable
 fun RevioNavigation(
@@ -207,6 +208,24 @@ fun RevioNavigation(
 
         composable(Screen.TermsConditions.route) {
             TermsAndConditionsScreen(navController = navController)
+        }
+
+        composable(
+            route = Screen.Feedback.route,
+            arguments = listOf(
+                navArgument(Screen.Feedback.ARG_SOURCE) {
+                    type = NavType.StringType
+                    defaultValue = "settings_feedback"
+                },
+                navArgument(Screen.Feedback.ARG_ORIGIN_SCREEN) {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+            ),
+        ) {
+            // The source and origin-screen nav args are read by FeedbackViewModel via SavedStateHandle.
+            FeedbackScreen(navController = navController)
         }
 
         // Add other screens...

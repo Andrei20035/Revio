@@ -42,4 +42,18 @@ sealed class Screen(val route: String) {
         /** Builds the concrete route for editing an existing post identified by [postId]. */
         fun createEditRoute(postId: String): String = "image_upload?postId=$postId"
     }
+
+    /**
+     * Settings feedback form. Carries the submission source and, optionally, the screen the
+     * form was opened from — read via `SavedStateHandle` in `FeedbackViewModel`.
+     */
+    object Feedback : Screen("feedback?source={source}&screen={screen}") {
+        const val ARG_SOURCE = "source"
+        const val ARG_ORIGIN_SCREEN = "screen"
+
+        fun createRoute(source: String = "settings_feedback", originScreen: String? = null): String {
+            val screenParam = originScreen?.let { "&screen=${Uri.encode(it)}" } ?: ""
+            return "feedback?source=$source$screenParam"
+        }
+    }
 }

@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.revio.social.data.model.PromptStatus
 import com.revio.social.data.remote.dto.feedback.SubmitFirstPostFeedbackRequest
+import com.revio.social.data.remote.dto.feedback.SubmitUserFeedbackRequest
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -71,6 +72,9 @@ class UserPreferences @Inject constructor(
 
         private fun firstPostFeedbackArmedKey(userId: UUID) =
             booleanPreferencesKey("first_post_feedback_armed_$userId")
+
+        private fun userFeedbackPendingKey(userId: UUID) =
+            stringPreferencesKey("user_feedback_pending_$userId")
     }
 
     val onboardingCompleted: Flow<Boolean> = context.dataStore.data
@@ -115,6 +119,14 @@ class UserPreferences @Inject constructor(
      */
     fun firstPostFeedbackArmed(userId: UUID): Flow<Boolean> = context.dataStore.data
         .map { preferences -> preferences[firstPostFeedbackArmedKey(userId)] ?: false }
+
+    /** Settings feedback submission awaiting resubmission for [userId] (queued while offline). `null` if none pending. */
+    fun pendingUserFeedback(userId: UUID): Flow<SubmitUserFeedbackRequest?> = context.dataStore.data
+        .map { preferences ->
+            preferences[userFeedbackPendingKey(userId)]?.let {
+                runCatching { json.decodeFromString(SubmitUserFeedbackRequest.serializer(), it) }.getOrNull()
+            }
+        }
 
     suspend fun setOnboardingCompleted(completed: Boolean) {
         context.dataStore.edit { it[ONBOARDING_KEY] = completed }
@@ -161,6 +173,17 @@ class UserPreferences @Inject constructor(
 
     suspend fun setFirstPostFeedbackArmed(userId: UUID, armed: Boolean) {
         context.dataStore.edit { it[firstPostFeedbackArmedKey(userId)] = armed }
+    }
+
+    suspend fun setPendingUserFeedback(userId: UUID, request: SubmitUserFeedbackRequest?) {
+        context.dataStore.edit { preferences ->
+            val key = userFeedbackPendingKey(userId)
+            if (request == null) {
+                preferences.remove(key)
+            } else {
+                preferences[key] = json.encodeToString(SubmitUserFeedbackRequest.serializer(), request)
+            }
+        }
     }
 
     suspend fun clearAuthData() {

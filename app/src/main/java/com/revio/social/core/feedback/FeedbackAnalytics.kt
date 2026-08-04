@@ -28,6 +28,19 @@ enum class FeedbackEventName(val eventName: String) {
     ABANDONED_NAVIGATION("fp_feedback_abandoned_navigation"),
     RESHOWN_AFTER_COOLDOWN("fp_feedback_reshown_after_cooldown"),
     SUBMITTED_SECOND_SHOW("fp_feedback_submitted_second_show"),
+
+    // Settings feedback funnel — sharing the `sf_` prefix, distinct from the first-post prompt.
+    ROW_VIEWED("sf_row_viewed"),
+    SCREEN_OPENED("sf_screen_opened"),
+    CATEGORY_SELECTED("sf_category_selected"),
+    CATEGORY_CHANGED("sf_category_changed"),
+    MESSAGE_STARTED("sf_message_started"),
+    SEND_PRESSED("sf_send_pressed"),
+    SENT("sf_sent"),
+    SEND_FAILED("sf_send_failed"),
+    RETRY_PRESSED("sf_retry_pressed"),
+    ABANDONED("sf_abandoned"),
+    ANOTHER_STARTED("sf_another_started"),
 }
 
 /**
@@ -42,6 +55,12 @@ data class FeedbackEvent(
     val surface: String? = null,
     val hasComment: Boolean? = null,
     val showIndex: Int? = null,
+    /** Settings feedback funnel only — the selected `FeedbackCategory` name, never free text. */
+    val category: String? = null,
+    /** Settings feedback funnel only — the selected `FeedbackArea` name, never free text. */
+    val area: String? = null,
+    /** Settings feedback funnel only — the `FeedbackSource` name, never free text. */
+    val source: String? = null,
 )
 
 interface Analytics {
@@ -60,6 +79,9 @@ class FirebaseAnalyticsLogger @Inject constructor(
             event.surface?.let { putString("surface", it) }
             event.hasComment?.let { putBoolean("has_comment", it) }
             event.showIndex?.let { putInt("show_index", it) }
+            event.category?.let { putString("category", it) }
+            event.area?.let { putString("area", it) }
+            event.source?.let { putString("source", it) }
         }
         firebaseAnalytics.logEvent(event.name.eventName, params)
     }

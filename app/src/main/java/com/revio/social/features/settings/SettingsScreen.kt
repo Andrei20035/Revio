@@ -202,6 +202,18 @@ fun SettingsScreen(
                 onClick = { navController.navigate(Screen.ChangePassword.route) },
             )
 
+            // ── Help us improve section ─────────────────────────────────────
+            Spacer(modifier = Modifier.height(24.dp.actScaled()))
+            SectionLabel("Help us improve")
+            Spacer(modifier = Modifier.height(8.dp.actScaled()))
+            SettingsRow(
+                iconRes = R.drawable.feedback_icon,
+                label = "Feedback & ideas",
+                topRound = true,
+                bottomRound = true,
+                onClick = { navController.navigate(Screen.Feedback.createRoute()) },
+            )
+
             // ── Others section ───────────────────────────────────────────────
             Spacer(modifier = Modifier.height(24.dp.actScaled()))
             SectionLabel("Others")
