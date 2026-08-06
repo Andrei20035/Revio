@@ -70,6 +70,15 @@ fun ActivityScreen(
     val tourHostViewModel: TourHostViewModel = hiltViewModel()
     val tourStep by tourHostViewModel.tourController.step.collectAsState()
     var slotBounds by remember { mutableStateOf(emptyMap<NavSlot, Rect>()) }
+    val goToLeaderboard = {
+        navController.navigate(Screen.Leaderboard.route) {
+            popUpTo(Screen.Feed.route) {
+                saveState = true
+            }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
 
     AppScreenBackground(
         showBottomScrim = true,
@@ -86,15 +95,7 @@ fun ActivityScreen(
                         restoreState = true
                     }
                 },
-                onLeaderboard = {
-                    navController.navigate(Screen.Leaderboard.route) {
-                        popUpTo(Screen.Feed.route) {
-                            saveState = true
-                        }
-                        launchSingleTop = true
-                        restoreState = true
-                    }
-                },
+                onLeaderboard = goToLeaderboard,
                 onPlus = openPostCreation,
                 onActivity = { /* already here */ },
                 onProfile = {
@@ -209,7 +210,7 @@ fun ActivityScreen(
                                         when (activityItem) {
                                             is ActivityItem.LikeItem -> LikeActivityCard(activityItem)
                                             is ActivityItem.CommentItem -> CommentActivityCard(activityItem)
-                                            is ActivityItem.LeaderboardUpItem -> LeaderboardUpCard(activityItem)
+                                            is ActivityItem.LeaderboardUpItem -> LeaderboardUpCard(activityItem, onClick = goToLeaderboard)
                                             is ActivityItem.StreakItem -> StreakCard(activityItem)
                                         }
                                         Spacer(modifier = Modifier.height(12.dp.actScaled()))

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -37,20 +38,22 @@ fun StreakCard(item: ActivityItem.StreakItem, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(75.dp.actScaled())
+            .heightIn(min = 75.dp.actScaled())
             .clip(CardShape)
             .border(1.dp, StreakOrange, CardShape)
             .background(CardFill)
-            .padding(horizontal = 20.dp.actScaled()),
+            .padding(horizontal = 20.dp.actScaled(), vertical = 12.dp.actScaled()),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Image(
-            painter = painterResource(R.drawable.fire),
-            contentDescription = null,
-            modifier = Modifier
-                .width(20.dp.actScaled())
-                .height(24.dp.actScaled()),
-        )
+        ActivityIconSlot {
+            Image(
+                painter = painterResource(R.drawable.fire),
+                contentDescription = null,
+                modifier = Modifier
+                    .width(20.dp.actScaled())
+                    .height(24.dp.actScaled()),
+            )
+        }
 
         Column(
             modifier = Modifier
