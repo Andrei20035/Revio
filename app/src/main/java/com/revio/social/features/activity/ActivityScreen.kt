@@ -96,7 +96,7 @@ fun ActivityScreen(
                     }
                 },
                 onLeaderboard = goToLeaderboard,
-                onPlus = openPostCreation,
+                onPlus = openPostCreation.openChooser,
                 onActivity = { /* already here */ },
                 onProfile = {
                     navController.navigate(Screen.Profile.route) {

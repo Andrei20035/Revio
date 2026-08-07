@@ -85,6 +85,7 @@ import com.revio.social.core.ui.scaling.rememberProfileDashScale
 import com.revio.social.core.ui.scaling.rememberProfileDashVSpacingScale
 import com.revio.social.features.feed.components.CommentsSheet
 import com.revio.social.features.feed.components.rememberPostCreationLauncher
+import com.revio.social.features.profile.dashboard.components.MyChallengesEntryCard
 import java.util.UUID
 
 // Figma tokens — ProfileDashboardScreen (node 790:1216, frame 402×874dp)
@@ -188,7 +189,7 @@ fun ProfileDashboardScreen(
                             restoreState = true
                         }
                     },
-                    onPlus = openPostCreation,
+                    onPlus = openPostCreation.openChooser,
                     onActivity = {
                         navController.navigate(Screen.Activity.route) {
                             popUpTo(Screen.Feed.route) {
@@ -219,7 +220,7 @@ fun ProfileDashboardScreen(
                         onAdvance = {},
                         onPostCta = {
                             tourHostViewModel.tourController.completeAndPersist()
-                            openPostCreation()
+                            openPostCreation.openChooser()
                         },
                     )
                     else -> {}
@@ -292,6 +293,19 @@ fun ProfileDashboardScreen(
             // ── Header: stats card ───────────────────────────────────────
             item(span = { GridItemSpan(maxLineSpan) }) {
                 StatsCard(uiState = uiState)
+            }
+
+            // ── My Challenges entry point — own profile only ─────────────
+            if (uiState.isOwnProfile) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    val challengesEntryViewModel: MyChallengesEntryViewModel = hiltViewModel()
+                    val challengesEntryState by challengesEntryViewModel.uiState.collectAsState()
+                    MyChallengesEntryCard(
+                        state = challengesEntryState,
+                        onClick = { navController.navigate(Screen.MyChallenges.route) },
+                        modifier = Modifier.padding(bottom = 12.dp.dashScaledV()),
+                    )
+                }
             }
 
             // ── Loading / empty / error states ───────────────────────────

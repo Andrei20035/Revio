@@ -137,6 +137,12 @@ object NetworkModule {
 
     @Provides
     @Singleton
+    fun provideChallengeApi(retrofit: Retrofit): ChallengeApi {
+        return retrofit.create(ChallengeApi::class.java)
+    }
+
+    @Provides
+    @Singleton
     fun provideCommentApi(retrofit: Retrofit): CommentApi {
         return retrofit.create(CommentApi::class.java)
     }

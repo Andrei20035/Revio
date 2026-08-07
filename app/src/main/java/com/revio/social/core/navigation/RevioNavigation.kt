@@ -187,6 +187,22 @@ fun RevioNavigation(
             PlaceholderScreen(title = "Edit Profile", navController = navController)
         }
 
+        composable(Screen.MyChallenges.route) {
+            PlaceholderScreen(title = "My Challenges", navController = navController)
+        }
+
+        composable(
+            route = Screen.ChallengeDetail.route,
+            arguments = listOf(
+                navArgument(Screen.ChallengeDetail.ARG_CHALLENGE_ID) {
+                    type = NavType.StringType
+                },
+            ),
+        ) {
+            // The challengeId nav arg is read by ChallengeDetailViewModel via SavedStateHandle.
+            PlaceholderScreen(title = "Challenge Detail", navController = navController)
+        }
+
         composable(Screen.PersonalInfo.route) {
             PersonalInfoScreen(
                 navController = navController,

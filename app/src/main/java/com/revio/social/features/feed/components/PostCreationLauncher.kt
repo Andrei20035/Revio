@@ -15,8 +15,18 @@ import androidx.navigation.NavController
 import com.revio.social.core.navigation.Screen
 import java.io.File
 
+/**
+ * [openChooser] shows the camera-vs-gallery picker (the Plus button, the onboarding tour's post
+ * CTA). [openCamera] skips straight to the camera — used by the weekend-challenge card's
+ * `Spot now` CTA, which only ever wants a fresh camera capture, never a gallery pick.
+ */
+data class PostCreationLaunchers(
+    val openChooser: () -> Unit,
+    val openCamera: () -> Unit,
+)
+
 @Composable
-fun rememberPostCreationLauncher(navController: NavController): () -> Unit {
+fun rememberPostCreationLauncher(navController: NavController): PostCreationLaunchers {
     val context = LocalContext.current
     var showPostDialog by remember { mutableStateOf(false) }
     var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
@@ -38,13 +48,17 @@ fun rememberPostCreationLauncher(navController: NavController): () -> Unit {
         }
     }
 
+    val launchCamera = {
+        val uri = createCameraImageUri(context)
+        pendingCameraUri = uri
+        cameraLauncher.launch(uri)
+    }
+
     if (showPostDialog) {
         PostYourFindOverlay(
             onCamera = {
                 showPostDialog = false
-                val uri = createCameraImageUri(context)
-                pendingCameraUri = uri
-                cameraLauncher.launch(uri)
+                launchCamera()
             },
             onGallery = {
                 showPostDialog = false
@@ -54,7 +68,10 @@ fun rememberPostCreationLauncher(navController: NavController): () -> Unit {
         )
     }
 
-    return { showPostDialog = true }
+    return PostCreationLaunchers(
+        openChooser = { showPostDialog = true },
+        openCamera = launchCamera,
+    )
 }
 
 fun createCameraImageUri(context: Context): Uri {

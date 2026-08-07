@@ -2,6 +2,10 @@ package com.revio.social.features.feed
 
 import android.content.Context
 import android.content.Intent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -62,6 +66,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import coil3.ImageLoader
 import coil3.compose.AsyncImage
@@ -87,6 +94,10 @@ import com.revio.social.core.ui.tour.TourOverlay
 import com.revio.social.data.model.FeedPost
 import com.revio.social.data.model.FeedbackSurface
 import com.revio.social.data.model.ReportReason
+import com.revio.social.features.challenge.ChallengeRefreshTrigger
+import com.revio.social.features.challenge.ChallengeUiState
+import com.revio.social.features.challenge.ChallengeViewModel
+import com.revio.social.features.challenge.components.ChallengeCard
 import com.revio.social.features.feed.components.CarLocationRow
 import com.revio.social.features.feed.components.CommentsSheet
 import com.revio.social.features.feed.components.FeedPostSkeleton
@@ -192,14 +203,22 @@ private fun rememberFeedImageLoader(): ImageLoader {
 fun FeedScreen(
     navController: NavController,
     viewModel: FeedViewModel = hiltViewModel(),
+    challengeViewModel: ChallengeViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val challengeState by challengeViewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val openPostCreation = rememberPostCreationLauncher(navController)
     val hazeState = remember { HazeState() }
     val tourHostViewModel: TourHostViewModel = hiltViewModel()
     val tourStep by tourHostViewModel.tourController.step.collectAsState()
     var slotBounds by remember { mutableStateOf(emptyMap<NavSlot, Rect>()) }
+
+    // Recomputes the countdown immediately (in case the app sat backgrounded past a minute
+    // boundary, or past endsAt entirely) and kicks a coalesced refresh — see ChallengeViewModel.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        challengeViewModel.onResumed()
+    }
 
     // A brand-new signup arms the tour but never passes through StartDestinationViewModel's
     // app-start check again, so this is the one guaranteed moment the tour can actually start
@@ -288,7 +307,7 @@ fun FeedScreen(
                         restoreState = true
                     }
                 },
-                onPlus = openPostCreation,
+                onPlus = openPostCreation.openChooser,
                 onActivity = {
                     navController.navigate(Screen.Activity.route) {
                         popUpTo(Screen.Feed.route) {
@@ -357,7 +376,10 @@ fun FeedScreen(
 
         PullToRefreshBox(
             isRefreshing = uiState.isRefreshing,
-            onRefresh = { viewModel.refresh() },
+            onRefresh = {
+                viewModel.refresh()
+                challengeViewModel.refresh(ChallengeRefreshTrigger.PullToRefresh)
+            },
             modifier = Modifier.fillMaxSize().hazeSource(hazeState),
         ) {
             LazyColumn(
@@ -371,6 +393,35 @@ fun FeedScreen(
                     bottom = bottomClearance,
                 ),
             ) {
+                // Card is entirely optional for the feed: absent, stale, or slow to load, it
+                // never blocks or delays the posts below it (separate ViewModel, own network call).
+                val currentChallengeState = challengeState
+                if (currentChallengeState is ChallengeUiState.Active) {
+                    item(key = "challenge") {
+                        var visible by remember { mutableStateOf(false) }
+                        LaunchedEffect(Unit) { visible = true }
+                        AnimatedVisibility(
+                            visible = visible,
+                            enter = fadeIn(tween(150)) + expandVertically(tween(150)),
+                        ) {
+                            Column {
+                                ChallengeCard(
+                                    state = currentChallengeState,
+                                    onCardClick = {
+                                        navController.navigate(
+                                            Screen.ChallengeDetail.createRoute(currentChallengeState.challengeId),
+                                        ) {
+                                            launchSingleTop = true
+                                        }
+                                    },
+                                    onSpotNow = openPostCreation.openCamera,
+                                )
+                                Spacer(modifier = Modifier.height(24.dp))
+                            }
+                        }
+                    }
+                }
+
                 when (val content = uiState.content) {
                     FeedContent.Skeletons -> items(SKELETON_COUNT, key = { "skeleton-$it" }) {
                         FeedPostSkeleton()

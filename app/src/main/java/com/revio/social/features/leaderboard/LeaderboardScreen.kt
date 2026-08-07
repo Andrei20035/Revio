@@ -82,7 +82,7 @@ fun LeaderboardScreen(
                     }
                 },
                 onLeaderboard = { /* already here */ },
-                onPlus = openPostCreation,
+                onPlus = openPostCreation.openChooser,
                 onActivity = {
                     navController.navigate(Screen.Activity.route) {
                         popUpTo(Screen.Feed.route) {

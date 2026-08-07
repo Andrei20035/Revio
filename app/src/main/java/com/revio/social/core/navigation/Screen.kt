@@ -1,6 +1,7 @@
 package com.revio.social.core.navigation
 
 import android.net.Uri
+import java.util.UUID
 
 sealed class Screen(val route: String) {
     object Onboarding : Screen("onboarding")
@@ -18,6 +19,16 @@ sealed class Screen(val route: String) {
     object Camera : Screen("camera")
     object Leaderboard : Screen("leaderboard")
     object Activity : Screen("activity")
+
+    /** Weekend-challenge detail screen. */
+    object ChallengeDetail : Screen("challenge/{challengeId}") {
+        const val ARG_CHALLENGE_ID = "challengeId"
+
+        fun createRoute(challengeId: UUID): String = "challenge/$challengeId"
+    }
+
+    /** Lists the caller's own challenge participation: summary, current, and history. */
+    object MyChallenges : Screen("my_challenges")
 
     object EditProfile : Screen("edit_profile")
     object PersonalInfo : Screen("personal_info")
