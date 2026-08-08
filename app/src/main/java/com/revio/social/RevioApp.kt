@@ -24,6 +24,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.compose.rememberNavController
 import com.revio.social.core.navigation.RevioNavigation
 import com.revio.social.core.navigation.StartDestinationViewModel
+import com.revio.social.features.notifications.ModerationNoticeHost
 import dagger.hilt.android.HiltAndroidApp
 
 @HiltAndroidApp
@@ -51,6 +52,8 @@ fun RevioAppUI(
             Toast.makeText(context, message, Toast.LENGTH_LONG).show()
         }
     }
+
+    ModerationNoticeHost(navController = navController)
 
     // Drives the tour's cross-screen navigation from the one place that owns navController.
     // Each screen only ever renders TourOverlay for the step matching itself; it never

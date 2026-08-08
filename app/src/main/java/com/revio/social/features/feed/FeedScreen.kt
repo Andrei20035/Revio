@@ -94,6 +94,8 @@ import com.revio.social.core.ui.tour.TourOverlay
 import com.revio.social.data.model.FeedPost
 import com.revio.social.data.model.FeedbackSurface
 import com.revio.social.data.model.ReportReason
+import com.revio.social.features.admin.AdminViewModel
+import com.revio.social.features.admin.components.AdminRemovePostSheet
 import com.revio.social.features.challenge.ChallengeRefreshTrigger
 import com.revio.social.features.challenge.ChallengeUiState
 import com.revio.social.features.challenge.ChallengeViewModel
@@ -214,6 +216,11 @@ fun FeedScreen(
     val tourStep by tourHostViewModel.tourController.step.collectAsState()
     var slotBounds by remember { mutableStateOf(emptyMap<NavSlot, Rect>()) }
 
+    // Admin-only "Remove post" action, reachable from each post's options menu.
+    val adminViewModel: AdminViewModel = hiltViewModel()
+    val adminRemovePostState by adminViewModel.removePostState.collectAsState()
+    var postPendingAdminRemoval by remember { mutableStateOf<java.util.UUID?>(null) }
+
     // Recomputes the countdown immediately (in case the app sat backgrounded past a minute
     // boundary, or past endsAt entirely) and kicks a coalesced refresh — see ChallengeViewModel.
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
@@ -246,6 +253,20 @@ fun FeedScreen(
             onDraftChange = { viewModel.onCommentDraftChange(it) },
             onSend = { viewModel.submitComment() },
             onRetry = { viewModel.retryLoadComments() },
+        )
+    }
+
+    // Admin-only "Remove post" flow — opened from PostOptionsMenu's admin entry.
+    postPendingAdminRemoval?.let { postId ->
+        AdminRemovePostSheet(
+            isSubmitting = adminRemovePostState.isSubmitting,
+            onConfirm = { reason, reasonDetails ->
+                adminViewModel.removePost(postId, reason, reasonDetails) {
+                    postPendingAdminRemoval = null
+                    viewModel.refresh()
+                }
+            },
+            onDismiss = { postPendingAdminRemoval = null },
         )
     }
 
@@ -482,6 +503,8 @@ fun FeedScreen(
                                 onReportReasonSelected = { reason ->
                                     viewModel.onReportReasonSelected(post.id, reason)
                                 },
+                                isAdmin = uiState.currentUser?.isAdmin == true,
+                                onRemovePostAdminClick = { postPendingAdminRemoval = post.id },
                                 onAuthorClick = {
                                     if (post.userId == uiState.currentUser?.id) {
                                         navController.navigate(Screen.Profile.route) {
@@ -516,6 +539,8 @@ internal fun FeedPostCard(
     onShare: () -> Unit,
     onReportReasonSelected: (ReportReason) -> Unit,
     onAuthorClick: () -> Unit,
+    isAdmin: Boolean = false,
+    onRemovePostAdminClick: () -> Unit = {},
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         // ---- Header: avatar · username · car (+ location) · more ----
@@ -540,6 +565,8 @@ internal fun FeedPostCard(
             PostOptionsMenu(
                 onShare = onShare,
                 onReportReasonSelected = onReportReasonSelected,
+                isAdmin = isAdmin,
+                onRemovePostAdminClick = onRemovePostAdminClick,
             )
         }
 

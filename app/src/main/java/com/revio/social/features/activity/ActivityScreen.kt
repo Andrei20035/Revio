@@ -1,6 +1,8 @@
 package com.revio.social.features.activity
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -10,10 +12,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -25,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -57,6 +66,7 @@ import com.revio.social.features.activity.components.StreakCard
 import com.revio.social.features.activity.components.TodayInteractionsInfoOverlay
 import com.revio.social.features.activity.model.ActivityItem
 import com.revio.social.features.feed.components.rememberPostCreationLauncher
+import com.revio.social.features.notifications.NotificationsViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,6 +75,8 @@ fun ActivityScreen(
     viewModel: ActivityViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val notificationsViewModel: NotificationsViewModel = hiltViewModel()
+    val notificationsState by notificationsViewModel.uiState.collectAsState()
     val openPostCreation = rememberPostCreationLauncher(navController)
     val hazeState = remember { HazeState() }
     val tourHostViewModel: TourHostViewModel = hiltViewModel()
@@ -164,13 +176,23 @@ fun ActivityScreen(
                             ),
                         ) {
                             item {
-                                Text(
-                                    text = "Activity",
-                                    color = Color.White,
-                                    fontFamily = Poppins,
-                                    fontWeight = FontWeight.Medium,
-                                    fontSize = 35.sp.actScaledText(),
-                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        text = "Activity",
+                                        color = Color.White,
+                                        fontFamily = Poppins,
+                                        fontWeight = FontWeight.Medium,
+                                        fontSize = 35.sp.actScaledText(),
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    NotificationsBellButton(
+                                        unreadCount = notificationsState.unreadCount,
+                                        onClick = { navController.navigate(Screen.Notifications.route) },
+                                    )
+                                }
                                 Spacer(modifier = Modifier.height(16.dp.actScaled()))
                             }
 
@@ -225,6 +247,34 @@ fun ActivityScreen(
 
         if (uiState.showTodayInteractionsInfo) {
             TodayInteractionsInfoOverlay(onDismiss = { viewModel.dismissTodayInteractionsInfo() })
+        }
+    }
+}
+
+/** Entry point into [com.revio.social.features.notifications.NotificationsScreen], with an unread-count badge. */
+@Composable
+private fun NotificationsBellButton(
+    unreadCount: Long,
+    onClick: () -> Unit,
+) {
+    Box {
+        IconButton(onClick = onClick) {
+            Icon(
+                imageVector = Icons.Outlined.Notifications,
+                contentDescription = "Notifications",
+                tint = Color.White,
+                modifier = Modifier.size(26.dp.actScaled()),
+            )
+        }
+        if (unreadCount > 0) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 6.dp.actScaled(), end = 6.dp.actScaled())
+                    .size(8.dp.actScaled())
+                    .clip(CircleShape)
+                    .background(Color(0xFFF0AB25)),
+            )
         }
     }
 }

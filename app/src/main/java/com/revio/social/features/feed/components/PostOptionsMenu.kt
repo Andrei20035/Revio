@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AdminPanelSettings
 import androidx.compose.material.icons.outlined.Report
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.AlertDialog
@@ -83,6 +84,8 @@ private val RefReportSpinnerSize = 18.dp
 fun PostOptionsMenu(
     onShare: () -> Unit,
     onReportReasonSelected: (ReportReason) -> Unit,
+    isAdmin: Boolean = false,
+    onRemovePostAdminClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     // Popup shares the same Android window as the parent, so CompositionLocals flow through.
@@ -126,6 +129,11 @@ fun PostOptionsMenu(
                             expanded = false
                             onReportReasonSelected(reason)
                         },
+                        isAdmin = isAdmin,
+                        onRemovePostAdminClick = {
+                            expanded = false
+                            onRemovePostAdminClick()
+                        },
                     )
                 }
             }
@@ -137,6 +145,8 @@ fun PostOptionsMenu(
 private fun PostOptionsDropdown(
     onShare: () -> Unit,
     onReportReasonSelected: (ReportReason) -> Unit,
+    isAdmin: Boolean,
+    onRemovePostAdminClick: () -> Unit,
 ) {
     val cornerRadius = RefDropdownCornerRadius.scaled()
     Column(
@@ -165,6 +175,16 @@ private fun PostOptionsDropdown(
                 onClick = { onReportReasonSelected(reason) },
             )
             if (index != ReportReason.entries.lastIndex) MenuDividerLine()
+        }
+
+        if (isAdmin) {
+            MenuDividerLine()
+            MenuRow(
+                icon = Icons.Outlined.AdminPanelSettings,
+                label = "Remove post (admin)",
+                tint = MenuTextDanger,
+                onClick = onRemovePostAdminClick,
+            )
         }
     }
 }

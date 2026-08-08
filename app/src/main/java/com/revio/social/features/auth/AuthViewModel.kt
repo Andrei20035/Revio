@@ -7,6 +7,7 @@ import com.revio.social.data.local.auth.AuthTokens
 import com.revio.social.data.local.auth.TokenStore
 import com.revio.social.data.model.AuthProvider
 import com.revio.social.core.network.ApiResult
+import com.revio.social.data.remote.dto.auth.AuthErrorCode
 import com.revio.social.data.remote.dto.auth.OnboardingStep
 import com.revio.social.data.repository.AuthRepository
 import com.revio.social.data.repository.UserRepository
@@ -157,7 +158,15 @@ class AuthViewModel @Inject constructor(
                     it.copy(isLoading = false, navigationEvent = navTarget)
                 }
             }
-            is ApiResult.Error -> setError(result.message)
+            is ApiResult.Error -> {
+                // result.code is the machine-readable code — keep reading it so a suspended
+                // account gets its own blocking dialog instead of a dismissible snackbar.
+                if (result.code == AuthErrorCode.ACCOUNT_SUSPENDED.name) {
+                    _uiState.update { it.copy(isLoading = false, accountSuspendedMessage = result.message) }
+                } else {
+                    setError(result.message)
+                }
+            }
         }
     }
 
@@ -204,6 +213,10 @@ class AuthViewModel @Inject constructor(
 
     fun onErrorShown() {
         _uiState.update { it.copy(errorMessage = null) }
+    }
+
+    fun onAccountSuspendedShown() {
+        _uiState.update { it.copy(accountSuspendedMessage = null) }
     }
 
     private fun String.extractUserIdFromJwt(): UUID? {

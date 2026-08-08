@@ -19,6 +19,10 @@ sealed class Screen(val route: String) {
     object Camera : Screen("camera")
     object Leaderboard : Screen("leaderboard")
     object Activity : Screen("activity")
+    object Notifications : Screen("notifications")
+    object AdminHome : Screen("admin")
+    object AdminReports : Screen("admin/reports")
+    object AdminUser : Screen("admin/user")
 
     /** Weekend-challenge detail screen. */
     object ChallengeDetail : Screen("challenge/{challengeId}") {

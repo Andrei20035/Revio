@@ -33,7 +33,8 @@ class TokenAuthenticator @Inject constructor(
         val errorCode = parseErrorCode(response) ?: return null
         if (errorCode != AuthErrorCode.ACCESS_TOKEN_EXPIRED) {
             if (errorCode == AuthErrorCode.SESSION_REVOKED ||
-                errorCode == AuthErrorCode.SIGNED_IN_ON_ANOTHER_DEVICE
+                errorCode == AuthErrorCode.SIGNED_IN_ON_ANOTHER_DEVICE ||
+                errorCode == AuthErrorCode.ACCOUNT_SUSPENDED
             ) runBlocking { sessionManager.expire(messageFor(errorCode)) }
             return null
         }
@@ -89,6 +90,8 @@ class TokenAuthenticator @Inject constructor(
     private fun messageFor(code: AuthErrorCode?) = when (code) {
         AuthErrorCode.SIGNED_IN_ON_ANOTHER_DEVICE ->
             "You signed in on another device. Please sign in again."
+        AuthErrorCode.ACCOUNT_SUSPENDED ->
+            "Your account has been suspended. Contact threvioapp@gmail.com if you believe this is a mistake."
         else -> "Your session has expired. Please sign in again."
     }
 
@@ -100,6 +103,7 @@ class TokenAuthenticator @Inject constructor(
             AuthErrorCode.REFRESH_TOKEN_CONSUMED,
             AuthErrorCode.SESSION_REVOKED,
             AuthErrorCode.SIGNED_IN_ON_ANOTHER_DEVICE,
+            AuthErrorCode.ACCOUNT_SUSPENDED,
         )
     }
 }

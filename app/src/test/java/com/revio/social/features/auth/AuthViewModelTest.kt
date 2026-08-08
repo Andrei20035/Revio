@@ -204,6 +204,55 @@ class AuthViewModelTest {
     }
 
     // ----------------------------------------------------------------------
+    // ACCOUNT_SUSPENDED
+    // ----------------------------------------------------------------------
+
+    /**
+     * A suspended account must NOT surface through the generic errorMessage/snackbar path —
+     * it gets its own field so AuthScreen can show a blocking dialog instead.
+     */
+    @Test
+    fun `login cu cont suspendat populeaza accountSuspendedMessage, nu errorMessage`() = runTest {
+        coEvery { authRepository.login(any(), any(), any(), AuthProvider.REGULAR) } returns
+            ApiResult.Error("Your account has been suspended until 2026-08-15.", code = "ACCOUNT_SUSPENDED")
+
+        vm.updateEmail("a@b.com"); vm.updatePassword("secret")
+        vm.submitEmailAuth()
+
+        val state = vm.uiState.value
+        assertEquals("Your account has been suspended until 2026-08-15.", state.accountSuspendedMessage)
+        assertNull(state.errorMessage)
+        assertFalse(state.isLoading)
+        assertNull(state.navigationEvent)
+    }
+
+    @Test
+    fun `onAccountSuspendedShown sterge accountSuspendedMessage`() = runTest {
+        coEvery { authRepository.login(any(), any(), any(), any()) } returns
+            ApiResult.Error("Your account has been suspended.", code = "ACCOUNT_SUSPENDED")
+        vm.updateEmail("a@b.com"); vm.updatePassword("secret")
+        vm.submitEmailAuth()
+        assertNotNull(vm.uiState.value.accountSuspendedMessage)
+
+        vm.onAccountSuspendedShown()
+
+        assertNull(vm.uiState.value.accountSuspendedMessage)
+    }
+
+    @Test
+    fun `alt cod de eroare de auth foloseste in continuare errorMessage`() = runTest {
+        coEvery { authRepository.login(any(), any(), any(), any()) } returns
+            ApiResult.Error("Invalid credentials", code = "INVALID_CREDENTIALS")
+
+        vm.updateEmail("a@b.com"); vm.updatePassword("wrong")
+        vm.submitEmailAuth()
+
+        val state = vm.uiState.value
+        assertEquals("Invalid credentials", state.errorMessage)
+        assertNull(state.accountSuspendedMessage)
+    }
+
+    // ----------------------------------------------------------------------
     // REGISTER
     // ----------------------------------------------------------------------
 

@@ -66,8 +66,11 @@ class ProfileDashboardViewModel @Inject constructor(
 
         viewModelScope.launch {
             userRepository.currentUser.filterNotNull().collect { user ->
-                if (targetUserId == null) {
-                    _uiState.update { it.copy(user = user) }
+                _uiState.update {
+                    it.copy(
+                        user = if (targetUserId == null) user else it.user,
+                        isCurrentUserAdmin = user.isAdmin,
+                    )
                 }
             }
         }

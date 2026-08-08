@@ -10,6 +10,7 @@ data class AuthUiState(
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val errorId: Long = 0L,
+    val accountSuspendedMessage: String? = null,
     val navigationEvent: AuthNavigationEvent? = null,
 )
 

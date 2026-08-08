@@ -10,6 +10,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -20,16 +21,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.revio.social.BuildConfig
 import com.revio.social.core.ui.components.CustomSnackbar
 import com.revio.social.core.ui.components.GradientText
 import com.revio.social.core.navigation.Screen
+import com.revio.social.core.ui.overlay.DimOnlyDialogWindow
+import com.revio.social.core.ui.theme.Poppins
 import com.revio.social.features.auth.components.AuthModeSwitchText
 import com.revio.social.features.auth.components.EmailField
 import com.revio.social.features.auth.components.ForgotPasswordText
@@ -122,8 +130,81 @@ fun AuthScreen(
                         )
                     }
                 }
+
+                val suspendedMessage = uiState.accountSuspendedMessage
+                if (suspendedMessage != null) {
+                    AccountSuspendedDialog(
+                        message = suspendedMessage,
+                        onDismiss = { viewModel.onAccountSuspendedShown() },
+                    )
+                }
             }
 
+    }
+}
+
+private val SuspendedDialogSurface = Color(0xFF1B1F33)
+private val SuspendedDialogBorder = Color(0x1FFFFFFF)
+
+/**
+ * Blocking notice for a banned account: no tap-outside/back-press dismissal, only the explicit
+ * button acknowledges it. The message comes straight from the server (reason, expiry or
+ * "permanently", and the contact email are already baked into it — see AuthRoutes.kt's
+ * banSuspensionMessage on the server), so this dialog just renders it.
+ */
+@Composable
+private fun AccountSuspendedDialog(
+    message: String,
+    onDismiss: () -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false,
+        ),
+    ) {
+        DimOnlyDialogWindow()
+
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 32.dp)
+                    .shadow(elevation = 24.dp, shape = RoundedCornerShape(20.dp))
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(SuspendedDialogSurface)
+                    .border(1.dp, SuspendedDialogBorder, RoundedCornerShape(20.dp))
+                    .padding(28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    text = "Account suspended",
+                    color = Color.White,
+                    fontFamily = Poppins,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 16.sp,
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = message,
+                    color = Color.White.copy(alpha = 0.75f),
+                    fontFamily = Poppins,
+                    fontWeight = FontWeight.Normal,
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(modifier = Modifier.height(20.dp))
+                PrimaryActionButton(
+                    text = "OK",
+                    onClick = onDismiss,
+                )
+            }
+        }
     }
 }
 

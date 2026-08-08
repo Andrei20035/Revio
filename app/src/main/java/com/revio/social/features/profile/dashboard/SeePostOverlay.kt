@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AdminPanelSettings
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.CircularProgressIndicator
@@ -79,6 +80,8 @@ fun SeePostOverlay(
     onDismissDeleteConfirm: () -> Unit,
     onDismiss: () -> Unit,
     canDelete: Boolean = true,
+    isAdmin: Boolean = false,
+    onRemovePostAdminClick: () -> Unit = {},
 ) {
     Dialog(
         onDismissRequest = onDismiss,
@@ -134,11 +137,14 @@ fun SeePostOverlay(
                         ),
                     )
 
-                    if (canDelete) {
+                    if (canDelete || isAdmin) {
                         PostOptionsMenu(
                             isDeleting = isDeleting,
+                            canDelete = canDelete,
+                            isAdmin = isAdmin,
                             onEditClick = onEditClick,
                             onDeleteClick = onDeleteClick,
+                            onRemovePostAdminClick = onRemovePostAdminClick,
                         )
                     }
                 }
@@ -378,8 +384,11 @@ private fun DeletePostConfirmPanel(
 @Composable
 private fun PostOptionsMenu(
     isDeleting: Boolean,
+    canDelete: Boolean,
+    isAdmin: Boolean,
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit,
+    onRemovePostAdminClick: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val verticalOffsetPx = with(LocalDensity.current) { 24.dp.roundToPx() }
@@ -419,66 +428,88 @@ private fun PostOptionsMenu(
                         .border(1.dp, OverlayMenuBorder, RoundedCornerShape(16.dp))
                         .padding(vertical = 6.dp),
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
+                    if (canDelete) {
+                        PostOptionsMenuRow(
+                            icon = Icons.Outlined.Edit,
+                            label = "Edit Post",
+                            tint = Color.White,
+                            onClick = {
                                 expanded = false
                                 onEditClick()
-                            }
-                            .padding(horizontal = 16.dp, vertical = 13.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Edit,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp),
+                            },
                         )
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Text(
-                            text = "Edit Post",
-                            color = Color.White,
-                            fontFamily = Poppins,
-                            fontWeight = FontWeight.Medium,
-                            fontSize = 14.sp,
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .background(OverlayMenuBorder),
+                        )
+
+                        PostOptionsMenuRow(
+                            icon = Icons.Outlined.Delete,
+                            label = "Delete Post",
+                            tint = OverlayMenuDanger,
+                            onClick = {
+                                expanded = false
+                                onDeleteClick()
+                            },
                         )
                     }
 
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(1.dp)
-                            .background(OverlayMenuBorder),
-                    )
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                expanded = false
-                                onDeleteClick()
-                            }
-                            .padding(horizontal = 16.dp, vertical = 13.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Delete,
-                            contentDescription = null,
-                            tint = OverlayMenuDanger,
-                            modifier = Modifier.size(20.dp),
+                    if (canDelete && isAdmin) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .background(OverlayMenuBorder),
                         )
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Text(
-                            text = "Delete Post",
-                            color = OverlayMenuDanger,
-                            fontFamily = Poppins,
-                            fontWeight = FontWeight.Medium,
-                            fontSize = 14.sp,
+                    }
+
+                    if (isAdmin) {
+                        PostOptionsMenuRow(
+                            icon = Icons.Outlined.AdminPanelSettings,
+                            label = "Remove post (admin)",
+                            tint = OverlayMenuDanger,
+                            onClick = {
+                                expanded = false
+                                onRemovePostAdminClick()
+                            },
                         )
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun PostOptionsMenuRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    tint: Color,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(20.dp),
+        )
+        Spacer(modifier = Modifier.width(14.dp))
+        Text(
+            text = label,
+            color = tint,
+            fontFamily = Poppins,
+            fontWeight = FontWeight.Medium,
+            fontSize = 14.sp,
+        )
     }
 }

@@ -24,8 +24,12 @@ import com.revio.social.data.repository.FriendRequestRepositoryImpl
 import com.revio.social.data.repository.FriendRequestRepository
 import com.revio.social.data.repository.LikeRepository
 import com.revio.social.data.repository.LikeRepositoryImpl
+import com.revio.social.data.repository.AdminRepository
+import com.revio.social.data.repository.AdminRepositoryImpl
 import com.revio.social.data.repository.LocationRepository
 import com.revio.social.data.repository.LocationRepositoryImpl
+import com.revio.social.data.repository.NotificationRepository
+import com.revio.social.data.repository.NotificationRepositoryImpl
 import com.revio.social.data.repository.PostRepository
 import com.revio.social.data.repository.PostRepositoryImpl
 import com.revio.social.data.repository.ReportRepository
@@ -132,6 +136,18 @@ abstract class RepositoryModule {
     abstract fun bindActivityRepository(
         impl: ActivityRepositoryImpl
     ): ActivityRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindNotificationRepository(
+        impl: NotificationRepositoryImpl
+    ): NotificationRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindAdminRepository(
+        impl: AdminRepositoryImpl
+    ): AdminRepository
 
     @Binds
     @Singleton

@@ -50,6 +50,18 @@ class SafeApiCallTest {
     }
 
     @Test
+    fun `error JSON cu obiect error nested extrage atat message cat si code`() = runTest {
+        // Forma reala trimisa de server pentru erori auth: AuthErrorResponse { error: { code, message } }.
+        val body = """{"error":{"code":"ACCOUNT_SUSPENDED","message":"Your account has been suspended."}}"""
+            .toResponseBody(jsonMedia)
+
+        val result = safeApiCall<String> { Response.error(403, body) }
+
+        assertEquals("Your account has been suspended.", (result as ApiResult.Error).message)
+        assertEquals("ACCOUNT_SUSPENDED", result.code)
+    }
+
+    @Test
     fun `error JSON fara error dar cu message foloseste message`() = runTest {
         val body = """{"message":"Email already in use"}""".toResponseBody(jsonMedia)
 

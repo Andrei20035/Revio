@@ -12,7 +12,11 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.revio.social.features.activity.ActivityScreen
+import com.revio.social.features.admin.AdminHomeScreen
+import com.revio.social.features.admin.AdminReportsScreen
+import com.revio.social.features.admin.AdminUserScreen
 import com.revio.social.features.feed.FeedScreen
+import com.revio.social.features.notifications.NotificationsScreen
 import com.revio.social.features.upload.ImageUploadScreen
 import com.revio.social.features.auth.AuthScreen
 import com.revio.social.features.onboarding.OnboardingScreen
@@ -181,6 +185,22 @@ fun RevioNavigation(
 
         composable(Screen.Activity.route) {
             ActivityScreen(navController = navController)
+        }
+
+        composable(Screen.Notifications.route) {
+            NotificationsScreen(navController = navController)
+        }
+
+        composable(Screen.AdminHome.route) {
+            AdminHomeScreen(navController = navController)
+        }
+
+        composable(Screen.AdminReports.route) {
+            AdminReportsScreen(navController = navController)
+        }
+
+        composable(Screen.AdminUser.route) {
+            AdminUserScreen(navController = navController)
         }
 
         composable(Screen.EditProfile.route) {

@@ -214,6 +214,20 @@ fun SettingsScreen(
                 onClick = { navController.navigate(Screen.Feedback.createRoute()) },
             )
 
+            // ── Admin section — hidden unless the current user is an admin ────
+            if (uiState.user?.isAdmin == true) {
+                Spacer(modifier = Modifier.height(24.dp.actScaled()))
+                SectionLabel("Admin")
+                Spacer(modifier = Modifier.height(8.dp.actScaled()))
+                SettingsRow(
+                    iconRes = R.drawable.user_icon,
+                    label = "Admin panel",
+                    topRound = true,
+                    bottomRound = true,
+                    onClick = { navController.navigate(Screen.AdminHome.route) },
+                )
+            }
+
             // ── Others section ───────────────────────────────────────────────
             Spacer(modifier = Modifier.height(24.dp.actScaled()))
             SectionLabel("Others")

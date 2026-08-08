@@ -9,6 +9,8 @@ import java.util.UUID
 data class ProfileDashboardUiState(
     val isOwnProfile: Boolean = true,
     val currentUserId: UUID? = null,
+    /** Whether the logged-in viewer (not necessarily [user], the profile being displayed) is an admin. */
+    val isCurrentUserAdmin: Boolean = false,
     val user: User? = null,
     val posts: List<FeedPost> = emptyList(),
     val nextCursor: FeedCursor? = null,

@@ -73,6 +73,8 @@ import com.revio.social.core.ui.components.shimmer
 import com.revio.social.core.ui.feedback.FirstPostFeedbackHost
 import com.revio.social.core.ui.tour.TourOverlay
 import com.revio.social.data.model.FeedbackSurface
+import com.revio.social.features.admin.AdminViewModel
+import com.revio.social.features.admin.components.AdminRemovePostSheet
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import androidx.compose.runtime.CompositionLocalProvider
@@ -112,6 +114,11 @@ fun ProfileDashboardScreen(
     val tourHostViewModel: TourHostViewModel = hiltViewModel()
     val tourStep by tourHostViewModel.tourController.step.collectAsState()
     var slotBounds by remember { mutableStateOf(emptyMap<NavSlot, Rect>()) }
+
+    // Admin-only "Remove post" action, reachable from the see-post overlay's options menu.
+    val adminViewModel: AdminViewModel = hiltViewModel()
+    val adminRemovePostState by adminViewModel.removePostState.collectAsState()
+    var postPendingAdminRemoval by remember { mutableStateOf<UUID?>(null) }
 
     // Captured once at first composition of this screen, so both effects below always collect
     // from and reset the same entry — navController.currentBackStackEntry can momentarily still
@@ -392,6 +399,23 @@ fun ProfileDashboardScreen(
                 onDismissDeleteConfirm = { viewModel.dismissDeleteConfirm() },
                 onDismiss = { viewModel.clearSelectedPost() },
                 canDelete = uiState.isOwnProfile,
+                isAdmin = uiState.isCurrentUserAdmin,
+                onRemovePostAdminClick = { postPendingAdminRemoval = post.id },
+            )
+        }
+
+        // Admin-only "Remove post" flow — opened from SeePostOverlay's admin entry.
+        postPendingAdminRemoval?.let { postId ->
+            AdminRemovePostSheet(
+                isSubmitting = adminRemovePostState.isSubmitting,
+                onConfirm = { reason, reasonDetails ->
+                    adminViewModel.removePost(postId, reason, reasonDetails) {
+                        postPendingAdminRemoval = null
+                        viewModel.clearSelectedPost()
+                        viewModel.refresh()
+                    }
+                },
+                onDismiss = { postPendingAdminRemoval = null },
             )
         }
 

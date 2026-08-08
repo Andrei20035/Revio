@@ -23,6 +23,7 @@ data class User(
     val country: String,
     val spotScore: Int = 0,
     val postCount: Int = 0,
+    val isAdmin: Boolean = false,
     val isEarlySpotter: Boolean = false,
     val earlySpotterNumber: Int? = null,
     val streakDays: Int = 0,
