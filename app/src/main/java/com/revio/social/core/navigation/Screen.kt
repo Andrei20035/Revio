@@ -23,6 +23,8 @@ sealed class Screen(val route: String) {
     object AdminHome : Screen("admin")
     object AdminReports : Screen("admin/reports")
     object AdminUser : Screen("admin/user")
+    object AdminModeration : Screen("admin/moderation")
+    object AdminChallenges : Screen("admin/challenges")
 
     /** Weekend-challenge detail screen. */
     object ChallengeDetail : Screen("challenge/{challengeId}") {

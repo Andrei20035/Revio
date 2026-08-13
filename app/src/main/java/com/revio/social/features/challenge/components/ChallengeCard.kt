@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.revio.social.core.ui.scaling.scaled
 import com.revio.social.core.ui.scaling.scaledText
+import com.revio.social.data.model.ParticipantState
 import com.revio.social.data.model.RewardState
 import com.revio.social.features.challenge.ChallengeUiState
 import com.revio.social.features.challenge.RemainingTime
@@ -77,20 +78,31 @@ fun ChallengeCard(
 ) {
     val isGranted = state.rewardState == RewardState.GRANTED
     val filledCount = minOf(state.contributionCount, state.requiredPosts)
+    // COMPLETED_PENDING is the authoritative signal once the server sends it; an older server
+    // that doesn't yet (participantState == UNKNOWN) falls back to the count-vs-threshold check
+    // the field itself is meant to replace — see the plan's §7.2.
+    val isCompletedPending = !isGranted && (
+        state.participantState == ParticipantState.COMPLETED_PENDING ||
+            (state.participantState == ParticipantState.UNKNOWN && filledCount >= state.requiredPosts)
+        )
+    val isOneAway = !isGranted && !isCompletedPending && filledCount == state.requiredPosts - 1
+    val isComplete = isGranted || isCompletedPending
+
     val accent = if (isGranted) ChallengeGold else ChallengeAccent
     val timeLabel = state.remaining.label()
     val isUrgent = (state.remaining as? RemainingTime.HoursMinutes)?.let { it.hours < URGENT_THRESHOLD_HOURS } ?: false
 
-    val captionText = if (isGranted) {
-        "${state.rewardPoints} pts earned"
-    } else {
-        "$filledCount of ${state.requiredPosts} spotted"
+    val captionText = when {
+        isGranted -> "+${state.rewardPoints} pts earned"
+        isCompletedPending -> "$filledCount of ${state.requiredPosts} · ${state.rewardPoints} pts when it ends"
+        isOneAway -> "$filledCount of ${state.requiredPosts} — one more to go"
+        else -> "$filledCount of ${state.requiredPosts} spotted"
     }
-    val ctaLabel = if (isGranted) "Spot again" else "Spot now"
+    val ctaLabel = if (isComplete) "Spot again" else "Spot now"
 
     val aggregateDescription = buildString {
         append("Challenge: ${state.titleLine}. ")
-        append("$filledCount of ${state.requiredPosts} spotted. ")
+        append("$captionText. ")
         append("${state.rewardPoints} points.")
         if (isGranted) {
             append(" Reward earned.")
@@ -121,10 +133,10 @@ fun ChallengeCard(
                     contentDescription = aggregateDescription
                 },
             ) {
-                val eyebrowSuffix = if (isGranted) "COMPLETE" else timeLabel.orEmpty()
+                val eyebrowSuffix = if (isComplete) "COMPLETE ✓" else timeLabel.orEmpty()
                 Text(
                     text = if (eyebrowSuffix.isEmpty()) "CHALLENGE" else "CHALLENGE · $eyebrowSuffix",
-                    color = if (!isGranted && isUrgent) ChallengeGold else Color.White.copy(alpha = 0.64f),
+                    color = if (!isComplete && isUrgent) ChallengeGold else Color.White.copy(alpha = 0.64f),
                     fontSize = RefEyebrowFontSize.scaledText(),
                     letterSpacing = RefEyebrowLetterSpacing,
                     fontWeight = FontWeight.Medium,

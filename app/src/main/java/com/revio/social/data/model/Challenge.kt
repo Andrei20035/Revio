@@ -36,7 +36,23 @@ enum class RewardState {
 data class ChallengeProgress(
     val contributionCount: Int,
     val rewardState: RewardState,
+    val participantState: ParticipantState = ParticipantState.UNKNOWN,
 )
+
+/** The server-derived participation state for the caller on one challenge — see the plan's §7.2. */
+enum class ParticipantState {
+    NOT_STARTED,
+    IN_PROGRESS,
+    COMPLETED_PENDING,
+    REWARDED,
+    NOT_COMPLETED,
+    REVOKED,
+    CANCELLED,
+
+    /** Any value the server sends that this client doesn't recognize yet, or a missing field
+     * from an older server that doesn't send [participantState] at all. */
+    UNKNOWN,
+}
 
 /** Response shape of `GET /challenges/current`. Both fields are null when nothing is scheduled. */
 data class CurrentChallenge(

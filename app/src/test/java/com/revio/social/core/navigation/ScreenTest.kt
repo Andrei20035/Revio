@@ -19,4 +19,14 @@ class ScreenTest {
     fun `MyChallenges route este statica`() {
         assertEquals("my_challenges", Screen.MyChallenges.route)
     }
+
+    @Test
+    fun `AdminModeration route este statica`() {
+        assertEquals("admin/moderation", Screen.AdminModeration.route)
+    }
+
+    @Test
+    fun `AdminChallenges route este statica`() {
+        assertEquals("admin/challenges", Screen.AdminChallenges.route)
+    }
 }

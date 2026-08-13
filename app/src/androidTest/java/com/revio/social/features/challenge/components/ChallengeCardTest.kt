@@ -7,6 +7,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.revio.social.data.model.ParticipantState
 import com.revio.social.data.model.RewardState
 import com.revio.social.features.challenge.ChallengeUiState
 import com.revio.social.features.challenge.RemainingTime
@@ -33,6 +34,7 @@ class ChallengeCardTest {
         requiredPosts: Int = 5,
         rewardPoints: Int = 300,
         rewardState: RewardState = RewardState.NONE,
+        participantState: ParticipantState = ParticipantState.UNKNOWN,
         remaining: RemainingTime = RemainingTime.Days(2),
         titleLine: String = "Spot 5 Volkswagen Golf",
     ) = ChallengeUiState.Active(
@@ -42,6 +44,7 @@ class ChallengeCardTest {
         requiredPosts = requiredPosts,
         rewardPoints = rewardPoints,
         rewardState = rewardState,
+        participantState = participantState,
         endsAt = Instant.parse("2026-08-09T00:00:00Z"),
         remaining = remaining,
     )
@@ -83,8 +86,59 @@ class ChallengeCardTest {
         composeTestRule.onNodeWithText("7 of 5 spotted").assertDoesNotExist()
     }
 
+    // ---- Copy per stare, tabelul §5.4 al planului ----
+
     @Test
-    fun rewardState_GRANTED_arata_tratamentul_auriu_si_copy_de_completare() {
+    fun `stare - Activ, incomplet`() {
+        setCardContent(
+            activeState(
+                contributionCount = 3,
+                requiredPosts = 5,
+                remaining = RemainingTime.Days(2),
+            ),
+        )
+
+        composeTestRule.onNodeWithText("CHALLENGE · 2 days remaining").assertIsDisplayed()
+        composeTestRule.onNodeWithText("3 of 5 spotted").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Spot now").assertIsDisplayed()
+    }
+
+    @Test
+    fun `stare - Activ, penultimul (mai e un singur post)`() {
+        setCardContent(
+            activeState(
+                contributionCount = 4,
+                requiredPosts = 5,
+                remaining = RemainingTime.HoursMinutes(hours = 6, minutes = 12),
+            ),
+        )
+
+        composeTestRule.onNodeWithText("CHALLENGE · 6h 12m remaining").assertIsDisplayed()
+        composeTestRule.onNodeWithText("4 of 5 — one more to go").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Spot now").assertIsDisplayed()
+    }
+
+    @Test
+    fun `stare - Activ, prag atins (recompensa in asteptare)`() {
+        setCardContent(
+            activeState(
+                contributionCount = 5,
+                requiredPosts = 5,
+                rewardPoints = 300,
+                rewardState = RewardState.NONE,
+                participantState = ParticipantState.COMPLETED_PENDING,
+            ),
+        )
+
+        composeTestRule.onNodeWithText("CHALLENGE · COMPLETE ✓").assertIsDisplayed()
+        composeTestRule.onNodeWithText("5 of 5 · 300 pts when it ends").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Spot again").assertIsDisplayed()
+        // Nu mai arata copy-ul normal de progres o data ce pragul e atins.
+        composeTestRule.onNodeWithText("5 of 5 spotted").assertDoesNotExist()
+    }
+
+    @Test
+    fun `stare - Incheiat, prag atins, acordat (RewardState GRANTED)`() {
         setCardContent(
             activeState(
                 contributionCount = 5,
@@ -94,11 +148,27 @@ class ChallengeCardTest {
             ),
         )
 
-        composeTestRule.onNodeWithText("CHALLENGE · COMPLETE").assertIsDisplayed()
-        composeTestRule.onNodeWithText("300 pts earned").assertIsDisplayed()
+        composeTestRule.onNodeWithText("CHALLENGE · COMPLETE ✓").assertIsDisplayed()
+        composeTestRule.onNodeWithText("+300 pts earned").assertIsDisplayed()
         composeTestRule.onNodeWithText("Spot again").assertIsDisplayed()
         // Nu mai arata copy-ul normal de progres o data ce challenge-ul e complet.
         composeTestRule.onNodeWithText("5 of 5 spotted").assertDoesNotExist()
+    }
+
+    @Test
+    fun `participantState UNKNOWN de la un server vechi - fallback pe numarul de contributii pentru COMPLETED_PENDING`() {
+        setCardContent(
+            activeState(
+                contributionCount = 5,
+                requiredPosts = 5,
+                rewardPoints = 300,
+                rewardState = RewardState.NONE,
+                participantState = ParticipantState.UNKNOWN,
+            ),
+        )
+
+        composeTestRule.onNodeWithText("CHALLENGE · COMPLETE ✓").assertIsDisplayed()
+        composeTestRule.onNodeWithText("5 of 5 · 300 pts when it ends").assertIsDisplayed()
     }
 
     @Test

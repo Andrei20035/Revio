@@ -42,10 +42,10 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.revio.social.core.ui.components.StateMessage
-import com.revio.social.data.model.ChallengeContribution
 import com.revio.social.data.model.EffectiveChallengeStatus
 import com.revio.social.data.model.RewardState
 import com.revio.social.features.challenge.components.ChallengeAccent
+import com.revio.social.features.challenge.components.ChallengeContributionRow
 import com.revio.social.features.challenge.components.ChallengeGold
 import com.revio.social.features.challenge.components.CardBackground
 import com.revio.social.features.challenge.components.ContinuousProgressBar
@@ -134,13 +134,16 @@ fun ChallengeDetailScreen(
 }
 
 @Composable
-private fun ChallengeDetailContent(
+fun ChallengeDetailContent(
     state: ChallengeDetailUiState.Content,
     onSpotNow: () -> Unit,
 ) {
     val isGranted = state.rewardState == RewardState.GRANTED
     val isRevoked = !isGranted && state.rewardState == RewardState.NONE &&
         state.effectiveStatus == EffectiveChallengeStatus.ENDED && state.contributionCount >= state.requiredPosts
+    // Reached the post threshold and it wasn't since taken away — a revoke already has its own
+    // "Reward revoked" line in the REWARD card below, so it doesn't also get the checkmark badge.
+    val isCompleted = !isRevoked && state.contributionCount >= state.requiredPosts
     val filledCount = minOf(state.contributionCount, state.requiredPosts)
     val accent = if (isGranted) ChallengeGold else ChallengeAccent
     val timeLabel = state.remaining.label()
@@ -248,6 +251,31 @@ private fun ChallengeDetailContent(
             fontSize = 12.sp,
         )
 
+        if (isCompleted) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "Completed",
+                    color = ChallengeGold,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "✓",
+                    color = ChallengeGold,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = if (isGranted) "+${state.rewardPoints} pts earned" else "Reward pending until challenge ends",
+                color = Color.White.copy(alpha = 0.72f),
+                fontSize = 13.sp,
+            )
+        }
+
         if (state.effectiveStatus == EffectiveChallengeStatus.ACTIVE) {
             Spacer(modifier = Modifier.height(16.dp))
             Box(
@@ -320,35 +348,11 @@ private fun ChallengeDetailContent(
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 state.contributions.forEach { contribution ->
-                    ContributionRow(contribution)
+                    ChallengeContributionRow(contribution)
                 }
             }
         }
 
         Spacer(modifier = Modifier.height(24.dp))
-    }
-}
-
-/**
- * Minimal stand-in for the dedicated `ChallengeContributionRow` component (Pas 18) — this screen
- * doesn't wait on it, per the plan's file table.
- */
-@Composable
-private fun ContributionRow(contribution: ChallengeContribution) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(CardBackground)
-            .padding(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        val model = listOfNotNull(contribution.carBrand, contribution.carModel).joinToString(" ").ifBlank { "Spot" }
-        val timestamp = contribution.createdAt.atZone(ZoneId.systemDefault()).format(PeriodFormatter)
-        Text(
-            text = "$model · $timestamp",
-            color = Color.White.copy(alpha = 0.8f),
-            fontSize = 13.sp,
-        )
     }
 }

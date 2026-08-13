@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,8 +14,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
-import androidx.compose.material.icons.outlined.Flag
-import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Report
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -37,22 +36,21 @@ import com.revio.social.core.ui.scaling.actScaledText
 private val CardBg = Color(0x3DD9D9D9)
 private val ItemTextColor = Color.White
 
-/** Hidden admin panel entry point — reachable from Settings only when `user.isAdmin`. */
+/** Moderation section of the admin panel: reports queue and user lookup. */
 @Composable
-fun AdminHomeScreen(navController: NavController) {
+fun AdminModerationScreen(navController: NavController) {
     AppScreenBackgroundWithTopBar(
-        title = "Admin panel",
+        title = "Moderation",
         onBack = { navController.popBackStack() },
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
-            Column {
-                AdminHomeRow(
-                    icon = Icons.Outlined.Shield,
-                    label = "Moderation",
-                    subtitle = "Reports, users, removals",
+            androidx.compose.foundation.layout.Column {
+                AdminModerationRow(
+                    icon = Icons.Outlined.Report,
+                    label = "Reports queue",
                     topRound = true,
                     bottomRound = false,
-                    onClick = { navController.navigate(Screen.AdminModeration.route) },
+                    onClick = { navController.navigate(Screen.AdminReports.route) },
                 )
                 Box(
                     modifier = Modifier
@@ -60,13 +58,12 @@ fun AdminHomeScreen(navController: NavController) {
                         .height(1.dp)
                         .background(Color.White.copy(alpha = 0.08f)),
                 )
-                AdminHomeRow(
-                    icon = Icons.Outlined.Flag,
-                    label = "Challenges",
-                    subtitle = "Create and manage challenges",
+                AdminModerationRow(
+                    icon = Icons.Outlined.Person,
+                    label = "Find user",
                     topRound = false,
                     bottomRound = true,
-                    onClick = { navController.navigate(Screen.AdminChallenges.route) },
+                    onClick = { navController.navigate(Screen.AdminUser.route) },
                 )
             }
         }
@@ -74,10 +71,9 @@ fun AdminHomeScreen(navController: NavController) {
 }
 
 @Composable
-private fun AdminHomeRow(
+private fun AdminModerationRow(
     icon: ImageVector,
     label: String,
-    subtitle: String,
     topRound: Boolean,
     bottomRound: Boolean,
     onClick: () -> Unit,
@@ -111,19 +107,13 @@ private fun AdminHomeRow(
             modifier = Modifier.size(24.dp.actScaled()),
         )
         Spacer(modifier = Modifier.width(16.dp.actScaled()))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = label,
-                color = ItemTextColor,
-                fontWeight = FontWeight.Medium,
-                fontSize = 16.sp.actScaledText(),
-            )
-            Text(
-                text = subtitle,
-                color = ItemTextColor.copy(alpha = 0.6f),
-                fontSize = 12.sp.actScaledText(),
-            )
-        }
+        Text(
+            text = label,
+            color = ItemTextColor,
+            fontWeight = FontWeight.Medium,
+            fontSize = 16.sp.actScaledText(),
+            modifier = Modifier.weight(1f),
+        )
         Icon(
             imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
             contentDescription = null,

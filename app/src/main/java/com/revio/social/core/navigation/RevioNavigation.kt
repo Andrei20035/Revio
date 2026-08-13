@@ -13,8 +13,12 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.revio.social.features.activity.ActivityScreen
 import com.revio.social.features.admin.AdminHomeScreen
+import com.revio.social.features.admin.AdminModerationScreen
 import com.revio.social.features.admin.AdminReportsScreen
 import com.revio.social.features.admin.AdminUserScreen
+import com.revio.social.features.admin.challenge.AdminChallengesScreen
+import com.revio.social.features.challenge.ChallengeDetailScreen
+import com.revio.social.features.challenge.MyChallengesScreen
 import com.revio.social.features.feed.FeedScreen
 import com.revio.social.features.notifications.NotificationsScreen
 import com.revio.social.features.upload.ImageUploadScreen
@@ -195,6 +199,14 @@ fun RevioNavigation(
             AdminHomeScreen(navController = navController)
         }
 
+        composable(Screen.AdminModeration.route) {
+            AdminModerationScreen(navController = navController)
+        }
+
+        composable(Screen.AdminChallenges.route) {
+            AdminChallengesScreen(navController = navController)
+        }
+
         composable(Screen.AdminReports.route) {
             AdminReportsScreen(navController = navController)
         }
@@ -208,7 +220,7 @@ fun RevioNavigation(
         }
 
         composable(Screen.MyChallenges.route) {
-            PlaceholderScreen(title = "My Challenges", navController = navController)
+            MyChallengesScreen(navController = navController)
         }
 
         composable(
@@ -220,7 +232,7 @@ fun RevioNavigation(
             ),
         ) {
             // The challengeId nav arg is read by ChallengeDetailViewModel via SavedStateHandle.
-            PlaceholderScreen(title = "Challenge Detail", navController = navController)
+            ChallengeDetailScreen(navController = navController)
         }
 
         composable(Screen.PersonalInfo.route) {

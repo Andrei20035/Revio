@@ -219,4 +219,10 @@ object NetworkModule {
         return retrofit.create(AdminApi::class.java)
     }
 
+    @Provides
+    @Singleton
+    fun provideAdminChallengeApi(retrofit: Retrofit): AdminChallengeApi {
+        return retrofit.create(AdminChallengeApi::class.java)
+    }
+
 }

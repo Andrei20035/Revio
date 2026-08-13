@@ -6,8 +6,8 @@ import com.revio.social.core.feedback.PostCreationSignal
 import com.revio.social.core.network.ApiResult
 import com.revio.social.data.model.Challenge
 import com.revio.social.data.model.ChallengeProgress
+import com.revio.social.data.model.ParticipantState
 import com.revio.social.data.model.RewardState
-import com.revio.social.data.model.isActiveAt
 import com.revio.social.data.repository.ChallengeRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.Clock
@@ -158,7 +158,11 @@ class ChallengeViewModel @Inject constructor(
 
     private fun toUiState(challenge: Challenge?, progress: ChallengeProgress?): ChallengeUiState {
         val now = clock.instant()
-        if (challenge == null || !challenge.isActiveAt(now)) return ChallengeUiState.Hidden
+        // A challenge that hasn't started yet is still shown — only a truly ended one (`now` at
+        // or past `endsAt`) hides the card. `/challenges/current` can return the *next* scheduled
+        // challenge, not only the currently active one, and that upcoming state is now surfaced
+        // instead of being filtered out client-side.
+        if (challenge == null || !now.isBefore(challenge.endsAt)) return ChallengeUiState.Hidden
 
         return ChallengeUiState.Active(
             challengeId = challenge.id,
@@ -167,6 +171,7 @@ class ChallengeViewModel @Inject constructor(
             requiredPosts = challenge.requiredPosts,
             rewardPoints = challenge.rewardPoints,
             rewardState = progress?.rewardState ?: RewardState.NONE,
+            participantState = progress?.participantState ?: ParticipantState.UNKNOWN,
             endsAt = challenge.endsAt,
             remaining = remainingTimeAt(now, challenge.endsAt),
             isStale = false,

@@ -8,6 +8,7 @@ import com.revio.social.core.network.ApiResult
 import com.revio.social.data.model.Challenge
 import com.revio.social.data.model.ChallengeProgress
 import com.revio.social.data.model.CurrentChallenge
+import com.revio.social.data.model.ParticipantState
 import com.revio.social.data.model.RewardState
 import com.revio.social.data.repository.ChallengeRepository
 import io.mockk.coEvery
@@ -122,6 +123,39 @@ class ChallengeViewModelTest {
     }
 
     @Test
+    fun `participantState COMPLETED_PENDING - se propaga distinct, nu mai apare ca progres incomplet`() {
+        val activeChallenge = challenge(startsAt = now.minusSeconds(3600), endsAt = now.plusSeconds(3600))
+        val progress = ChallengeProgress(
+            contributionCount = 5,
+            rewardState = RewardState.NONE,
+            participantState = ParticipantState.COMPLETED_PENDING,
+        )
+        coEvery { challengeRepository.getCurrentChallenge() } returns
+            ApiResult.Success(CurrentChallenge(activeChallenge, progress))
+
+        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal)
+
+        val state = viewModel.uiState.value
+        assertTrue(state is ChallengeUiState.Active)
+        state as ChallengeUiState.Active
+        assertEquals(ParticipantState.COMPLETED_PENDING, state.participantState)
+        assertTrue(state.participantState != ParticipantState.IN_PROGRESS)
+    }
+
+    @Test
+    fun `progress fara participantState (server vechi) - ParticipantState UNKNOWN`() {
+        val activeChallenge = challenge(startsAt = now.minusSeconds(3600), endsAt = now.plusSeconds(3600))
+        val progress = ChallengeProgress(contributionCount = 3, rewardState = RewardState.NONE)
+        coEvery { challengeRepository.getCurrentChallenge() } returns
+            ApiResult.Success(CurrentChallenge(activeChallenge, progress))
+
+        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal)
+
+        val state = viewModel.uiState.value as ChallengeUiState.Active
+        assertEquals(ParticipantState.UNKNOWN, state.participantState)
+    }
+
+    @Test
     fun `challenge null - starea ramane Hidden`() {
         coEvery { challengeRepository.getCurrentChallenge() } returns
             ApiResult.Success(CurrentChallenge(challenge = null, progress = null))
@@ -131,15 +165,30 @@ class ChallengeViewModelTest {
         assertEquals(ChallengeUiState.Hidden, viewModel.uiState.value)
     }
 
+    // Bloc J6: a scheduled challenge (startsAt in the future) is surfaced instead of hidden —
+    // `/challenges/current` can return the *next* challenge, not only the currently active one,
+    // and that upcoming state must now be visible. This deliberately supersedes the old
+    // "filtered out client-side" expectation. The "STARTS…" eyebrow copy itself is rendered by
+    // ChallengeCard from `state.remaining`/`state.participantState`, so it isn't asserted here.
     @Test
-    fun `challenge viitor (startsAt dupa now) - Hidden, filtrat pe client`() {
+    fun `challenge viitor (startsAt dupa now) - Active, nu mai e ascuns pe client`() {
         val futureChallenge = challenge(startsAt = now.plusSeconds(3600), endsAt = now.plusSeconds(7200))
+        val progress = ChallengeProgress(
+            contributionCount = 0,
+            rewardState = RewardState.NONE,
+            participantState = ParticipantState.NOT_STARTED,
+        )
         coEvery { challengeRepository.getCurrentChallenge() } returns
-            ApiResult.Success(CurrentChallenge(futureChallenge, ChallengeProgress(0, RewardState.NONE)))
+            ApiResult.Success(CurrentChallenge(futureChallenge, progress))
 
         val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal)
 
-        assertEquals(ChallengeUiState.Hidden, viewModel.uiState.value)
+        val state = viewModel.uiState.value
+        assertTrue(state is ChallengeUiState.Active)
+        state as ChallengeUiState.Active
+        assertEquals(futureChallenge.id, state.challengeId)
+        assertEquals(0, state.contributionCount)
+        assertEquals(ParticipantState.NOT_STARTED, state.participantState)
     }
 
     @Test

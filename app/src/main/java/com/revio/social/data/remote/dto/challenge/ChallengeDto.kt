@@ -11,6 +11,7 @@ import com.revio.social.data.model.ChallengeSummary
 import com.revio.social.data.model.CurrentChallenge
 import com.revio.social.data.model.EffectiveChallengeStatus
 import com.revio.social.data.model.MyChallenges
+import com.revio.social.data.model.ParticipantState
 import com.revio.social.data.model.RewardState
 import kotlinx.serialization.Serializable
 import java.time.Instant
@@ -33,11 +34,14 @@ data class ChallengeDto(
     val endsAt: Instant,
 )
 
-/** Mirrors the server's `ChallengeProgressDTO`. [rewardState] is a free string on the wire. */
+/** Mirrors the server's `ChallengeProgressDTO`. [rewardState] and [participantState] are free
+ * strings on the wire. [participantState] is null both for a client-unrecognized value being
+ * omitted upstream and for an older server that doesn't send the field at all. */
 @Serializable
 data class ChallengeProgressDto(
     val contributionCount: Int,
     val rewardState: String,
+    val participantState: String? = null,
 )
 
 /** Mirrors the server's `ChallengeContributionDTO`. The last three fields are nullable so a
@@ -114,6 +118,16 @@ fun ChallengeProgressDto.toDomain(): ChallengeProgress = ChallengeProgress(
         "NONE" -> RewardState.NONE
         "GRANTED" -> RewardState.GRANTED
         else -> RewardState.UNKNOWN
+    },
+    participantState = when (participantState?.uppercase()) {
+        "NOT_STARTED" -> ParticipantState.NOT_STARTED
+        "IN_PROGRESS" -> ParticipantState.IN_PROGRESS
+        "COMPLETED_PENDING" -> ParticipantState.COMPLETED_PENDING
+        "REWARDED" -> ParticipantState.REWARDED
+        "NOT_COMPLETED" -> ParticipantState.NOT_COMPLETED
+        "REVOKED" -> ParticipantState.REVOKED
+        "CANCELLED" -> ParticipantState.CANCELLED
+        else -> ParticipantState.UNKNOWN
     },
 )
 

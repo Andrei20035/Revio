@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.revio.social.data.model.ChallengeHistoryItem
 import com.revio.social.data.model.EffectiveChallengeStatus
+import com.revio.social.data.model.ParticipantState
 import com.revio.social.data.model.RewardState
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -45,8 +46,9 @@ private val RowSegmentWidth = 44.dp
 
 /**
  * One row of "My Challenges"' history list. Accent/eyebrow follow the plan's §3 state table:
- * gold only for a granted reward, [RowLabelColor] for anything else — an ended, not-completed
- * challenge is never shown as an error, just as a fact ("2 of 5", not a red "not completed").
+ * gold only for a granted reward, [ChallengeAccent] for an active or reward-pending challenge,
+ * [RowLabelColor] for anything else — an ended, not-completed challenge is never shown as an
+ * error, just as a fact ("2 of 5", not a red "not completed").
  */
 @Composable
 fun ChallengeHistoryRow(
@@ -59,12 +61,24 @@ fun ChallengeHistoryRow(
         item.progress.rewardState == RewardState.NONE &&
         item.effectiveStatus == EffectiveChallengeStatus.ENDED &&
         item.progress.contributionCount >= item.challenge.requiredPosts
+    // Threshold reached but the finalization job hasn't granted (or revoked) the reward yet —
+    // the server is the authority here (see the plan's §7.2); an older server that doesn't send
+    // participantState at all just never shows this branch and falls through to the status below.
+    val isCompletedPending = !isGranted && !isRevoked &&
+        item.progress.participantState == ParticipantState.COMPLETED_PENDING
 
-    val accent = if (isGranted) ChallengeGold else if (item.effectiveStatus == EffectiveChallengeStatus.ACTIVE) ChallengeAccent else RowLabelColor
+    val accent = if (isGranted) {
+        ChallengeGold
+    } else if (isCompletedPending || item.effectiveStatus == EffectiveChallengeStatus.ACTIVE) {
+        ChallengeAccent
+    } else {
+        RowLabelColor
+    }
 
     val eyebrow = when {
         isGranted -> "COMPLETED"
         isRevoked -> "REWARD REVOKED"
+        isCompletedPending -> "REWARD PENDING"
         item.effectiveStatus == EffectiveChallengeStatus.ACTIVE -> "ACTIVE"
         item.effectiveStatus == EffectiveChallengeStatus.SCHEDULED ->
             "STARTS ${item.challenge.startsAt.atZone(ZoneId.systemDefault()).format(RowDateFormatter)}"

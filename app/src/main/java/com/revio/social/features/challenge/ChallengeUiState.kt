@@ -1,5 +1,6 @@
 package com.revio.social.features.challenge
 
+import com.revio.social.data.model.ParticipantState
 import com.revio.social.data.model.RewardState
 import java.time.Duration
 import java.time.Instant
@@ -84,6 +85,9 @@ sealed interface ChallengeUiState {
         val requiredPosts: Int,
         val rewardPoints: Int,
         val rewardState: RewardState,
+        /** The server-derived participation state, e.g. distinguishing "threshold reached,
+         * reward pending" from plain in-progress. See the plan's §7.2. */
+        val participantState: ParticipantState = ParticipantState.UNKNOWN,
         val endsAt: Instant,
         val remaining: RemainingTime,
         /** True when the most recent refresh failed and this is stale data from an earlier one. */

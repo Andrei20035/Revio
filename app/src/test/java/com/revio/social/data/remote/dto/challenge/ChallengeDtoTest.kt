@@ -1,5 +1,6 @@
 package com.revio.social.data.remote.dto.challenge
 
+import com.revio.social.data.model.ParticipantState
 import com.revio.social.data.model.RewardState
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
@@ -102,6 +103,41 @@ class ChallengeDtoTest {
     fun `rewardState lowercase se mapeaza corect`() {
         val progress = ChallengeProgressDto(contributionCount = 1, rewardState = "granted")
         assertEquals(RewardState.GRANTED, progress.toDomain().rewardState)
+    }
+
+    @Test
+    fun `participantState COMPLETED_PENDING se mapeaza la ParticipantState COMPLETED_PENDING`() {
+        val progress = ChallengeProgressDto(
+            contributionCount = 5,
+            rewardState = "NONE",
+            participantState = "COMPLETED_PENDING",
+        )
+        assertEquals(ParticipantState.COMPLETED_PENDING, progress.toDomain().participantState)
+    }
+
+    @Test
+    fun `participantState necunoscut se mapeaza la ParticipantState UNKNOWN, nu crapa`() {
+        val progress = ChallengeProgressDto(
+            contributionCount = 5,
+            rewardState = "NONE",
+            participantState = "SOMETHING_NEW",
+        )
+        assertEquals(ParticipantState.UNKNOWN, progress.toDomain().participantState)
+    }
+
+    @Test
+    fun `participantState absent din raspunsul unui server vechi se mapeaza la ParticipantState UNKNOWN`() {
+        val progress = ChallengeProgressDto(contributionCount = 5, rewardState = "NONE")
+        assertEquals(ParticipantState.UNKNOWN, progress.toDomain().participantState)
+    }
+
+    @Test
+    fun `participantState lipsa din JSON se deserializeaza fara sa crape si mapeaza la UNKNOWN`() {
+        val jsonWithoutParticipantState = """
+            { "progress": { "contributionCount": 2, "rewardState": "NONE" } }
+        """.trimIndent()
+        val dto = json.decodeFromString<ChallengeProgressDetailDto>(jsonWithoutParticipantState)
+        assertEquals(ParticipantState.UNKNOWN, dto.toDomain().progress.participantState)
     }
 
     @Test
