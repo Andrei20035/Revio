@@ -6,6 +6,12 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.revio.social.data.model.AdminChallenge
+import com.revio.social.data.model.ChallengeAdminStatus
+import java.time.Instant
+import java.util.UUID
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -24,6 +30,25 @@ class AdminChallengesScreenTest {
     @get:Rule
     val composeTestRule = createComposeRule()
 
+    private val challenge = AdminChallenge(
+        id = UUID.fromString("00000000-0000-0000-0000-00000000000a"),
+        title = "Weekend Golf Hunt",
+        description = null,
+        targetFamilyId = UUID.fromString("00000000-0000-0000-0000-0000000000f1"),
+        requiredPosts = 5,
+        rewardPoints = 300,
+        startsAt = Instant.parse("2026-08-07T00:00:00Z"),
+        endsAt = Instant.parse("2026-08-09T00:00:00Z"),
+        adminTimezone = "Europe/Bucharest",
+        status = ChallengeAdminStatus.SCHEDULED,
+        createdBy = null,
+        createdAt = Instant.parse("2026-08-01T00:00:00Z"),
+        updatedAt = Instant.parse("2026-08-01T00:00:00Z"),
+        publishedAt = null,
+        cancelledAt = null,
+        finalizedAt = null,
+    )
+
     @Test
     fun isLoading_afiseaza_indicatorul_de_progres() {
         composeTestRule.setContent {
@@ -31,6 +56,7 @@ class AdminChallengesScreenTest {
                 uiState = AdminChallengesUiState(isLoading = true),
                 onRetry = {},
                 onCreateClick = {},
+                onChallengeClick = {},
             )
         }
 
@@ -44,6 +70,7 @@ class AdminChallengesScreenTest {
                 uiState = AdminChallengesUiState(challenges = emptyList()),
                 onRetry = {},
                 onCreateClick = {},
+                onChallengeClick = {},
             )
         }
 
@@ -59,6 +86,7 @@ class AdminChallengesScreenTest {
                 uiState = AdminChallengesUiState(errorMessage = "Server error"),
                 onRetry = { retried = true },
                 onCreateClick = {},
+                onChallengeClick = {},
             )
         }
 
@@ -78,6 +106,7 @@ class AdminChallengesScreenTest {
                 uiState = AdminChallengesUiState(isOffline = true, errorMessage = "Network error"),
                 onRetry = { retried = true },
                 onCreateClick = {},
+                onChallengeClick = {},
             )
         }
 
@@ -93,6 +122,7 @@ class AdminChallengesScreenTest {
                 uiState = AdminChallengesUiState(isLoading = true),
                 onRetry = {},
                 onCreateClick = {},
+                onChallengeClick = {},
             )
         }
 
@@ -107,10 +137,28 @@ class AdminChallengesScreenTest {
                 uiState = AdminChallengesUiState(challenges = emptyList()),
                 onRetry = {},
                 onCreateClick = { createClicked = true },
+                onChallengeClick = {},
             )
         }
 
         composeTestRule.onNodeWithText("Create").performClick()
         assert(createClicked)
+    }
+
+    @Test
+    fun click_pe_un_rand_declanseaza_onChallengeClick_cu_id_ul_challenge_ului() {
+        var clickedId: UUID? = null
+        composeTestRule.setContent {
+            AdminChallengesContent(
+                uiState = AdminChallengesUiState(challenges = listOf(challenge)),
+                onRetry = {},
+                onCreateClick = {},
+                onChallengeClick = { clickedId = it },
+            )
+        }
+
+        assertNull(clickedId)
+        composeTestRule.onNodeWithText("Weekend Golf Hunt").performClick()
+        assertEquals(challenge.id, clickedId)
     }
 }

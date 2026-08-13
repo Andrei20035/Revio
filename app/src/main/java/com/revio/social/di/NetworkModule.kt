@@ -225,4 +225,10 @@ object NetworkModule {
         return retrofit.create(AdminChallengeApi::class.java)
     }
 
+    @Provides
+    @Singleton
+    fun provideAdminCarFamilyApi(retrofit: Retrofit): AdminCarFamilyApi {
+        return retrofit.create(AdminCarFamilyApi::class.java)
+    }
+
 }

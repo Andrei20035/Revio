@@ -26,6 +26,23 @@ sealed class Screen(val route: String) {
     object AdminModeration : Screen("admin/moderation")
     object AdminChallenges : Screen("admin/challenges")
 
+    /** Admin create-challenge wizard. [ARG_CHALLENGE_ID] is present only in edit mode. */
+    object AdminChallengeCreate : Screen("admin/challenges/create?challengeId={challengeId}") {
+        const val ARG_CHALLENGE_ID = "challengeId"
+
+        fun createRoute(): String = "admin/challenges/create"
+
+        fun editRoute(challengeId: UUID): String = "admin/challenges/create?challengeId=$challengeId"
+    }
+
+    /** Admin challenge detail screen. Nested under `detail/` so it can never collide with
+     * [AdminChallengeCreate]'s `admin/challenges/create` segment. */
+    object AdminChallengeDetail : Screen("admin/challenges/detail/{challengeId}") {
+        const val ARG_CHALLENGE_ID = "challengeId"
+
+        fun createRoute(challengeId: UUID): String = "admin/challenges/detail/$challengeId"
+    }
+
     /** Weekend-challenge detail screen. */
     object ChallengeDetail : Screen("challenge/{challengeId}") {
         const val ARG_CHALLENGE_ID = "challengeId"

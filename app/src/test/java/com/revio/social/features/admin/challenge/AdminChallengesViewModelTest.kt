@@ -110,6 +110,24 @@ class AdminChallengesViewModelTest {
     }
 
     @Test
+    fun `refresh reincarca prima pagina`() {
+        coEvery { repository.listChallenges(limit = 20, cursorCreatedAt = null, cursorId = null, status = null) } returns
+            ApiResult.Success(AdminChallengePage(challenges = listOf(challengeA), nextCursor = null, hasMore = false)) andThen
+            ApiResult.Success(AdminChallengePage(challenges = listOf(challengeB), nextCursor = null, hasMore = false))
+
+        val viewModel = AdminChallengesViewModel(repository)
+        assertEquals(listOf(challengeA), viewModel.uiState.value.challenges)
+
+        viewModel.refresh()
+
+        val state = viewModel.uiState.value
+        assertEquals(listOf(challengeB), state.challenges)
+        coVerify(exactly = 2) {
+            repository.listChallenges(limit = 20, cursorCreatedAt = null, cursorId = null, status = null)
+        }
+    }
+
+    @Test
     fun `loadMore adauga a doua pagina la lista existenta, nu o inlocuieste`() {
         val cursor = AdminChallengeListCursor(
             lastCreatedAt = Instant.parse("2026-08-01T00:00:00Z"),

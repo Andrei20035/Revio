@@ -1,6 +1,7 @@
 package com.revio.social.features.admin.challenge
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -16,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -34,6 +36,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavController
+import com.revio.social.core.navigation.Screen
 import com.revio.social.core.network.ApiResult
 import com.revio.social.core.ui.components.StateMessage
 import com.revio.social.core.ui.scaling.actScaled
@@ -185,6 +188,27 @@ fun AdminChallengeDetailScreen(
     val finalizeState by viewModel.finalizeState.collectAsStateWithLifecycle()
     var showPublishSheet by remember { mutableStateOf(false) }
 
+    // Marks the dashboard stale once a submit-in-flight completes without an error — not on
+    // initial composition, since both flags start false. Same flag/consumer as the create wizard
+    // (AdminChallengesScreen.kt's ADMIN_CHALLENGE_CHANGED_KEY collector).
+    var wasPublishSubmitting by remember { mutableStateOf(false) }
+    LaunchedEffect(publishState.isSubmitting) {
+        if (wasPublishSubmitting && !publishState.isSubmitting && publishState.errorMessage == null) {
+            navController.getBackStackEntry(Screen.AdminChallenges.route)
+                .savedStateHandle[ADMIN_CHALLENGE_CHANGED_KEY] = true
+        }
+        wasPublishSubmitting = publishState.isSubmitting
+    }
+
+    var wasFinalizeSubmitting by remember { mutableStateOf(false) }
+    LaunchedEffect(finalizeState.isSubmitting) {
+        if (wasFinalizeSubmitting && !finalizeState.isSubmitting && finalizeState.errorMessage == null) {
+            navController.getBackStackEntry(Screen.AdminChallenges.route)
+                .savedStateHandle[ADMIN_CHALLENGE_CHANGED_KEY] = true
+        }
+        wasFinalizeSubmitting = finalizeState.isSubmitting
+    }
+
     AppScreenBackgroundWithTopBar(
         title = "Challenge detail",
         onBack = { navController.popBackStack() },
@@ -195,6 +219,11 @@ fun AdminChallengeDetailScreen(
             onPublishClick = { showPublishSheet = true },
             finalizeState = finalizeState,
             onFinalizeClick = viewModel::finalize,
+            onEditClick = {
+                (uiState as? AdminChallengeDetailUiState.Content)?.challenge?.let { challenge ->
+                    navController.navigate(Screen.AdminChallengeCreate.editRoute(challenge.id))
+                }
+            },
         )
     }
 
@@ -224,6 +253,7 @@ fun AdminChallengeDetailContent(
     onPublishClick: () -> Unit = {},
     finalizeState: AdminFinalizeUiState = AdminFinalizeUiState(),
     onFinalizeClick: () -> Unit = {},
+    onEditClick: () -> Unit = {},
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         when (uiState) {
@@ -253,6 +283,7 @@ fun AdminChallengeDetailContent(
                 onPublishClick = onPublishClick,
                 finalizeState = finalizeState,
                 onFinalizeClick = onFinalizeClick,
+                onEditClick = onEditClick,
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -265,6 +296,7 @@ private fun AdminChallengeDetailFields(
     onPublishClick: () -> Unit,
     finalizeState: AdminFinalizeUiState,
     onFinalizeClick: () -> Unit,
+    onEditClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -300,6 +332,8 @@ private fun AdminChallengeDetailFields(
 
         if (challenge.status == ChallengeAdminStatus.DRAFT) {
             Spacer(modifier = Modifier.height(20.dp.actScaled()))
+            EditButton(onClick = onEditClick)
+            Spacer(modifier = Modifier.height(12.dp.actScaled()))
             PublishButton(onClick = onPublishClick)
         }
 
@@ -313,6 +347,32 @@ private fun AdminChallengeDetailFields(
                 fontSize = 12.sp.actScaledText(),
             )
         }
+    }
+}
+
+/** Only shown for DRAFT challenges — routes to the create-challenge wizard in edit mode
+ * (`Screen.AdminChallengeCreate.editRoute`, plan §13 D1). */
+@Composable
+private fun EditButton(onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .border(1.dp, FinalizeButtonFill, RoundedCornerShape(12.dp))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            )
+            .padding(vertical = 14.dp.actScaled()),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "Edit draft",
+            color = FinalizeButtonFill,
+            fontWeight = FontWeight.Medium,
+            fontSize = 15.sp.actScaledText(),
+        )
     }
 }
 

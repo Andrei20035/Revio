@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
+import com.revio.social.core.navigation.Screen
 import com.revio.social.core.ui.components.OfflineStateMessage
 import com.revio.social.core.ui.components.StateMessage
 import com.revio.social.core.ui.scaling.actScaled
@@ -48,6 +49,7 @@ import com.revio.social.data.model.AdminChallenge
 import com.revio.social.data.model.ChallengeAdminStatus
 import com.revio.social.features.admin.AppScreenBackgroundWithTopBar
 import java.time.Instant
+import java.util.UUID
 import kotlinx.coroutines.flow.distinctUntilChanged
 
 private val CardFill = Color(0x524E4E4E)
@@ -55,6 +57,11 @@ private val CardBorder = Color(0xFF363636)
 private val CardShape = RoundedCornerShape(12.dp)
 private val SectionLabelColor = Color(0xFF707070)
 private val CreateButtonFill = Color(0xFF34D7C4)
+
+/** Key set on this screen's back stack entry after a challenge is created, edited, or its
+ * lifecycle changes elsewhere (create wizard, detail screen) — collected here to trigger
+ * [AdminChallengesViewModel.refresh]. Same package as [AdminChallengeDetailScreen], no import needed. */
+const val ADMIN_CHALLENGE_CHANGED_KEY = "admin_challenge_changed"
 
 /** The admin "Challenges" dashboard (GET /api/admin/challenges) — previously had no UI at all. */
 @Composable
@@ -76,6 +83,22 @@ fun AdminChallengesScreen(
             .collect { nearEnd -> if (nearEnd) viewModel.loadMore() }
     }
 
+    // Captured once at first composition, so the effect below always collects from and resets
+    // the same entry — mirrors ProfileDashboardScreen's post_created/post_updated pattern.
+    val screenBackStackEntry = remember { navController.currentBackStackEntry }
+
+    // Refreshes the list after the create wizard or the detail screen changes a challenge.
+    LaunchedEffect(Unit) {
+        screenBackStackEntry?.savedStateHandle
+            ?.getStateFlow(ADMIN_CHALLENGE_CHANGED_KEY, false)
+            ?.collect { changed ->
+                if (changed) {
+                    screenBackStackEntry.savedStateHandle.set(ADMIN_CHALLENGE_CHANGED_KEY, false)
+                    viewModel.refresh()
+                }
+            }
+    }
+
     AppScreenBackgroundWithTopBar(
         title = "Challenges",
         onBack = { navController.popBackStack() },
@@ -84,8 +107,10 @@ fun AdminChallengesScreen(
             uiState = uiState,
             listState = listState,
             onRetry = viewModel::retry,
-            // Wired once the create wizard exists (Bloc I) — no destination to navigate to yet.
-            onCreateClick = {},
+            onCreateClick = { navController.navigate(Screen.AdminChallengeCreate.createRoute()) },
+            onChallengeClick = { challengeId ->
+                navController.navigate(Screen.AdminChallengeDetail.createRoute(challengeId))
+            },
         )
     }
 }
@@ -95,6 +120,7 @@ fun AdminChallengesContent(
     uiState: AdminChallengesUiState,
     onRetry: () -> Unit,
     onCreateClick: () -> Unit,
+    onChallengeClick: (UUID) -> Unit,
     listState: LazyListState = rememberLazyListState(),
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
@@ -124,6 +150,7 @@ fun AdminChallengesContent(
             else -> AdminChallengesList(
                 uiState = uiState,
                 listState = listState,
+                onChallengeClick = onChallengeClick,
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -160,6 +187,7 @@ private fun AdminChallenge.dashboardSection(now: Instant): DashboardSection = wh
 private fun AdminChallengesList(
     uiState: AdminChallengesUiState,
     listState: LazyListState,
+    onChallengeClick: (UUID) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val now = remember(uiState.challenges) { Instant.now() }
@@ -181,7 +209,7 @@ private fun AdminChallengesList(
                 Spacer(modifier = Modifier.height(8.dp.actScaled()))
             }
             items(challenges, key = { "${section.name}-${it.id}" }) { challenge ->
-                ChallengeRow(challenge)
+                ChallengeRow(challenge, onClick = { onChallengeClick(challenge.id) })
                 Spacer(modifier = Modifier.height(12.dp.actScaled()))
             }
         }
@@ -213,13 +241,14 @@ private fun SectionLabel(text: String) {
 }
 
 @Composable
-private fun ChallengeRow(challenge: AdminChallenge) {
+private fun ChallengeRow(challenge: AdminChallenge, onClick: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(CardShape)
             .border(1.dp, CardBorder, CardShape)
             .background(CardFill)
+            .clickable(onClick = onClick)
             .padding(16.dp.actScaled()),
     ) {
         Text(

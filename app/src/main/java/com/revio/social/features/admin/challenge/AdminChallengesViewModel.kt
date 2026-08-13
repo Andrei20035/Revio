@@ -52,6 +52,13 @@ class AdminChallengesViewModel @Inject constructor(
         load()
     }
 
+    /** Reloads the first page. Called after returning from an action elsewhere (create wizard,
+     * detail screen) that may have changed a challenge — see [ADMIN_CHALLENGE_CHANGED_KEY]. */
+    fun refresh() {
+        if (_uiState.value.isLoading) return
+        load()
+    }
+
     fun loadMore() {
         val current = _uiState.value
         if (!current.hasMore || current.isPaging || current.isLoading) return

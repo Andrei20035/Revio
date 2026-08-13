@@ -16,7 +16,9 @@ import com.revio.social.features.admin.AdminHomeScreen
 import com.revio.social.features.admin.AdminModerationScreen
 import com.revio.social.features.admin.AdminReportsScreen
 import com.revio.social.features.admin.AdminUserScreen
+import com.revio.social.features.admin.challenge.AdminChallengeDetailScreen
 import com.revio.social.features.admin.challenge.AdminChallengesScreen
+import com.revio.social.features.admin.challenge.create.CreateChallengeScreen
 import com.revio.social.features.challenge.ChallengeDetailScreen
 import com.revio.social.features.challenge.MyChallengesScreen
 import com.revio.social.features.feed.FeedScreen
@@ -205,6 +207,31 @@ fun RevioNavigation(
 
         composable(Screen.AdminChallenges.route) {
             AdminChallengesScreen(navController = navController)
+        }
+
+        composable(
+            route = Screen.AdminChallengeCreate.route,
+            arguments = listOf(
+                navArgument(Screen.AdminChallengeCreate.ARG_CHALLENGE_ID) {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+            ),
+        ) {
+            CreateChallengeScreen(navController = navController)
+        }
+
+        composable(
+            route = Screen.AdminChallengeDetail.route,
+            arguments = listOf(
+                navArgument(Screen.AdminChallengeDetail.ARG_CHALLENGE_ID) {
+                    type = NavType.StringType
+                },
+            ),
+        ) {
+            // The challengeId nav arg is read by AdminChallengeDetailViewModel via SavedStateHandle.
+            AdminChallengeDetailScreen(navController = navController)
         }
 
         composable(Screen.AdminReports.route) {
