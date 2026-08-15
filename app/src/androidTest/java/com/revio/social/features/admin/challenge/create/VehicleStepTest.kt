@@ -43,14 +43,14 @@ class VehicleStepTest {
     }
 
     @Test
-    fun `familiesState Loading afiseaza indicatorul de progres`() {
+    fun `familiesState_Loading_afiseaza_indicatorul_de_progres`() {
         setContent(CreateChallengeUiState(familiesState = FamiliesState.Loading))
 
         composeTestRule.onNodeWithTag("create_challenge_loading").assertIsDisplayed()
     }
 
     @Test
-    fun `familiesState Empty afiseaza mesajul No car families yet`() {
+    fun `familiesState_Empty_afiseaza_mesajul_No_car_families_yet`() {
         setContent(CreateChallengeUiState(familiesState = FamiliesState.Empty))
 
         composeTestRule.onNodeWithText("No car families yet").assertIsDisplayed()
@@ -58,7 +58,7 @@ class VehicleStepTest {
     }
 
     @Test
-    fun `familiesState Error afiseaza mesajul si Retry declanseaza RetryLoadFamilies`() {
+    fun `familiesState_Error_afiseaza_mesajul_si_Retry_declanseaza_RetryLoadFamilies`() {
         var retried = false
         setContent(
             uiState = CreateChallengeUiState(
@@ -74,7 +74,7 @@ class VehicleStepTest {
     }
 
     @Test
-    fun `familiesState Error de retea afiseaza OfflineStateMessage`() {
+    fun `familiesState_Error_de_retea_afiseaza_OfflineStateMessage`() {
         setContent(
             CreateChallengeUiState(familiesState = FamiliesState.Error("Network error", isOffline = true)),
         )
@@ -83,7 +83,7 @@ class VehicleStepTest {
     }
 
     @Test
-    fun `familiesState Content afiseaza selectoarele Brand si Model family`() {
+    fun `familiesState_Content_afiseaza_selectoarele_Brand_si_Model_family`() {
         setContent(CreateChallengeUiState(familiesState = FamiliesState.Content(listOf(family))))
 
         composeTestRule.onNodeWithText("Brand").assertIsDisplayed()
@@ -93,7 +93,7 @@ class VehicleStepTest {
     }
 
     @Test
-    fun `familie selectata cu modele afiseaza preview-ul Included models`() {
+    fun `familie_selectata_cu_modele_afiseaza_preview-ul_Included_models`() {
         setContent(
             CreateChallengeUiState(
                 form = CreateChallengeFormState(selectedBrand = family.brand, selectedFamilyId = family.id),
@@ -108,7 +108,7 @@ class VehicleStepTest {
     }
 
     @Test
-    fun `familie fara modele afiseaza avertismentul si dezactiveaza Next`() {
+    fun `familie_fara_modele_afiseaza_avertismentul_si_dezactiveaza_Next`() {
         var nextClicked = false
         setContent(
             uiState = CreateChallengeUiState(
@@ -128,7 +128,7 @@ class VehicleStepTest {
     }
 
     @Test
-    fun `eroare la incarcarea modelelor afiseaza mesajul si Retry declanseaza RetryLoadModels`() {
+    fun `eroare_la_incarcarea_modelelor_afiseaza_mesajul_si_Retry_declanseaza_RetryLoadModels`() {
         var retried = false
         setContent(
             uiState = CreateChallengeUiState(
@@ -145,7 +145,7 @@ class VehicleStepTest {
     }
 
     @Test
-    fun `vehicul valid activeaza Next si click declanseaza NextStep`() {
+    fun `vehicul_valid_activeaza_Next_si_click_declanseaza_NextStep`() {
         var nextClicked = false
         setContent(
             uiState = CreateChallengeUiState(

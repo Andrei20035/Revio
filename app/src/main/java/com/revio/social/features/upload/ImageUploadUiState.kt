@@ -28,6 +28,10 @@ data class ImageUploadUiState(
     val postId: UUID? = null,
     val existingImageUrl: String? = null,
     val isLoadingPost: Boolean = false,
+    /** True when the post being edited has contributed to a challenge — brand/model are locked. */
+    val vehicleLocked: Boolean = false,
+    /** Whether the vehicle-locked explanation overlay is shown (opened instead of the brand/model dropdowns). */
+    val showVehicleLockedInfo: Boolean = false,
 
     // Optional location, attached best-effort. All nullable; posting never depends on these.
     val latitude: Double? = null,

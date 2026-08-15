@@ -6,12 +6,16 @@ import com.revio.social.data.model.User
 import com.revio.social.data.remote.api.PostApi
 import com.revio.social.data.remote.dto.post.CreatePostMetadata
 import com.revio.social.data.remote.dto.post.CreatePostResponse
+import com.revio.social.data.remote.dto.post.UpdatePostRequest
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import java.io.IOException
 import java.util.UUID
 import kotlinx.coroutines.test.runTest
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.ResponseBody.Companion.toResponseBody
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -110,5 +114,59 @@ class PostRepositoryImplTest {
 
         verify(exactly = 0) { userRepository.setCurrentUser(any()) }
         assertTrue(result is ApiResult.Error)
+    }
+
+    // ---- updatePost 409 CHALLENGE_POST_VEHICLE_LOCKED mapping ----
+
+    @Test
+    fun `updatePost cu 409 CHALLENGE_POST_VEHICLE_LOCKED mapeaza la un mesaj explicativ dedicat`() = runTest {
+        val postId = UUID.randomUUID()
+        val errorBody =
+            """{"error":"This post's vehicle can no longer be changed because it has contributed to a challenge","code":"CHALLENGE_POST_VEHICLE_LOCKED"}"""
+        coEvery { postApi.updatePost(postId, any()) } returns
+            Response.error(409, errorBody.toResponseBody("application/json".toMediaType()))
+
+        val result = repository.updatePost(postId, UpdatePostRequest(carModelId = UUID.randomUUID()))
+
+        assertTrue(result is ApiResult.Error)
+        val error = result as ApiResult.Error
+        assertEquals("CHALLENGE_POST_VEHICLE_LOCKED", error.code)
+        assertEquals(
+            "This post's brand and model can no longer be changed because it has contributed to a challenge.",
+            error.message,
+        )
+    }
+
+    @Test
+    fun `updatePost cu alt cod de eroare nu este rescris - mesajul serverului trece neschimbat`() = runTest {
+        val postId = UUID.randomUUID()
+        val errorBody = """{"error":"Post not found"}"""
+        coEvery { postApi.updatePost(postId, any()) } returns
+            Response.error(404, errorBody.toResponseBody("application/json".toMediaType()))
+
+        val result = repository.updatePost(postId, UpdatePostRequest(carModelId = UUID.randomUUID()))
+
+        assertTrue(result is ApiResult.Error)
+        assertEquals("Post not found", (result as ApiResult.Error).message)
+    }
+
+    @Test
+    fun `updatePost cu succes converteste raspunsul in domeniu`() = runTest {
+        val postId = UUID.randomUUID()
+        val dto = com.revio.social.data.remote.dto.post.FeedPostDto(
+            id = postId,
+            userId = UUID.randomUUID(),
+            username = "owner",
+            brand = "Audi",
+            model = "RS6",
+            imageUrl = "https://example.com/post.jpg",
+            createdAt = java.time.Instant.now(),
+        )
+        coEvery { postApi.updatePost(postId, any()) } returns Response.success(dto)
+
+        val result = repository.updatePost(postId, UpdatePostRequest(carModelId = UUID.randomUUID()))
+
+        assertTrue(result is ApiResult.Success)
+        assertEquals("Audi", (result as ApiResult.Success).data.brand)
     }
 }

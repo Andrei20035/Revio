@@ -47,7 +47,7 @@ class ChallengeDetailScreenTest {
     )
 
     @Test
-    fun `prag atins, recompensa neacordata - Completed cu linia de asteptare`() {
+    fun `prag_atins_recompensa_neacordata_-_Completed_cu_linia_de_asteptare`() {
         composeTestRule.setContent {
             ChallengeDetailContent(
                 state = contentState(
@@ -66,7 +66,7 @@ class ChallengeDetailScreenTest {
     }
 
     @Test
-    fun `prag atins, recompensa acordata - Completed cu linia de puncte primite`() {
+    fun `prag_atins_recompensa_acordata_-_Completed_cu_linia_de_puncte_primite`() {
         composeTestRule.setContent {
             ChallengeDetailContent(
                 state = contentState(
@@ -87,7 +87,7 @@ class ChallengeDetailScreenTest {
     }
 
     @Test
-    fun `prag neatins - fara bifa Completed`() {
+    fun `prag_neatins_-_fara_bifa_Completed`() {
         composeTestRule.setContent {
             ChallengeDetailContent(
                 state = contentState(

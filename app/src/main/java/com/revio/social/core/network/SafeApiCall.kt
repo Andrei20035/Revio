@@ -65,7 +65,12 @@ private fun extractApiError(errorBody: String?): Pair<String, String?> {
             ?: json?.get("error")?.jsonPrimitive?.contentOrNull?.ifBlank { null }
             ?: json?.get("message")?.jsonPrimitive?.contentOrNull?.ifBlank { null }
             ?: "Unknown error"
-        message to nestedError?.get("code")?.jsonPrimitive?.contentOrNull
+        // Auth errors nest `code` under `error` ({"error": {"code": ..., "message": ...}}); other
+        // routes (e.g. PATCH /posts/{postId}'s 409) send it as a flat sibling of `error`
+        // ({"error": "...", "code": "..."}) — fall back to the flat shape when there's no nested one.
+        val code = nestedError?.get("code")?.jsonPrimitive?.contentOrNull
+            ?: json?.get("code")?.jsonPrimitive?.contentOrNull
+        message to code
     } catch (_: Exception) {
         fallbackMessage to null
     }

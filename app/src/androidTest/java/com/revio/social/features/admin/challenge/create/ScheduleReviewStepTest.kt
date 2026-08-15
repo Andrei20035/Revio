@@ -43,7 +43,7 @@ class ScheduleReviewStepTest {
     }
 
     @Test
-    fun `Start now activ ascunde campul Starts`() {
+    fun `Start_now_activ_ascunde_campul_Starts`() {
         setContent(CreateChallengeUiState(form = CreateChallengeFormState(startNow = true)))
 
         composeTestRule.onNodeWithText("Ends").assertIsDisplayed()
@@ -52,7 +52,7 @@ class ScheduleReviewStepTest {
     }
 
     @Test
-    fun `Start now dezactivat afiseaza campul Starts`() {
+    fun `Start_now_dezactivat_afiseaza_campul_Starts`() {
         setContent(CreateChallengeUiState(form = CreateChallengeFormState(startNow = false)))
 
         // The DateTimeField's own label plus the review summary's "Starts" row.
@@ -60,7 +60,7 @@ class ScheduleReviewStepTest {
     }
 
     @Test
-    fun `toggle Start now declanseaza SetStartNow`() {
+    fun `toggle_Start_now_declanseaza_SetStartNow`() {
         var lastAction: CreateChallengeAction? = null
         setContent(
             uiState = CreateChallengeUiState(form = CreateChallengeFormState(startNow = true)),
@@ -73,7 +73,7 @@ class ScheduleReviewStepTest {
     }
 
     @Test
-    fun `rezumatul afiseaza toate cele 8 randuri cu valorile corecte`() {
+    fun `rezumatul_afiseaza_toate_cele_8_randuri_cu_valorile_corecte`() {
         val models = listOf(
             CarModelOption(id = UUID.randomUUID(), model = "Golf"),
             CarModelOption(id = UUID.randomUUID(), model = "Golf Plus"),
@@ -107,7 +107,7 @@ class ScheduleReviewStepTest {
     }
 
     @Test
-    fun `rezumatul afiseaza Now pentru Starts cand Start now e activ`() {
+    fun `rezumatul_afiseaza_Now_pentru_Starts_cand_Start_now_e_activ`() {
         setContent(
             CreateChallengeUiState(
                 form = CreateChallengeFormState(startNow = true, endsAtLocal = LocalDateTime.of(2026, 8, 14, 9, 0)),
@@ -118,7 +118,7 @@ class ScheduleReviewStepTest {
     }
 
     @Test
-    fun `peste 4 modele afiseaza rezumatul trunchiat cu N more`() {
+    fun `peste_4_modele_afiseaza_rezumatul_trunchiat_cu_N_more`() {
         val models = (1..6).map { CarModelOption(id = UUID.randomUUID(), model = "Model $it") }
         setContent(
             CreateChallengeUiState(
@@ -132,7 +132,7 @@ class ScheduleReviewStepTest {
     }
 
     @Test
-    fun `eroare endsAt inainte de startsAt afiseaza mesajul inline`() {
+    fun `eroare_endsAt_inainte_de_startsAt_afiseaza_mesajul_inline`() {
         setContent(
             CreateChallengeUiState(fieldErrors = mapOf(CreateChallengeField.SCHEDULE to "End must be after start.")),
         )
@@ -141,7 +141,7 @@ class ScheduleReviewStepTest {
     }
 
     @Test
-    fun `eroare start in trecut afiseaza mesajul inline`() {
+    fun `eroare_start_in_trecut_afiseaza_mesajul_inline`() {
         setContent(
             CreateChallengeUiState(
                 form = CreateChallengeFormState(startNow = false),
@@ -153,7 +153,7 @@ class ScheduleReviewStepTest {
     }
 
     @Test
-    fun `click pe Save draft declanseaza SaveDraft`() {
+    fun `click_pe_Save_draft_declanseaza_SaveDraft`() {
         var lastAction: CreateChallengeAction? = null
         setContent(CreateChallengeUiState(), onAction = { lastAction = it })
 
@@ -163,7 +163,7 @@ class ScheduleReviewStepTest {
     }
 
     @Test
-    fun `click pe Publish challenge declanseaza RequestPublish`() {
+    fun `click_pe_Publish_challenge_declanseaza_RequestPublish`() {
         var lastAction: CreateChallengeAction? = null
         setContent(CreateChallengeUiState(), onAction = { lastAction = it })
 
@@ -173,7 +173,7 @@ class ScheduleReviewStepTest {
     }
 
     @Test
-    fun `succes partial afiseaza Draft saved but publishing failed si eroarea`() {
+    fun `succes_partial_afiseaza_Draft_saved_but_publishing_failed_si_eroarea`() {
         setContent(
             CreateChallengeUiState(submitState = SubmitState.PartialSuccess("Server error")),
         )
@@ -183,7 +183,7 @@ class ScheduleReviewStepTest {
     }
 
     @Test
-    fun `succes partial reetichteaza butoanele Keep as draft si Retry publish`() {
+    fun `succes_partial_reetichteaza_butoanele_Keep_as_draft_si_Retry_publish`() {
         setContent(CreateChallengeUiState(submitState = SubmitState.PartialSuccess("Server error")))
 
         composeTestRule.onNodeWithText("Keep as draft").assertIsDisplayed()
@@ -193,7 +193,7 @@ class ScheduleReviewStepTest {
     }
 
     @Test
-    fun `click pe Keep as draft declanseaza KeepAsDraft`() {
+    fun `click_pe_Keep_as_draft_declanseaza_KeepAsDraft`() {
         var lastAction: CreateChallengeAction? = null
         setContent(
             uiState = CreateChallengeUiState(submitState = SubmitState.PartialSuccess("Server error")),
@@ -206,7 +206,7 @@ class ScheduleReviewStepTest {
     }
 
     @Test
-    fun `click pe Retry publish declanseaza RetryPublish`() {
+    fun `click_pe_Retry_publish_declanseaza_RetryPublish`() {
         var lastAction: CreateChallengeAction? = null
         setContent(
             uiState = CreateChallengeUiState(submitState = SubmitState.PartialSuccess("Server error")),
@@ -219,7 +219,7 @@ class ScheduleReviewStepTest {
     }
 
     @Test
-    fun `Failed afiseaza mesajul serverului deasupra butoanelor care raman Save draft si Publish challenge`() {
+    fun `Failed_afiseaza_mesajul_serverului_deasupra_butoanelor_care_raman_Save_draft_si_Publish_challenge`() {
         setContent(CreateChallengeUiState(submitState = SubmitState.Failed("Server error")))
 
         composeTestRule.onNodeWithText("Server error").assertIsDisplayed()
@@ -228,7 +228,7 @@ class ScheduleReviewStepTest {
     }
 
     @Test
-    fun `Submitting dezactiveaza ambele CTA`() {
+    fun `Submitting_dezactiveaza_ambele_CTA`() {
         setContent(CreateChallengeUiState(submitState = SubmitState.Submitting))
 
         composeTestRule.onNodeWithText("Save draft").assertIsNotEnabled()
@@ -238,7 +238,7 @@ class ScheduleReviewStepTest {
     // ---------- Mod edit (Etapa 10) ----------
 
     @Test
-    fun `mod edit afiseaza Save changes in loc de Save draft`() {
+    fun `mod_edit_afiseaza_Save_changes_in_loc_de_Save_draft`() {
         setContent(CreateChallengeUiState(mode = CreateChallengeMode.Edit(UUID.randomUUID())))
 
         composeTestRule.onNodeWithText("Save changes").assertIsDisplayed()
@@ -246,7 +246,7 @@ class ScheduleReviewStepTest {
     }
 
     @Test
-    fun `conflict de lifecycle afiseaza un singur buton Open details`() {
+    fun `conflict_de_lifecycle_afiseaza_un_singur_buton_Open_details`() {
         var lastAction: CreateChallengeAction? = null
         val challengeId = UUID.randomUUID()
         setContent(

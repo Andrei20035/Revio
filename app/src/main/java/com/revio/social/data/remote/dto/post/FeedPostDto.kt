@@ -37,6 +37,12 @@ data class FeedPostDto(
     val likedByCurrentUser: Boolean = false,
     val authorIsEarlySpotter: Boolean = false,
     val authorEarlySpotterNumber: Int? = null,
+    /**
+     * Whether this post's brand/model can no longer be changed because it has contributed to a
+     * challenge. Only ever true when this DTO came from `GET /posts/{id}` — the server leaves it
+     * `false` on `GET /posts/feed` (see server `PostDTO.vehicleLocked`'s KDoc).
+     */
+    val vehicleLocked: Boolean = false,
 )
 
 fun FeedPostDto.toDomain(): FeedPost = FeedPost(
@@ -57,6 +63,7 @@ fun FeedPostDto.toDomain(): FeedPost = FeedPost(
     locationLabel = buildLocationLabel(town, country),
     authorIsEarlySpotter = authorIsEarlySpotter,
     authorEarlySpotterNumber = authorEarlySpotterNumber,
+    vehicleLocked = vehicleLocked,
 )
 
 /** Joins town/country into the feed card's location label, tolerating either being absent. */

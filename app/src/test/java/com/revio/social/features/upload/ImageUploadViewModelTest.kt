@@ -9,9 +9,11 @@ import com.revio.social.core.image.ImageCompressor
 import com.revio.social.core.network.ApiResult
 import com.revio.social.core.navigation.Screen
 import com.revio.social.data.model.Coordinates
+import com.revio.social.data.model.FeedPost
 import com.revio.social.data.model.PlaceName
 import com.revio.social.data.remote.dto.car_model.CarModelOption
 import com.revio.social.data.remote.dto.post.CreatePostMetadata
+import com.revio.social.data.remote.dto.post.UpdatePostRequest
 import com.revio.social.data.repository.CarModelRepository
 import com.revio.social.data.repository.CreatePostResult
 import com.revio.social.data.repository.LocationRepository
@@ -23,11 +25,14 @@ import io.mockk.mockk
 import io.mockk.mockkStatic
 import io.mockk.slot
 import io.mockk.unmockkStatic
+import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -54,6 +59,23 @@ class ImageUploadViewModelTest {
         coEvery { carModelRepository.getAllCarBrands() } returns ApiResult.Success(emptyList())
         every { locationRepository.hasLocationPermission() } returns false
     }
+
+    private fun feedPost(brand: String, model: String, vehicleLocked: Boolean = false) = FeedPost(
+        id = UUID.randomUUID(),
+        userId = UUID.randomUUID(),
+        username = "owner",
+        brand = brand,
+        model = model,
+        imageUrl = "https://example.com/post.jpg",
+        caption = null,
+        latitude = null,
+        longitude = null,
+        createdAt = Instant.now(),
+        likeCount = 0,
+        commentCount = 0,
+        likedByCurrentUser = false,
+        vehicleLocked = vehicleLocked,
+    )
 
     private fun viewModel(
         postId: String? = null,
@@ -318,5 +340,96 @@ class ImageUploadViewModelTest {
         viewModel.post()
 
         coVerify(exactly = 0) { postCreationSignal.emit(any()) }
+    }
+
+    // ---- Vehicle lock (post already contributed to a challenge) ----
+
+    @Test
+    fun `vehicleLocked true - brand field click opens the info overlay instead of the dropdown`() = runTest {
+        val postId = UUID.randomUUID()
+        coEvery { postRepository.getPostDetail(postId) } returns
+            ApiResult.Success(feedPost(brand = "Lamborghini", model = "Huracan", vehicleLocked = true))
+        coEvery { carModelRepository.getModelsForBrand("Lamborghini") } returns ApiResult.Success(emptyList())
+
+        val viewModel = viewModel(postId = postId.toString())
+
+        viewModel.onBrandFieldClick()
+
+        val state = viewModel.uiState.value
+        assertTrue(state.vehicleLocked)
+        assertTrue(state.showVehicleLockedInfo)
+        assertFalse(state.brandDropdownOpen)
+    }
+
+    @Test
+    fun `vehicleLocked true - model field click opens the info overlay instead of the dropdown`() = runTest {
+        val postId = UUID.randomUUID()
+        coEvery { postRepository.getPostDetail(postId) } returns
+            ApiResult.Success(feedPost(brand = "Lamborghini", model = "Huracan", vehicleLocked = true))
+        coEvery { carModelRepository.getModelsForBrand("Lamborghini") } returns ApiResult.Success(emptyList())
+
+        val viewModel = viewModel(postId = postId.toString())
+
+        viewModel.onModelFieldClick()
+
+        val state = viewModel.uiState.value
+        assertTrue(state.showVehicleLockedInfo)
+        assertFalse(state.modelDropdownOpen)
+    }
+
+    @Test
+    fun `vehicleLocked false - brand and model field clicks behave as before`() = runTest {
+        val postId = UUID.randomUUID()
+        coEvery { postRepository.getPostDetail(postId) } returns
+            ApiResult.Success(feedPost(brand = "BMW", model = "M3", vehicleLocked = false))
+        coEvery { carModelRepository.getAllCarBrands() } returns ApiResult.Success(listOf("BMW"))
+        val model = CarModelOption(id = UUID.randomUUID(), model = "M3")
+        coEvery { carModelRepository.getModelsForBrand("BMW") } returns ApiResult.Success(listOf(model))
+
+        val viewModel = viewModel(postId = postId.toString())
+
+        viewModel.onBrandFieldClick()
+        assertTrue(viewModel.uiState.value.brandDropdownOpen)
+        assertFalse(viewModel.uiState.value.showVehicleLockedInfo)
+
+        viewModel.dismissBrandDropdown()
+        viewModel.onModelFieldClick()
+        assertTrue(viewModel.uiState.value.modelDropdownOpen)
+        assertFalse(viewModel.uiState.value.showVehicleLockedInfo)
+    }
+
+    @Test
+    fun `dismissVehicleLockedInfo resets showVehicleLockedInfo`() = runTest {
+        val postId = UUID.randomUUID()
+        coEvery { postRepository.getPostDetail(postId) } returns
+            ApiResult.Success(feedPost(brand = "Lamborghini", model = "Huracan", vehicleLocked = true))
+        coEvery { carModelRepository.getModelsForBrand("Lamborghini") } returns ApiResult.Success(emptyList())
+
+        val viewModel = viewModel(postId = postId.toString())
+        viewModel.onBrandFieldClick()
+        assertTrue(viewModel.uiState.value.showVehicleLockedInfo)
+
+        viewModel.dismissVehicleLockedInfo()
+
+        assertFalse(viewModel.uiState.value.showVehicleLockedInfo)
+    }
+
+    @Test
+    fun `updateExistingPost still sends the prefilled carModelId when the vehicle is locked`() = runTest {
+        val postId = UUID.randomUUID()
+        val model = CarModelOption(id = UUID.randomUUID(), model = "Huracan")
+        coEvery { postRepository.getPostDetail(postId) } returns
+            ApiResult.Success(feedPost(brand = "Lamborghini", model = "Huracan", vehicleLocked = true))
+        coEvery { carModelRepository.getModelsForBrand("Lamborghini") } returns ApiResult.Success(listOf(model))
+        val requestSlot = slot<UpdatePostRequest>()
+        coEvery { postRepository.updatePost(eq(postId), capture(requestSlot)) } returns
+            ApiResult.Success(mockk(relaxed = true))
+
+        val viewModel = viewModel(postId = postId.toString())
+
+        viewModel.post()
+
+        assertEquals(model.id, requestSlot.captured.carModelId)
+        assertEquals(true, viewModel.uiState.value.postSuccess)
     }
 }

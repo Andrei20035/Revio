@@ -89,7 +89,7 @@ class ChallengeCardTest {
     // ---- Copy per stare, tabelul §5.4 al planului ----
 
     @Test
-    fun `stare - Activ, incomplet`() {
+    fun `stare_-_Activ_incomplet`() {
         setCardContent(
             activeState(
                 contributionCount = 3,
@@ -104,7 +104,7 @@ class ChallengeCardTest {
     }
 
     @Test
-    fun `stare - Activ, penultimul (mai e un singur post)`() {
+    fun `stare_-_Activ_penultimul_mai_e_un_singur_post`() {
         setCardContent(
             activeState(
                 contributionCount = 4,
@@ -119,7 +119,7 @@ class ChallengeCardTest {
     }
 
     @Test
-    fun `stare - Activ, prag atins (recompensa in asteptare)`() {
+    fun `stare_-_Activ_prag_atins_recompensa_in_asteptare`() {
         setCardContent(
             activeState(
                 contributionCount = 5,
@@ -138,7 +138,7 @@ class ChallengeCardTest {
     }
 
     @Test
-    fun `stare - Incheiat, prag atins, acordat (RewardState GRANTED)`() {
+    fun `stare_-_Incheiat_prag_atins_acordat_RewardState_GRANTED`() {
         setCardContent(
             activeState(
                 contributionCount = 5,
@@ -156,7 +156,7 @@ class ChallengeCardTest {
     }
 
     @Test
-    fun `participantState UNKNOWN de la un server vechi - fallback pe numarul de contributii pentru COMPLETED_PENDING`() {
+    fun `participantState_UNKNOWN_de_la_un_server_vechi_-_fallback_pe_numarul_de_contributii_pentru_COMPLETED_PENDING`() {
         setCardContent(
             activeState(
                 contributionCount = 5,

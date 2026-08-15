@@ -60,7 +60,7 @@ class ChallengeHistoryRowTest {
     }
 
     @Test
-    fun `Incheiat, prag neatins - eticheta ramane ENDED, nu devine eroare`() {
+    fun `Incheiat_prag_neatins_-_eticheta_ramane_ENDED_nu_devine_eroare`() {
         setRowContent(
             contributionCount = 2,
             rewardState = RewardState.NONE,
@@ -75,7 +75,7 @@ class ChallengeHistoryRowTest {
     }
 
     @Test
-    fun `prag atins, finalizare neefectuata - eticheta REWARD PENDING`() {
+    fun `prag_atins_finalizare_neefectuata_-_eticheta_REWARD_PENDING`() {
         setRowContent(
             contributionCount = 5,
             rewardState = RewardState.NONE,
@@ -88,7 +88,7 @@ class ChallengeHistoryRowTest {
     }
 
     @Test
-    fun `participantState UNKNOWN de la un server vechi - fara REWARD PENDING, comportament neschimbat`() {
+    fun `participantState_UNKNOWN_de_la_un_server_vechi_-_fara_REWARD_PENDING_comportament_neschimbat`() {
         setRowContent(
             contributionCount = 5,
             rewardState = RewardState.NONE,

@@ -36,14 +36,14 @@ class GoalRewardStepTest {
     }
 
     @Test
-    fun `titlu gol afiseaza Required langa Title`() {
+    fun `titlu_gol_afiseaza_Required_langa_Title`() {
         setContent(CreateChallengeUiState(fieldErrors = mapOf(CreateChallengeField.TITLE to "Required.")))
 
         composeTestRule.onNodeWithText("Required.").assertIsDisplayed()
     }
 
     @Test
-    fun `titlu peste 150 de caractere afiseaza mesajul de lungime`() {
+    fun `titlu_peste_150_de_caractere_afiseaza_mesajul_de_lungime`() {
         setContent(
             CreateChallengeUiState(
                 fieldErrors = mapOf(CreateChallengeField.TITLE to "Keep it under 150 characters."),
@@ -54,7 +54,7 @@ class GoalRewardStepTest {
     }
 
     @Test
-    fun `requiredPosts 0 afiseaza Must be greater than 0`() {
+    fun `requiredPosts_0_afiseaza_Must_be_greater_than_0`() {
         setContent(
             CreateChallengeUiState(
                 fieldErrors = mapOf(CreateChallengeField.REQUIRED_POSTS to "Must be greater than 0."),
@@ -65,7 +65,7 @@ class GoalRewardStepTest {
     }
 
     @Test
-    fun `requiredPosts abc afiseaza Enter a whole number`() {
+    fun `requiredPosts_abc_afiseaza_Enter_a_whole_number`() {
         setContent(
             CreateChallengeUiState(
                 fieldErrors = mapOf(CreateChallengeField.REQUIRED_POSTS to "Enter a whole number."),
@@ -76,14 +76,14 @@ class GoalRewardStepTest {
     }
 
     @Test
-    fun `rewardPoints gol afiseaza Required langa Reward points`() {
+    fun `rewardPoints_gol_afiseaza_Required_langa_Reward_points`() {
         setContent(CreateChallengeUiState(fieldErrors = mapOf(CreateChallengeField.REWARD_POINTS to "Required.")))
 
         composeTestRule.onNodeWithText("Required.").assertIsDisplayed()
     }
 
     @Test
-    fun `helper text-ul ramane vizibil fara nicio eroare`() {
+    fun `helper_text-ul_ramane_vizibil_fara_nicio_eroare`() {
         setContent(CreateChallengeUiState())
 
         composeTestRule.onNodeWithText("Qualifying posts each user must publish.").assertIsDisplayed()
@@ -91,7 +91,7 @@ class GoalRewardStepTest {
     }
 
     @Test
-    fun `Next ramane activ indiferent de fieldErrors`() {
+    fun `Next_ramane_activ_indiferent_de_fieldErrors`() {
         setContent(
             CreateChallengeUiState(
                 fieldErrors = mapOf(
@@ -106,7 +106,7 @@ class GoalRewardStepTest {
     }
 
     @Test
-    fun `click pe Next declanseaza NextStep`() {
+    fun `click_pe_Next_declanseaza_NextStep`() {
         var lastAction: CreateChallengeAction? = null
         setContent(CreateChallengeUiState(), onAction = { lastAction = it })
 
@@ -116,7 +116,7 @@ class GoalRewardStepTest {
     }
 
     @Test
-    fun `tastare in Title declanseaza UpdateTitle`() {
+    fun `tastare_in_Title_declanseaza_UpdateTitle`() {
         var lastAction: CreateChallengeAction? = null
         setContent(CreateChallengeUiState(), onAction = { lastAction = it })
 
@@ -126,7 +126,7 @@ class GoalRewardStepTest {
     }
 
     @Test
-    fun `tastare in Required posts declanseaza UpdateRequiredPosts`() {
+    fun `tastare_in_Required_posts_declanseaza_UpdateRequiredPosts`() {
         var lastAction: CreateChallengeAction? = null
         setContent(CreateChallengeUiState(), onAction = { lastAction = it })
 
@@ -136,7 +136,7 @@ class GoalRewardStepTest {
     }
 
     @Test
-    fun `Title nu accepta input peste 150 de caractere`() {
+    fun `Title_nu_accepta_input_peste_150_de_caractere`() {
         var lastAction: CreateChallengeAction? = null
         setContent(CreateChallengeUiState(), onAction = { lastAction = it })
 
@@ -147,7 +147,7 @@ class GoalRewardStepTest {
     }
 
     @Test
-    fun `campurile si Next raman vizibile la un FontScale marit`() {
+    fun `campurile_si_Next_raman_vizibile_la_un_FontScale_marit`() {
         composeTestRule.setContent {
             DeviceConfigurationOverride(DeviceConfigurationOverride.FontScale(1.8f)) {
                 ScrollableGoalRewardStep(uiState = CreateChallengeUiState(), onAction = {})

@@ -86,6 +86,7 @@ class ImageUploadViewModel @Inject constructor(
                             existingImageUrl = post.imageUrl,
                             description = post.caption.orEmpty(),
                             selectedBrand = post.brand,
+                            vehicleLocked = post.vehicleLocked,
                         )
                     }
                     prefillModel(post.brand, post.model)
@@ -141,6 +142,7 @@ class ImageUploadViewModel @Inject constructor(
     fun onBrandFieldClick() {
         val state = _uiState.value
         when {
+            state.vehicleLocked -> _uiState.update { it.copy(showVehicleLockedInfo = true) }
             state.isLoadingBrands -> Unit
             state.brands.isEmpty() -> loadBrands() // recover from an earlier error / empty
             else -> _uiState.update { it.copy(brandDropdownOpen = true) }
@@ -190,6 +192,7 @@ class ImageUploadViewModel @Inject constructor(
     fun onModelFieldClick() {
         val state = _uiState.value
         when {
+            state.vehicleLocked -> _uiState.update { it.copy(showVehicleLockedInfo = true) }
             state.selectedBrand == null || state.isLoadingModels -> Unit
             state.models.isEmpty() -> state.selectedBrand.let(::loadModels) // retry
             else -> _uiState.update { it.copy(modelDropdownOpen = true) }
@@ -197,6 +200,8 @@ class ImageUploadViewModel @Inject constructor(
     }
 
     fun dismissModelDropdown() = _uiState.update { it.copy(modelDropdownOpen = false) }
+
+    fun dismissVehicleLockedInfo() = _uiState.update { it.copy(showVehicleLockedInfo = false) }
 
     fun onModelSelected(modelName: String) {
         val option = _uiState.value.models.firstOrNull { it.model == modelName }

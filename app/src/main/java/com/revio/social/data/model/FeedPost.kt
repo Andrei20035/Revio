@@ -31,6 +31,8 @@ data class FeedPost(
     val locationLabel: String? = null,
     val authorIsEarlySpotter: Boolean = false,
     val authorEarlySpotterNumber: Int? = null,
+    /** Whether the brand/model can no longer be changed because this post contributed to a challenge. */
+    val vehicleLocked: Boolean = false,
 ) {
     /** e.g. "Porsche 911" — used as the headline car label in the feed card. */
     val carName: String get() = "$brand $model"

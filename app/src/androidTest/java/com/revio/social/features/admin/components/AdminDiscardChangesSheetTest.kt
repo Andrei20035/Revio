@@ -22,7 +22,7 @@ class AdminDiscardChangesSheetTest {
     val composeTestRule = createComposeRule()
 
     @Test
-    fun `fara draft afiseaza Discard this challenge si Your changes wont be saved`() {
+    fun `fara_draft_afiseaza_Discard_this_challenge_si_Your_changes_wont_be_saved`() {
         composeTestRule.setContent {
             AdminDiscardChangesSheet(hasSavedDraft = false, onKeepEditing = {}, onDiscard = {})
         }
@@ -33,7 +33,7 @@ class AdminDiscardChangesSheetTest {
     }
 
     @Test
-    fun `cu draft salvat afiseaza Leave without publishing si Your draft is saved`() {
+    fun `cu_draft_salvat_afiseaza_Leave_without_publishing_si_Your_draft_is_saved`() {
         composeTestRule.setContent {
             AdminDiscardChangesSheet(hasSavedDraft = true, onKeepEditing = {}, onDiscard = {})
         }
@@ -44,7 +44,7 @@ class AdminDiscardChangesSheetTest {
     }
 
     @Test
-    fun `click pe Keep editing declanseaza onKeepEditing`() {
+    fun `click_pe_Keep_editing_declanseaza_onKeepEditing`() {
         var kept = false
         composeTestRule.setContent {
             AdminDiscardChangesSheet(hasSavedDraft = false, onKeepEditing = { kept = true }, onDiscard = {})
@@ -56,7 +56,7 @@ class AdminDiscardChangesSheetTest {
     }
 
     @Test
-    fun `fara draft click pe Discard declanseaza onDiscard`() {
+    fun `fara_draft_click_pe_Discard_declanseaza_onDiscard`() {
         var discarded = false
         composeTestRule.setContent {
             AdminDiscardChangesSheet(hasSavedDraft = false, onKeepEditing = {}, onDiscard = { discarded = true })
@@ -68,7 +68,7 @@ class AdminDiscardChangesSheetTest {
     }
 
     @Test
-    fun `cu draft salvat click pe Leave declanseaza onDiscard`() {
+    fun `cu_draft_salvat_click_pe_Leave_declanseaza_onDiscard`() {
         var discarded = false
         composeTestRule.setContent {
             AdminDiscardChangesSheet(hasSavedDraft = true, onKeepEditing = {}, onDiscard = { discarded = true })

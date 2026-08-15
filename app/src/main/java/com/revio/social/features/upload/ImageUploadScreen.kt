@@ -66,6 +66,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -80,6 +85,7 @@ import coil3.compose.AsyncImage
 import com.revio.social.R
 import com.revio.social.core.ui.components.CustomSnackbar
 import com.revio.social.core.ui.components.RetryButton
+import com.revio.social.core.ui.overlay.InfoOverlay
 import com.revio.social.features.profile.components.DropdownOverlay
 import com.revio.social.features.profile.components.EditableImageContainer
 import kotlinx.coroutines.delay
@@ -293,6 +299,7 @@ fun ImageUploadScreen(
                     placeholder = "Brand",
                     value = uiState.selectedBrand,
                     enabled = true,
+                    locked = uiState.vehicleLocked,
                     loading = uiState.isLoadingBrands,
                     onClick = viewModel::onBrandFieldClick,
                 )
@@ -301,6 +308,7 @@ fun ImageUploadScreen(
                     placeholder = "Model",
                     value = uiState.selectedModel?.model,
                     enabled = uiState.isModelDropdownEnabled,
+                    locked = uiState.vehicleLocked,
                     loading = uiState.isLoadingModels,
                     onClick = viewModel::onModelFieldClick,
                 )
@@ -359,6 +367,16 @@ fun ImageUploadScreen(
             onItemSelected = viewModel::onModelSelected,
             onDismiss = viewModel::dismissModelDropdown,
         )
+
+        // ---- Vehicle-locked explanation ----
+        if (uiState.showVehicleLockedInfo) {
+            InfoOverlay(
+                title = "Vehicle locked",
+                message = "The brand and model can't be changed because this post has " +
+                    "contributed to a challenge. You can still edit the description.",
+                onDismiss = viewModel::dismissVehicleLockedInfo,
+            )
+        }
 
         // ---- One-shot error feedback ----
         uiState.userMessage?.let { message ->
@@ -523,27 +541,47 @@ private fun LocationStatusText(text: String) {
     )
 }
 
-/** White pill dropdown field with the [R.drawable.arrow_square_down] icon, matching Figma. */
+/**
+ * White pill dropdown field with the [R.drawable.arrow_square_down] icon, matching Figma.
+ *
+ * [locked] only affects rendering (dimmed background, read-only semantics) — it must never
+ * disable the clickable modifier itself, or the field would stop receiving taps entirely and the
+ * caller (which opens an explanation overlay instead of the dropdown when locked) would never
+ * be invoked. [enabled] keeps its existing meaning (e.g. the model field before a brand is
+ * picked) and is intentionally left untouched by [locked].
+ */
 @Composable
-private fun UploadDropdownField(
+internal fun UploadDropdownField(
     placeholder: String,
     value: String?,
     enabled: Boolean,
     loading: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    locked: Boolean = false,
 ) {
     Row(
         modifier = modifier
             .height(48.dp)
             .clip(FieldShape)
-            .background(if (enabled) Color.White else Color.White.copy(alpha = 0.45f))
+            .background(if (enabled && !locked) Color.White else Color.White.copy(alpha = 0.45f))
             .clickable(
                 enabled = enabled && !loading,
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = onClick,
             )
+            .let {
+                if (locked) {
+                    it.semantics {
+                        role = Role.Button
+                        contentDescription = "$placeholder is locked because this post has contributed to a challenge"
+                        stateDescription = "Read-only"
+                    }
+                } else {
+                    it
+                }
+            }
             .padding(start = 14.dp, end = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

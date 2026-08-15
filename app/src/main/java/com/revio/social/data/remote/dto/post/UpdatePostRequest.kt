@@ -5,9 +5,11 @@ import kotlinx.serialization.Serializable
 import java.util.UUID
 
 /**
- * Body of `PATCH /posts/{postId}`. Mirrors the server `UpdatePostRequest`: a null field
- * means "leave unchanged", except [carModelId] vs [customBrand]/[customModel] which are
- * mutually exclusive (whichever side is set replaces the post's car).
+ * Body of `PATCH /posts/{postId}`. Mirrors the server `UpdatePostRequest`, which treats this as a
+ * full replacement, not a partial patch: every request must resend the car identification —
+ * either [carModelId], or [customBrand] + [customModel] (mutually exclusive) — even when only the
+ * caption is changing, and [caption] is set to the post's caption on every request (`null` clears
+ * it, it does not mean "leave unchanged").
  */
 @Serializable
 data class UpdatePostRequest(

@@ -28,6 +28,9 @@ data class CreatePostResult(
     val user: User?,
 )
 
+/** Server error code for PATCH /posts/{postId} when the post's vehicle is locked (see server PostRoutes.kt). */
+private const val VEHICLE_LOCKED_ERROR_CODE = "CHALLENGE_POST_VEHICLE_LOCKED"
+
 interface PostRepository {
     /** Creates a post via multipart upload (JSON metadata part + image bytes part). */
     suspend fun createPost(
@@ -84,7 +87,17 @@ class PostRepositoryImpl @Inject constructor(
     }
 
     override suspend fun updatePost(postId: UUID, request: UpdatePostRequest): ApiResult<FeedPost> {
-        return safeApiCall { postApi.updatePost(postId, request) }.map { it.toDomain() }
+        return when (val result = safeApiCall { postApi.updatePost(postId, request) }) {
+            is ApiResult.Success -> ApiResult.Success(result.data.toDomain())
+            is ApiResult.Error -> if (result.code == VEHICLE_LOCKED_ERROR_CODE) {
+                ApiResult.Error(
+                    message = "This post's brand and model can no longer be changed because it has contributed to a challenge.",
+                    code = result.code,
+                )
+            } else {
+                result
+            }
+        }
     }
 
     override suspend fun deletePost(postId: UUID): ApiResult<Unit> {
