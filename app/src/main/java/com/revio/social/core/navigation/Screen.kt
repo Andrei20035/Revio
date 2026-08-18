@@ -6,7 +6,25 @@ import java.util.UUID
 sealed class Screen(val route: String) {
     object Onboarding : Screen("onboarding")
     object Auth : Screen("auth")
-    object ProfileCustomization : Screen("profile_customization")
+    /**
+     * Reached right after registration. [suggestedUsername]/[suggestedUsernameStatus] carry the
+     * waitlist prefill (see [com.revio.social.data.remote.dto.auth.WaitlistPrefillDTO]) from
+     * [com.revio.social.features.auth.AuthNavigationEvent.ToProfileCustomization] across the nav
+     * boundary — read via `SavedStateHandle` in `ProfileCustomizationViewModel`.
+     */
+    object ProfileCustomization : Screen(
+        "profile_customization?suggestedUsername={suggestedUsername}&suggestedUsernameStatus={suggestedUsernameStatus}"
+    ) {
+        const val ARG_SUGGESTED_USERNAME = "suggestedUsername"
+        const val ARG_SUGGESTED_USERNAME_STATUS = "suggestedUsernameStatus"
+
+        /** [suggestedUsernameStatus] is the DTO's non-null field, so its absence means no waitlist prefill at all. */
+        fun createRoute(suggestedUsername: String? = null, suggestedUsernameStatus: String? = null): String {
+            if (suggestedUsernameStatus == null) return "profile_customization"
+            val usernameParam = suggestedUsername?.let { "&suggestedUsername=${Uri.encode(it)}" } ?: ""
+            return "profile_customization?suggestedUsernameStatus=$suggestedUsernameStatus$usernameParam"
+        }
+    }
     object Feed : Screen("feed")
     object Settings : Screen("settings")
     object Map : Screen("map")

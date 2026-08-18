@@ -68,9 +68,14 @@ fun AuthScreen(
     }
 
     LaunchedEffect(uiState.navigationEvent) {
-        when (uiState.navigationEvent) {
-            AuthNavigationEvent.ToProfileCustomization -> {
-                navController.navigate(Screen.ProfileCustomization.route) {
+        when (val event = uiState.navigationEvent) {
+            is AuthNavigationEvent.ToProfileCustomization -> {
+                navController.navigate(
+                    Screen.ProfileCustomization.createRoute(
+                        suggestedUsername = event.waitlistPrefill?.suggestedUsername,
+                        suggestedUsernameStatus = event.waitlistPrefill?.suggestedUsernameStatus?.name,
+                    )
+                ) {
                     popUpTo(Screen.Auth.route) { inclusive = true }
                 }
                 viewModel.consumeNavigationEvent()

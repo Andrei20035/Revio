@@ -1,15 +1,20 @@
 package com.revio.social.features.profile.customization
 
 import android.util.Log
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.revio.social.core.earlyspotter.EarlySpotterCardState
+import com.revio.social.core.earlyspotter.EarlySpotterController
 import com.revio.social.core.image.CropTransform
 import com.revio.social.core.image.ImageCompressor
+import com.revio.social.core.navigation.Screen
 import com.revio.social.features.profile.components.ImageTransformState
 import com.revio.social.data.local.preferences.TourStatus
 import com.revio.social.data.local.preferences.UserPreferences
 import com.revio.social.data.local.auth.AuthTokens
 import com.revio.social.data.local.auth.TokenStore
+import com.revio.social.data.remote.dto.auth.WaitlistUsernameStatus
 import com.revio.social.data.remote.dto.user.CreateUserRequest
 import com.revio.social.data.remote.dto.user_car.UserCarRequest
 import com.revio.social.core.network.ApiResult
@@ -21,6 +26,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -35,10 +41,33 @@ class ProfileCustomizationViewModel @Inject constructor(
     private val carModelRepository: CarModelRepository,
     private val imageCompressor: ImageCompressor,
     private val tokenStore: TokenStore,
+    private val earlySpotterController: EarlySpotterController,
+    savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ProfileCustomizationUiState())
     val uiState: StateFlow<ProfileCustomizationUiState> = _uiState.asStateFlow()
+
+    init {
+        // Waitlist prefill carried across the nav boundary from AuthScreen — see
+        // Screen.ProfileCustomization.createRoute(). Explicit here rather than as a
+        // ProfileCustomizationUiState constructor default, which only applied once at object
+        // construction and broke on any subsequent .copy().
+        val suggestedUsername = savedStateHandle.get<String>(Screen.ProfileCustomization.ARG_SUGGESTED_USERNAME)
+        val suggestedUsernameStatus = savedStateHandle
+            .get<String>(Screen.ProfileCustomization.ARG_SUGGESTED_USERNAME_STATUS)
+            ?.let { runCatching { WaitlistUsernameStatus.valueOf(it) }.getOrNull() }
+
+        if (suggestedUsernameStatus != null) {
+            _uiState.update {
+                it.copy(
+                    suggestedUsername = suggestedUsername,
+                    suggestedUsernameStatus = suggestedUsernameStatus,
+                    username = suggestedUsername ?: it.username,
+                )
+            }
+        }
+    }
 
     fun updateProfileImage(imageSource: ImageSource?) {
         _uiState.update { it.copy(profilePicture = imageSource, profileCropTransform = null) }
@@ -189,7 +218,12 @@ class ProfileCustomizationViewModel @Inject constructor(
                     return@launch
                 }
 
-                val userId = createUserProfile() ?: run {
+                // A prior attempt may have already created the profile (e.g. this retry follows
+                // an upload/car-creation failure right after a successful POST /users) — reuse
+                // the persisted userId instead of calling createUserProfile() again, which would
+                // hit a 409 UserProfileAlreadyExistsException and leave the user stuck with no
+                // way to finish.
+                val userId = userPreferences.userId.first() ?: createUserProfile() ?: run {
                     _uiState.update { it.copy(isLoading = false) }
                     return@launch
                 }
@@ -206,8 +240,12 @@ class ProfileCustomizationViewModel @Inject constructor(
 
                 // Arm the guided tour here: this is the genuine first entry into the main
                 // app for a brand-new signup, right before the isUserCreated flag triggers
-                // navigation to Feed.
-                userPreferences.setTourStatus(TourStatus.Armed)
+                // navigation to Feed. An Early Spotter arms later instead — once the welcome
+                // card is dismissed (see EarlySpotterHostViewModel.onWelcomeDismissed()) — so
+                // the two overlays never race for the screen at once.
+                if (earlySpotterController.state.value !is EarlySpotterCardState.Welcome) {
+                    userPreferences.setTourStatus(userId, TourStatus.Armed)
+                }
                 _uiState.update { it.copy(isLoading = false, isUserCreated = true) }
             } catch (e: Exception) {
                 setError(e.message.toString())
@@ -249,9 +287,28 @@ class ProfileCustomizationViewModel @Inject constructor(
             is ApiResult.Success -> {
                 tokenStore.save(AuthTokens(result.data.accessToken, result.data.refreshToken))
                 userPreferences.saveUserId(result.data.userId)
+                earlySpotterController.onProfileCreated(
+                    isEarlySpotter = result.data.isEarlySpotter,
+                    earlySpotterNumber = result.data.earlySpotterNumber,
+                    bonusPoints = result.data.earlySpotterBonusPoints,
+                )
                 result.data.userId
             }
             is ApiResult.Error -> {
+                // The server's 409 UserProfileAlreadyExistsException has no machine-readable code
+                // (see UserRoutes.kt), so this matches its message text — same defensive pattern
+                // AuthRoutes.kt uses for its own provider-mismatch 409. A concurrent call (e.g. a
+                // double-tap race) may have already saved the userId locally by the time this
+                // branch runs; recover instead of blocking with a terminal error.
+                if (result.message.contains("already exists", ignoreCase = true)) {
+                    val existingUserId = userPreferences.userId.first()
+                    if (existingUserId != null) {
+                        return existingUserId
+                    }
+                    setError("Your profile may already have been created. Please try again.")
+                    Log.d("ERROR", "Profile already exists but no local userId to recover")
+                    return null
+                }
                 setError(result.message)
                 Log.d("ERROR", "Error in user profile creation")
                 null

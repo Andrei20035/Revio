@@ -2,6 +2,7 @@ package com.revio.social.core.tour
 
 import app.cash.turbine.test
 import com.revio.social.MainDispatcherRule
+import com.revio.social.core.overlay.AppOverlayCoordinator
 import com.revio.social.data.local.preferences.TourStatus
 import com.revio.social.data.local.preferences.UserPreferences
 import io.mockk.coEvery
@@ -14,20 +15,27 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
+import java.util.UUID
 
 class TourControllerTest {
 
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
 
+    private val testUserId = UUID.randomUUID()
+    private val overlayCoordinator: AppOverlayCoordinator = mockk(relaxed = true)
+
     private fun prefsMock(tourStatus: TourStatus): UserPreferences = mockk<UserPreferences>().apply {
-        every { this@apply.tourStatus } returns flowOf(tourStatus)
-        coEvery { setTourStatus(any()) } returns Unit
+        every { this@apply.userId } returns flowOf(testUserId)
+        coEvery { this@apply.tourStatus(any()) } returns tourStatus
+        coEvery { setTourStatus(any(), any()) } returns Unit
     }
+
+    private fun tourController(tourStatus: TourStatus) = TourController(prefsMock(tourStatus), overlayCoordinator)
 
     @Test
     fun `startIfArmed with Armed status starts the tour on Feed`() = runTest {
-        val controller = TourController(prefsMock(TourStatus.Armed))
+        val controller = tourController(TourStatus.Armed)
 
         controller.startIfArmed()
 
@@ -36,7 +44,7 @@ class TourControllerTest {
 
     @Test
     fun `startIfArmed with Completed status does not start the tour`() = runTest {
-        val controller = TourController(prefsMock(TourStatus.Completed))
+        val controller = tourController(TourStatus.Completed)
 
         controller.startIfArmed()
 
@@ -45,7 +53,7 @@ class TourControllerTest {
 
     @Test
     fun `advance chain visits all five steps in order`() = runTest {
-        val controller = TourController(prefsMock(TourStatus.Armed))
+        val controller = tourController(TourStatus.Armed)
 
         controller.step.test {
             assertNull(awaitItem())
@@ -65,7 +73,7 @@ class TourControllerTest {
 
     @Test
     fun `advance is a no-op past the last step`() = runTest {
-        val controller = TourController(prefsMock(TourStatus.Armed))
+        val controller = tourController(TourStatus.Armed)
         controller.startIfArmed()
         repeat(4) { controller.advance() }
         assertEquals(TourStep.PostCta, controller.step.value)
@@ -77,7 +85,7 @@ class TourControllerTest {
 
     @Test
     fun `advance is a no-op when no tour is running`() = runTest {
-        val controller = TourController(prefsMock(TourStatus.Completed))
+        val controller = tourController(TourStatus.Completed)
         controller.startIfArmed()
         assertNull(controller.step.value)
 
@@ -89,24 +97,24 @@ class TourControllerTest {
     @Test
     fun `completeAndPersist clears the step and persists Completed`() = runTest {
         val prefs = prefsMock(TourStatus.Armed)
-        val controller = TourController(prefs)
+        val controller = TourController(prefs, overlayCoordinator)
         controller.startIfArmed()
 
         controller.completeAndPersist()
 
         assertNull(controller.step.value)
-        coVerify(timeout = 1000) { prefs.setTourStatus(TourStatus.Completed) }
+        coVerify(timeout = 1000) { prefs.setTourStatus(testUserId, TourStatus.Completed) }
     }
 
     @Test
     fun `cancelForSessionLoss clears the step without persisting`() = runTest {
         val prefs = prefsMock(TourStatus.Armed)
-        val controller = TourController(prefs)
+        val controller = TourController(prefs, overlayCoordinator)
         controller.startIfArmed()
 
         controller.cancelForSessionLoss()
 
         assertNull(controller.step.value)
-        coVerify(exactly = 0) { prefs.setTourStatus(any()) }
+        coVerify(exactly = 0) { prefs.setTourStatus(any(), any()) }
     }
 }

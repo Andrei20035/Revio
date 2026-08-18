@@ -1,7 +1,8 @@
 package com.revio.social.core.feedback
 
 import com.revio.social.core.network.ApiResult
-import com.revio.social.core.tour.TourController
+import com.revio.social.core.overlay.ActiveOverlay
+import com.revio.social.core.overlay.AppOverlayCoordinator
 import com.revio.social.data.local.preferences.CachedPromptState
 import com.revio.social.data.local.preferences.UserPreferences
 import com.revio.social.data.model.FeedbackSurface
@@ -61,7 +62,7 @@ class FirstPostFeedbackController @Inject constructor(
     private val postCreationSignal: PostCreationSignal,
     private val feedbackRepository: FeedbackRepository,
     private val userPreferences: UserPreferences,
-    private val tourController: TourController,
+    private val overlayCoordinator: AppOverlayCoordinator,
     private val analytics: Analytics,
     private val clock: Clock,
 ) {
@@ -70,10 +71,18 @@ class FirstPostFeedbackController @Inject constructor(
     private val _state = MutableStateFlow<FirstPostPromptState>(FirstPostPromptState.Hidden)
     val state: StateFlow<FirstPostPromptState> = _state.asStateFlow()
 
-    /** Whether the guided tour is currently on screen — the feedback card must hide while it is. */
-    val isTourActive: StateFlow<Boolean> = tourController.step
-        .map { it != null }
-        .stateIn(scope, SharingStarted.Eagerly, tourController.step.value != null)
+    /** Updates [_state] and reports the card's active/inactive state to [overlayCoordinator]. */
+    private fun setState(value: FirstPostPromptState) {
+        _state.value = value
+        overlayCoordinator.setActive(ActiveOverlay.FirstPostFeedback, value != FirstPostPromptState.Hidden)
+    }
+
+    /**
+     * Whether something ranked above [ActiveOverlay.FirstPostFeedback] (currently only the guided
+     * tour) is on screen — the feedback card must hide while it is.
+     */
+    val isTourActive: StateFlow<Boolean> = overlayCoordinator.isBlockedByFlow(ActiveOverlay.FirstPostFeedback)
+        .stateIn(scope, SharingStarted.Eagerly, overlayCoordinator.isBlockedBy(ActiveOverlay.FirstPostFeedback))
 
     // In-memory guard — reset per process, enforces "at most one show per session" per account.
     private var sessionShownForUserId: UUID? = null
@@ -94,7 +103,7 @@ class FirstPostFeedbackController @Inject constructor(
         pendingShowJob?.cancel()
         pendingShowJob = null
         sessionShownForUserId = null
-        _state.value = FirstPostPromptState.Hidden
+        setState(FirstPostPromptState.Hidden)
     }
 
     private suspend fun handlePostCreated() {
@@ -129,11 +138,11 @@ class FirstPostFeedbackController @Inject constructor(
         pendingShowJob = scope.launch {
             val userId = currentUserId() ?: return@launch
             if (!isEligibleToShowNow(userId)) return@launch
-            if (tourController.step.value != null || isBlocked()) return@launch
+            if (overlayCoordinator.isBlockedBy(ActiveOverlay.FirstPostFeedback) || isBlocked()) return@launch
 
             delay(SHOW_DELAY_MS)
 
-            if (tourController.step.value != null || isBlocked()) return@launch
+            if (overlayCoordinator.isBlockedBy(ActiveOverlay.FirstPostFeedback) || isBlocked()) return@launch
             show(userId, surface)
         }
     }
@@ -164,7 +173,7 @@ class FirstPostFeedbackController @Inject constructor(
             dismissEventName?.let { analytics.log(FeedbackEvent(it)) }
             analytics.log(FeedbackEvent(FeedbackEventName.SUBMITTED))
 
-            _state.value = FirstPostPromptState.Hidden
+            setState(FirstPostPromptState.Hidden)
 
             val userId = currentUserId() ?: return@launch
             val cached = userPreferences.firstPostFeedbackState(userId).first()
@@ -182,7 +191,7 @@ class FirstPostFeedbackController @Inject constructor(
 
     private fun dismiss(eventName: FeedbackEventName) {
         scope.launch {
-            _state.value = FirstPostPromptState.Hidden
+            setState(FirstPostPromptState.Hidden)
             analytics.log(FeedbackEvent(eventName))
             feedbackRepository.reportDismissed()
 
@@ -221,7 +230,7 @@ class FirstPostFeedbackController @Inject constructor(
             ),
         )
 
-        _state.value = FirstPostPromptState.Rating
+        setState(FirstPostPromptState.Rating)
         analytics.log(FeedbackEvent(FeedbackEventName.SHOWN, surface = surface.name, showIndex = newShownCount))
         if (isCooldownReshow) {
             analytics.log(FeedbackEvent(FeedbackEventName.RESHOWN_AFTER_COOLDOWN, surface = surface.name))

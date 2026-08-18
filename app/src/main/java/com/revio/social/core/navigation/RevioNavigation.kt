@@ -127,7 +127,22 @@ fun RevioNavigation(
             )
         }
 
-        composable(Screen.ProfileCustomization.route) {
+        composable(
+            route = Screen.ProfileCustomization.route,
+            arguments = listOf(
+                navArgument(Screen.ProfileCustomization.ARG_SUGGESTED_USERNAME) {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+                navArgument(Screen.ProfileCustomization.ARG_SUGGESTED_USERNAME_STATUS) {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+            ),
+        ) {
+            // The waitlist prefill nav args are read by ProfileCustomizationViewModel via SavedStateHandle.
             ProfileCustomization(
                 navController = navController
             )

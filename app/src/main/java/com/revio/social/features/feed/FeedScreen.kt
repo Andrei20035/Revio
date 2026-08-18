@@ -76,6 +76,8 @@ import coil3.request.ImageRequest
 import com.revio.social.R
 import com.revio.social.core.navigation.Screen
 import com.revio.social.core.tour.TourHostViewModel
+import com.revio.social.core.ui.earlyspotter.EarlySpotterHost
+import com.revio.social.core.ui.earlyspotter.EarlySpotterHostViewModel
 import com.revio.social.core.tour.TourStep
 import com.revio.social.core.ui.components.AppScreenBackground
 import com.revio.social.core.ui.components.CustomSnackbar
@@ -214,6 +216,8 @@ fun FeedScreen(
     val hazeState = remember { HazeState() }
     val tourHostViewModel: TourHostViewModel = hiltViewModel()
     val tourStep by tourHostViewModel.tourController.step.collectAsState()
+    val earlySpotterHostViewModel: EarlySpotterHostViewModel = hiltViewModel()
+    val isTourBlocked by earlySpotterHostViewModel.isTourBlocked.collectAsState()
     var slotBounds by remember { mutableStateOf(emptyMap<NavSlot, Rect>()) }
 
     // Admin-only "Remove post" action, reachable from each post's options menu.
@@ -355,7 +359,7 @@ fun FeedScreen(
                     .padding(bottom = 16.dp),
             )
 
-            if (tourStep == TourStep.Feed) {
+            if (tourStep == TourStep.Feed && !isTourBlocked) {
                 TourOverlay(
                     step = TourStep.Feed,
                     spotlight = null,
@@ -363,6 +367,8 @@ fun FeedScreen(
                     onPostCta = {},
                 )
             }
+
+            EarlySpotterHost()
 
             // One-shot feedback (e.g. report submitted) — auto-dismisses after a short delay.
             uiState.userMessage?.let { message ->

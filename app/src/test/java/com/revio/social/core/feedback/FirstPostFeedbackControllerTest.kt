@@ -1,7 +1,8 @@
 package com.revio.social.core.feedback
 
 import com.revio.social.core.network.ApiResult
-import com.revio.social.core.tour.TourController
+import com.revio.social.core.overlay.ActiveOverlay
+import com.revio.social.core.overlay.AppOverlayCoordinator
 import com.revio.social.data.local.preferences.CachedPromptState
 import com.revio.social.data.local.preferences.UserPreferences
 import com.revio.social.data.model.FIRST_POST_FEEDBACK_KEY
@@ -37,7 +38,7 @@ class FirstPostFeedbackControllerTest {
     private val postCreationSignal = PostCreationSignal()
     private val feedbackRepository: FeedbackRepository = mockk(relaxed = true)
     private val userPreferences: UserPreferences = mockk()
-    private val tourController: TourController = mockk()
+    private val overlayCoordinator: AppOverlayCoordinator = mockk()
     private val analytics: Analytics = mockk(relaxed = true)
 
     // Real flow so tests can switch the current user (drives the controller's user-changed reset).
@@ -81,7 +82,9 @@ class FirstPostFeedbackControllerTest {
             armedByUser[firstArg()] = secondArg()
         }
 
-        every { tourController.step } returns MutableStateFlow(null)
+        every { overlayCoordinator.isBlockedBy(ActiveOverlay.FirstPostFeedback) } returns false
+        every { overlayCoordinator.isBlockedByFlow(ActiveOverlay.FirstPostFeedback) } returns flowOf(false)
+        every { overlayCoordinator.setActive(any(), any()) } returns Unit
         coEvery { feedbackRepository.getPromptState() } returns
             ApiResult.Success(FeedbackPromptState(FIRST_POST_FEEDBACK_KEY, PromptStatus.ELIGIBLE, 0, null))
     }
@@ -90,7 +93,7 @@ class FirstPostFeedbackControllerTest {
         postCreationSignal,
         feedbackRepository,
         userPreferences,
-        tourController,
+        overlayCoordinator,
         analytics,
         clock,
     )

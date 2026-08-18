@@ -1,6 +1,7 @@
 package com.revio.social.core.navigation
 
 import com.revio.social.MainDispatcherRule
+import com.revio.social.core.overlay.AppOverlayCoordinator
 import com.revio.social.core.tour.TourController
 import com.revio.social.data.local.auth.AuthTokens
 import com.revio.social.data.local.auth.TokenStore
@@ -38,10 +39,10 @@ class StartDestinationViewModelTest {
         every { onboardingCompleted } returns flowOf(onboardingDone)
         every { authToken } returns flowOf(token)
         every { this@apply.userId } returns flowOf(userId)
-        every { this@apply.tourStatus } returns flowOf(tourStatus)
+        coEvery { this@apply.tourStatus(any()) } returns tourStatus
         coEvery { clearAuthData() } returns Unit
         coEvery { removeLegacyJwt() } returns Unit
-        coEvery { setTourStatus(any()) } returns Unit
+        coEvery { setTourStatus(any(), any()) } returns Unit
     }
 
     private fun tokenStoreMock(tokens: AuthTokens?): TokenStore = mockk<TokenStore>().apply {
@@ -98,18 +99,19 @@ class StartDestinationViewModelTest {
 
     @Test
     fun `tourStatus Unknown + sesiune valida - marcheaza Completed si nu porneste turul`() = runTest {
+        val userId = UUID.randomUUID()
         val prefs = prefsMock(
             onboardingDone = true,
             token = "jwt",
-            userId = UUID.randomUUID(),
+            userId = userId,
             tourStatus = TourStatus.Unknown,
         )
-        val tourController = TourController(prefs)
+        val tourController = TourController(prefs, mockk<AppOverlayCoordinator>(relaxed = true))
 
         val vm = StartDestinationViewModel(prefs, tourController = tourController)
 
         assertEquals(Screen.Feed.route, vm.startDestination.value)
-        coVerify(exactly = 1) { prefs.setTourStatus(TourStatus.Completed) }
+        coVerify(exactly = 1) { prefs.setTourStatus(userId, TourStatus.Completed) }
         assertNull(tourController.step.value)
     }
 
@@ -121,11 +123,11 @@ class StartDestinationViewModelTest {
             userId = null,
             tourStatus = TourStatus.Unknown,
         )
-        val tourController = TourController(prefs)
+        val tourController = TourController(prefs, mockk<AppOverlayCoordinator>(relaxed = true))
 
         val vm = StartDestinationViewModel(prefs, tourController = tourController)
 
         assertEquals(Screen.Auth.route, vm.startDestination.value)
-        coVerify(exactly = 0) { prefs.setTourStatus(any()) }
+        coVerify(exactly = 0) { prefs.setTourStatus(any(), any()) }
     }
 }

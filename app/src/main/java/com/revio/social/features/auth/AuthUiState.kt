@@ -1,5 +1,7 @@
 package com.revio.social.features.auth
 
+import com.revio.social.data.remote.dto.auth.WaitlistPrefillDTO
+
 data class AuthUiState(
     val email: String = "",
     val password: String = "",
@@ -15,6 +17,6 @@ data class AuthUiState(
 )
 
 sealed class AuthNavigationEvent {
-    object ToProfileCustomization : AuthNavigationEvent()
+    data class ToProfileCustomization(val waitlistPrefill: WaitlistPrefillDTO? = null) : AuthNavigationEvent()
     object ToFeed : AuthNavigationEvent()
 }

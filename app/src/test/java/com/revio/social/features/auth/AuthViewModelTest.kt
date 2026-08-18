@@ -116,7 +116,7 @@ class AuthViewModelTest {
         vm.submitEmailAuth()
 
         assertEquals(
-            AuthNavigationEvent.ToProfileCustomization,
+            AuthNavigationEvent.ToProfileCustomization(),
             vm.uiState.value.navigationEvent
         )
         coVerify(exactly = 1) { userPreferences.saveJwtToken("jwt-pc") }
@@ -131,7 +131,7 @@ class AuthViewModelTest {
         vm.updateEmail("a@b.com"); vm.updatePassword("secret")
         vm.submitEmailAuth()
 
-        assertEquals(AuthNavigationEvent.ToProfileCustomization, vm.uiState.value.navigationEvent)
+        assertEquals(AuthNavigationEvent.ToProfileCustomization(), vm.uiState.value.navigationEvent)
         coVerify(exactly = 1) { userPreferences.saveJwtToken(jwt) }
         coVerify(exactly = 0) { userPreferences.saveUserId(any()) }
     }
@@ -146,7 +146,7 @@ class AuthViewModelTest {
         vm.updateEmail("a@b.com"); vm.updatePassword("secret")
         vm.submitEmailAuth()
 
-        assertEquals(AuthNavigationEvent.ToProfileCustomization, vm.uiState.value.navigationEvent)
+        assertEquals(AuthNavigationEvent.ToProfileCustomization(), vm.uiState.value.navigationEvent)
         coVerify(exactly = 1) { userRepository.getCurrentUser() }
         coVerify(exactly = 0) { userPreferences.saveUserId(any()) }
     }
@@ -161,7 +161,7 @@ class AuthViewModelTest {
         vm.updateEmail("a@b.com"); vm.updatePassword("secret")
         vm.submitEmailAuth()
 
-        assertEquals(AuthNavigationEvent.ToProfileCustomization, vm.uiState.value.navigationEvent)
+        assertEquals(AuthNavigationEvent.ToProfileCustomization(), vm.uiState.value.navigationEvent)
         coVerify(exactly = 1) { userRepository.getCurrentUser() }
         coVerify(exactly = 0) { userPreferences.saveUserId(any()) }
     }
@@ -268,7 +268,7 @@ class AuthViewModelTest {
         vm.submitEmailAuth()
 
         assertEquals(
-            AuthNavigationEvent.ToProfileCustomization,
+            AuthNavigationEvent.ToProfileCustomization(),
             vm.uiState.value.navigationEvent
         )
         coVerify(exactly = 1) { userPreferences.saveJwtToken("jwt-new") }
@@ -349,7 +349,7 @@ class AuthViewModelTest {
 
         vm.loginWithGoogle("real-id-token")
 
-        assertEquals(AuthNavigationEvent.ToProfileCustomization, vm.uiState.value.navigationEvent)
+        assertEquals(AuthNavigationEvent.ToProfileCustomization(), vm.uiState.value.navigationEvent)
         coVerify(exactly = 1) { userPreferences.saveJwtToken("jwt-g") }
         coVerify(exactly = 0) { userPreferences.saveUserId(any()) }
     }

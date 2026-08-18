@@ -144,7 +144,7 @@ class AuthViewModel @Inject constructor(
                 val jwtUserId = result.data.accessToken.extractUserIdFromJwt()
                 val navTarget = when (result.data.onboardingStep) {
                     OnboardingStep.PROFILE_REQUIRED -> {
-                        AuthNavigationEvent.ToProfileCustomization
+                        AuthNavigationEvent.ToProfileCustomization(result.data.waitlist)
                     }
                     OnboardingStep.COMPLETED -> {
                         if (jwtUserId != null) {
@@ -177,7 +177,7 @@ class AuthViewModel @Inject constructor(
                 userPreferences.saveUsername(userResult.data.username)
                 AuthNavigationEvent.ToFeed
             }
-            is ApiResult.Error -> AuthNavigationEvent.ToProfileCustomization
+            is ApiResult.Error -> AuthNavigationEvent.ToProfileCustomization()
         }
     }
 

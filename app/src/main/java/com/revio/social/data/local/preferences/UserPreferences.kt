@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.revio.social.data.model.PromptStatus
 import com.revio.social.data.remote.dto.feedback.SubmitFirstPostFeedbackRequest
@@ -62,7 +63,12 @@ class UserPreferences @Inject constructor(
         val USER_ID_KEY = stringPreferencesKey("user_id")
         val USERNAME_KEY = stringPreferencesKey("username")
         val EMAIL_KEY = stringPreferencesKey("email")
-        val TOUR_STATUS_KEY = stringPreferencesKey("guided_tour_status")
+
+        /** Legacy device-wide key, superseded by [tourStatusKey] — read only for one-time migration. */
+        private val LEGACY_TOUR_STATUS_KEY = stringPreferencesKey("guided_tour_status")
+
+        private fun tourStatusKey(userId: UUID) =
+            stringPreferencesKey("guided_tour_status_$userId")
 
         private fun firstPostFeedbackStateKey(userId: UUID) =
             stringPreferencesKey("first_post_feedback_state_$userId")
@@ -75,16 +81,46 @@ class UserPreferences @Inject constructor(
 
         private fun userFeedbackPendingKey(userId: UUID) =
             stringPreferencesKey("user_feedback_pending_$userId")
+
+        /**
+         * Early Spotter announcement keys ("EARLY_SPOTTER_WELCOME"/"EARLY_SPOTTER_BONUS") that
+         * have been dismissed locally but not yet confirmed acknowledged by the server. Doubles
+         * as the local dedup guard (a key in this set must not be shown again) and the offline
+         * retry queue (see [com.revio.social.core.earlyspotter.EarlySpotterController]) — per-user
+         * like every other key here, not repeating the tour status' pre-A0a global-key mistake.
+         */
+        private fun earlySpotterPendingAcksKey(userId: UUID) =
+            stringSetPreferencesKey("early_spotter_pending_acks_$userId")
     }
 
     val onboardingCompleted: Flow<Boolean> = context.dataStore.data
         .map { it[ONBOARDING_KEY] ?: false }
 
-    val tourStatus: Flow<TourStatus> = context.dataStore.data
-        .map { preferences ->
-            preferences[TOUR_STATUS_KEY]?.let { runCatching { TourStatus.valueOf(it) }.getOrNull() }
-                ?: TourStatus.Unknown
+    /**
+     * Per-user tour status, keyed by [userId] so a second account on a shared device never
+     * inherits the first account's completed/armed state. On first read for [userId], if the
+     * per-user key is absent but the pre-migration device-wide [LEGACY_TOUR_STATUS_KEY] holds a
+     * value, that value is adopted as this user's status and the legacy key is deleted — so an
+     * existing user who already completed the tour under the old scheme doesn't see it again.
+     */
+    suspend fun tourStatus(userId: UUID): TourStatus {
+        var resolved = TourStatus.Unknown
+        context.dataStore.edit { preferences ->
+            val perUserKey = tourStatusKey(userId)
+            val perUserValue = preferences[perUserKey]
+            if (perUserValue != null) {
+                resolved = runCatching { TourStatus.valueOf(perUserValue) }.getOrNull() ?: TourStatus.Unknown
+            } else {
+                val legacyValue = preferences[LEGACY_TOUR_STATUS_KEY]
+                if (legacyValue != null) {
+                    resolved = runCatching { TourStatus.valueOf(legacyValue) }.getOrNull() ?: TourStatus.Unknown
+                    preferences[perUserKey] = resolved.name
+                    preferences.remove(LEGACY_TOUR_STATUS_KEY)
+                }
+            }
         }
+        return resolved
+    }
 
     @Deprecated("Use TokenStore")
     val authToken: Flow<String?> = context.dataStore.data.map { it[JWT_TOKEN_KEY] }
@@ -128,12 +164,30 @@ class UserPreferences @Inject constructor(
             }
         }
 
+    /** Early Spotter announcement keys awaiting ack confirmation for [userId] — see [earlySpotterPendingAcksKey]. */
+    fun pendingEarlySpotterAcks(userId: UUID): Flow<Set<String>> = context.dataStore.data
+        .map { preferences -> preferences[earlySpotterPendingAcksKey(userId)] ?: emptySet() }
+
+    suspend fun addPendingEarlySpotterAck(userId: UUID, announcementKey: String) {
+        context.dataStore.edit { preferences ->
+            val key = earlySpotterPendingAcksKey(userId)
+            preferences[key] = (preferences[key] ?: emptySet()) + announcementKey
+        }
+    }
+
+    suspend fun removePendingEarlySpotterAck(userId: UUID, announcementKey: String) {
+        context.dataStore.edit { preferences ->
+            val key = earlySpotterPendingAcksKey(userId)
+            preferences[key] = (preferences[key] ?: emptySet()) - announcementKey
+        }
+    }
+
     suspend fun setOnboardingCompleted(completed: Boolean) {
         context.dataStore.edit { it[ONBOARDING_KEY] = completed }
     }
 
-    suspend fun setTourStatus(status: TourStatus) {
-        context.dataStore.edit { it[TOUR_STATUS_KEY] = status.name }
+    suspend fun setTourStatus(userId: UUID, status: TourStatus) {
+        context.dataStore.edit { it[tourStatusKey(userId)] = status.name }
     }
 
     suspend fun removeLegacyJwt() {
@@ -186,6 +240,12 @@ class UserPreferences @Inject constructor(
         }
     }
 
+    /**
+     * Clears device-session identity only. Deliberately leaves every per-user key (tour status,
+     * first-post feedback, user feedback, Early Spotter pending acks) untouched — they're already
+     * scoped by userId, so they neither need clearing on logout nor leak into whichever account
+     * logs in next.
+     */
     suspend fun clearAuthData() {
         context.dataStore.edit {
             it.remove(JWT_TOKEN_KEY)

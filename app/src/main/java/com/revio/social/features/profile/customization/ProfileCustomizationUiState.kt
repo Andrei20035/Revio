@@ -1,6 +1,7 @@
 package com.revio.social.features.profile.customization
 
 import android.net.Uri
+import com.revio.social.data.remote.dto.auth.WaitlistUsernameStatus
 import com.revio.social.data.remote.dto.car_model.CarModelOption
 import com.revio.social.features.profile.components.ImageTransformState
 import java.time.LocalDate
@@ -23,6 +24,13 @@ data class ProfileCustomizationUiState(
     val profilePicture: ImageSource? = null,
     val profileCropTransform: ImageTransformState? = null,
     val fullName: String = "",
+    // Waitlist prefill: suggestedUsername comes raw from AuthResponse.waitlist (threaded through
+    // nav args, see Screen.ProfileCustomization) and may not satisfy Revio's username rules —
+    // suggestedUsernameStatus is exactly what the server already computed for it. ViewModel.init
+    // copies suggestedUsername into username explicitly on startup; username then stays fully
+    // editable via updateUsername(). country is intentionally NOT prefilled from the waitlist.
+    val suggestedUsername: String? = null,
+    val suggestedUsernameStatus: WaitlistUsernameStatus? = null,
     val username: String = "",
     val country: String = "",
     val birthDate: LocalDate? = null,

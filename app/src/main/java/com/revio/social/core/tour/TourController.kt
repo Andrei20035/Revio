@@ -1,5 +1,7 @@
 package com.revio.social.core.tour
 
+import com.revio.social.core.overlay.ActiveOverlay
+import com.revio.social.core.overlay.AppOverlayCoordinator
 import com.revio.social.data.local.preferences.TourStatus
 import com.revio.social.data.local.preferences.UserPreferences
 import kotlinx.coroutines.CoroutineScope
@@ -22,6 +24,7 @@ import javax.inject.Singleton
 @Singleton
 class TourController @Inject constructor(
     private val userPreferences: UserPreferences,
+    private val overlayCoordinator: AppOverlayCoordinator,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val stepOrder = TourStep.entries
@@ -32,18 +35,26 @@ class TourController @Inject constructor(
     /** The tour's current step, or null when no tour is running. */
     val step: StateFlow<TourStep?> = _step.asStateFlow()
 
+    /** Updates [_step] and reports the tour's active/inactive state to [overlayCoordinator]. */
+    private fun setStep(value: TourStep?) {
+        _step.value = value
+        overlayCoordinator.setActive(ActiveOverlay.Tour, value != null)
+    }
+
     /**
      * Starts the tour on [TourStep.Feed] if the persisted status is [TourStatus.Armed].
      * Idempotent per process — safe to call from multiple places (app start, and right after a
      * fresh signup lands on Feed) since at most one tour start ever happens per process. A call
      * made while the status isn't yet [TourStatus.Armed] does not consume the guard, so a later
-     * call made once the status becomes Armed still starts the tour.
+     * call made once the status becomes Armed still starts the tour. No-ops with no userId
+     * (no signed-in session), since tour status is per-user.
      */
     suspend fun startIfArmed() {
         if (hasStartedThisProcess) return
-        if (userPreferences.tourStatus.first() == TourStatus.Armed) {
+        val userId = userPreferences.userId.first() ?: return
+        if (userPreferences.tourStatus(userId) == TourStatus.Armed) {
             hasStartedThisProcess = true
-            _step.value = TourStep.Feed
+            setStep(TourStep.Feed)
         }
     }
 
@@ -52,15 +63,16 @@ class TourController @Inject constructor(
         val current = _step.value ?: return
         val nextIndex = stepOrder.indexOf(current) + 1
         if (nextIndex < stepOrder.size) {
-            _step.value = stepOrder[nextIndex]
+            setStep(stepOrder[nextIndex])
         }
     }
 
     /** Ends the tour and persists completion so it never runs again. */
     fun completeAndPersist() {
-        _step.value = null
+        setStep(null)
         scope.launch {
-            userPreferences.setTourStatus(TourStatus.Completed)
+            val userId = userPreferences.userId.first() ?: return@launch
+            userPreferences.setTourStatus(userId, TourStatus.Completed)
         }
     }
 
@@ -69,6 +81,6 @@ class TourController @Inject constructor(
      * resumes from [TourStep.Feed] after the next successful login.
      */
     fun cancelForSessionLoss() {
-        _step.value = null
+        setStep(null)
     }
 }

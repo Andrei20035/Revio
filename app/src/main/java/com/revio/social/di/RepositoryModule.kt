@@ -16,6 +16,8 @@ import com.revio.social.data.repository.ChallengeRepository
 import com.revio.social.data.repository.ChallengeRepositoryImpl
 import com.revio.social.data.repository.CommentRepository
 import com.revio.social.data.repository.CommentRepositoryImpl
+import com.revio.social.data.repository.AnnouncementRepository
+import com.revio.social.data.repository.AnnouncementRepositoryImpl
 import com.revio.social.data.repository.FeedbackRepository
 import com.revio.social.data.repository.FeedbackRepositoryImpl
 import com.revio.social.data.repository.FriendRepositoryImpl
@@ -116,6 +118,12 @@ abstract class RepositoryModule {
     abstract fun bindFeedbackRepository(
         impl: FeedbackRepositoryImpl
     ): FeedbackRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindAnnouncementRepository(
+        impl: AnnouncementRepositoryImpl
+    ): AnnouncementRepository
 
     @Binds
     @Singleton

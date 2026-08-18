@@ -45,9 +45,9 @@ class StartDestinationViewModel @Inject constructor(
                     // Valid session on this device. Grandfather pre-existing users (key
                     // absent) straight to Completed so the tour never surprises them, then
                     // let the controller resume an already-armed tour from Feed.
-                    if (tourController != null) {
-                        if (userPreferences.tourStatus.first() == TourStatus.Unknown) {
-                            userPreferences.setTourStatus(TourStatus.Completed)
+                    if (tourController != null && userId != null) {
+                        if (userPreferences.tourStatus(userId) == TourStatus.Unknown) {
+                            userPreferences.setTourStatus(userId, TourStatus.Completed)
                         }
                         tourController.startIfArmed()
                     }
