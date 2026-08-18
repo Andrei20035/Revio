@@ -83,14 +83,25 @@ class UserPreferences @Inject constructor(
             stringPreferencesKey("user_feedback_pending_$userId")
 
         /**
-         * Early Spotter announcement keys ("EARLY_SPOTTER_WELCOME"/"EARLY_SPOTTER_BONUS") that
-         * have been dismissed locally but not yet confirmed acknowledged by the server. Doubles
-         * as the local dedup guard (a key in this set must not be shown again) and the offline
-         * retry queue (see [com.revio.social.core.earlyspotter.EarlySpotterController]) — per-user
-         * like every other key here, not repeating the tour status' pre-A0a global-key mistake.
+         * Early Spotter announcement keys ("EARLY_SPOTTER_WELCOME"/"EARLY_SPOTTER_BONUS") whose
+         * server ack failed (or hasn't been attempted while offline) and still needs retrying —
+         * see [com.revio.social.core.earlyspotter.EarlySpotterController]. Deliberately NOT the
+         * local dedup guard: whether a key must not be shown again is tracked separately by
+         * [earlySpotterDismissedKey], so a stuck/failing ack (e.g. the server 500ing) can never
+         * resurrect the card just because it's also absent from the retry queue by mistake.
+         * Per-user like every other key here, not repeating the tour status' pre-A0a global-key
+         * mistake.
          */
         private fun earlySpotterPendingAcksKey(userId: UUID) =
             stringSetPreferencesKey("early_spotter_pending_acks_$userId")
+
+        /**
+         * Early Spotter announcement keys the user has already dismissed locally, independent of
+         * whether the server ack ever succeeded — the sole source of truth for "must not be shown
+         * again" (see [earlySpotterPendingAcksKey] for why this is a separate key).
+         */
+        private fun earlySpotterDismissedKey(userId: UUID) =
+            stringSetPreferencesKey("early_spotter_dismissed_$userId")
     }
 
     val onboardingCompleted: Flow<Boolean> = context.dataStore.data
@@ -179,6 +190,17 @@ class UserPreferences @Inject constructor(
         context.dataStore.edit { preferences ->
             val key = earlySpotterPendingAcksKey(userId)
             preferences[key] = (preferences[key] ?: emptySet()) - announcementKey
+        }
+    }
+
+    /** Early Spotter announcement keys already dismissed locally for [userId] — see [earlySpotterDismissedKey]. */
+    fun earlySpotterDismissed(userId: UUID): Flow<Set<String>> = context.dataStore.data
+        .map { preferences -> preferences[earlySpotterDismissedKey(userId)] ?: emptySet() }
+
+    suspend fun addEarlySpotterDismissed(userId: UUID, announcementKey: String) {
+        context.dataStore.edit { preferences ->
+            val key = earlySpotterDismissedKey(userId)
+            preferences[key] = (preferences[key] ?: emptySet()) + announcementKey
         }
     }
 

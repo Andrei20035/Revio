@@ -29,22 +29,17 @@ const val EARLY_SPOTTER_BONUS_KEY = "EARLY_SPOTTER_BONUS"
 /** One-time Early Spotter card currently eligible to show, or [Hidden] if none is. */
 sealed interface EarlySpotterCardState {
     data object Hidden : EarlySpotterCardState
-    data class Welcome(val earlySpotterNumber: Int) : EarlySpotterCardState
-    data class Bonus(val points: Int) : EarlySpotterCardState
+    data class Visible(val earlySpotterNumber: Int, val bonusPoints: Int) : EarlySpotterCardState
 }
 
 /**
- * Owns the one-time Early Spotter welcome/bonus cards: eligibility, the SEEN dedup, and the
- * offline ack retry queue. Server is canonical (via [AnnouncementRepository]); DataStore
- * ([UserPreferences.pendingEarlySpotterAcks]) is a per-user cache that also serves as the offline
- * retry queue — see that key's doc for why one set covers both jobs. Singleton for the same
- * reason [com.revio.social.core.tour.TourController] is: these cards span navigation destinations
- * and outlive any single screen's ViewModel scope.
- *
- * Deliberately does not talk to [com.revio.social.core.overlay.AppOverlayCoordinator] yet, and
- * exposes no UI — wiring this controller's state into the coordinator, the actual card
- * composables, and the call site that invokes [onProfileCreated] are later steps built on top of
- * this controller.
+ * Owns the one-time, combined Early Spotter welcome+bonus card: eligibility, the SEEN dedup, and
+ * the offline ack retry queue. Server is canonical (via [AnnouncementRepository]); DataStore holds
+ * two separate per-user sets — [UserPreferences.earlySpotterDismissed] (dedup: must not be shown
+ * again) and [UserPreferences.pendingEarlySpotterAcks] (offline retry queue) — kept distinct so a
+ * failing/offline ack can never resurrect the card, see either key's doc. Singleton for the same
+ * reason [com.revio.social.core.tour.TourController] is: this card spans navigation destinations
+ * and outlives any single screen's ViewModel scope.
  */
 @Singleton
 class EarlySpotterController @Inject constructor(
@@ -57,9 +52,9 @@ class EarlySpotterController @Inject constructor(
     private val _state = MutableStateFlow<EarlySpotterCardState>(EarlySpotterCardState.Hidden)
     val state: StateFlow<EarlySpotterCardState> = _state.asStateFlow()
 
-    // Set by onProfileCreated()/refreshFromServer() so showBonusIfEligible() (called once the
-    // guided tour finishes, per the sequencing built on top of this controller) doesn't need a
-    // second round trip to know the bonus amount.
+    // Set by onProfileCreated()/refreshFromServer() so showCardIfEligible() (called once the
+    // guided tour finishes) doesn't need a second round trip to know the number/bonus amount.
+    private var pendingEarlySpotterNumber: Int? = null
     private var pendingBonusPoints: Int? = null
 
     init {
@@ -69,63 +64,75 @@ class EarlySpotterController @Inject constructor(
             }
         }
         scope.launch {
-            networkConnectivityManager.onValidatedReconnect().collect { retryPendingAcks() }
+            // On reconnect, retry queued acks AND re-run the server refresh: a refresh that
+            // failed earlier (e.g. offline at startup, or a transient server error) otherwise
+            // never gets a second chance, leaving the card permanently unshown.
+            networkConnectivityManager.onValidatedReconnect().collect {
+                retryPendingAcks()
+                userPreferences.userId.first()?.let { userId -> refreshFromServer(userId) }
+            }
         }
     }
 
     /**
      * Called right after a successful profile creation with the server's response — the fast
-     * path that avoids a round trip to the announcements endpoint. No-ops if [isEarlySpotter] is
-     * false or [earlySpotterNumber] is null.
+     * path that avoids a round trip to the announcements endpoint. Only records the pending
+     * number/bonus; the combined card itself is shown later by [showCardIfEligible], once the
+     * guided tour finishes. No-ops if [isEarlySpotter] is false or [earlySpotterNumber] is null.
      */
     fun onProfileCreated(isEarlySpotter: Boolean, earlySpotterNumber: Int?, bonusPoints: Int?) {
         if (!isEarlySpotter || earlySpotterNumber == null) return
+        pendingEarlySpotterNumber = earlySpotterNumber
         pendingBonusPoints = bonusPoints
-        _state.value = EarlySpotterCardState.Welcome(earlySpotterNumber)
     }
 
     /**
-     * Recovery path for relogin/another device/app killed before the welcome card was shown or
+     * Recovery path for relogin/another device/app killed before the card was shown or
      * acknowledged — reconstructs pending state from the server's canonical PENDING list. A key
-     * already in [UserPreferences.pendingEarlySpotterAcks] was already dismissed locally (its ack
-     * just hasn't been confirmed yet) and must not be shown again.
+     * already in [UserPreferences.earlySpotterDismissed] was already dismissed locally and must
+     * not be shown again, regardless of whether its server ack has succeeded yet — see that key's
+     * doc for why this is deliberately not [UserPreferences.pendingEarlySpotterAcks]. A key
+     * missing from the PENDING list entirely means the server already has it as SEEN, which
+     * counts the same as dismissed.
      */
     private suspend fun refreshFromServer(userId: UUID) {
         val result = announcementRepository.getPending()
         val pending = (result as? ApiResult.Success)?.data ?: return
-        val locallyDismissed = userPreferences.pendingEarlySpotterAcks(userId).first()
-
-        val bonus = pending.firstOrNull { it.key == EARLY_SPOTTER_BONUS_KEY }
-        pendingBonusPoints = bonus?.let { parseIntField(it.payload, "points") }
+        val dismissedLocally = userPreferences.earlySpotterDismissed(userId).first()
 
         val welcome = pending.firstOrNull { it.key == EARLY_SPOTTER_WELCOME_KEY }
-        when {
-            welcome != null && welcome.key !in locallyDismissed -> {
-                val number = parseIntField(welcome.payload, "earlySpotterNumber")
-                if (number != null) _state.value = EarlySpotterCardState.Welcome(number)
-            }
-            bonus != null && bonus.key !in locallyDismissed && pendingBonusPoints != null -> {
-                _state.value = EarlySpotterCardState.Bonus(pendingBonusPoints!!)
-            }
+        val bonus = pending.firstOrNull { it.key == EARLY_SPOTTER_BONUS_KEY }
+
+        pendingEarlySpotterNumber = welcome?.let { parseIntField(it.payload, "earlySpotterNumber") }
+        pendingBonusPoints = bonus?.let { parseIntField(it.payload, "points") }
+
+        val welcomeConsumed = welcome == null || welcome.key in dismissedLocally
+        val bonusConsumed = bonus == null || bonus.key in dismissedLocally
+        if (!(welcomeConsumed && bonusConsumed)) {
+            showCardIfEligible()
         }
     }
 
-    /** Dismisses the welcome card and acknowledges it — idempotent, safe to call while offline. */
-    fun onWelcomeAcknowledged() {
-        _state.value = EarlySpotterCardState.Hidden
-        acknowledge(EARLY_SPOTTER_WELCOME_KEY)
-    }
-
-    /** Shows the bonus card if one is pending and not yet acknowledged — a no-op otherwise. */
-    fun showBonusIfEligible() {
+    /** Shows the combined card if both the number and the bonus points are pending — a no-op otherwise. */
+    fun showCardIfEligible() {
+        val number = pendingEarlySpotterNumber ?: return
         val points = pendingBonusPoints ?: return
-        _state.value = EarlySpotterCardState.Bonus(points)
+        _state.value = EarlySpotterCardState.Visible(number, points)
     }
 
-    /** Dismisses the bonus card and acknowledges it — idempotent, safe to call while offline. */
-    fun onBonusAcknowledged() {
+    /** Dismisses the card and acknowledges both keys — idempotent, safe to call while offline. */
+    fun onAcknowledged() {
         _state.value = EarlySpotterCardState.Hidden
+        pendingEarlySpotterNumber = null
         pendingBonusPoints = null
+        scope.launch {
+            val userId = userPreferences.userId.first() ?: return@launch
+            // Recorded immediately, independent of ack delivery — a failed or offline ack must
+            // never resurrect the card just because the server hasn't confirmed SEEN yet.
+            userPreferences.addEarlySpotterDismissed(userId, EARLY_SPOTTER_WELCOME_KEY)
+            userPreferences.addEarlySpotterDismissed(userId, EARLY_SPOTTER_BONUS_KEY)
+        }
+        acknowledge(EARLY_SPOTTER_WELCOME_KEY)
         acknowledge(EARLY_SPOTTER_BONUS_KEY)
     }
 

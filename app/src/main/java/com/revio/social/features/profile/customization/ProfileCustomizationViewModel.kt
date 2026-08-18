@@ -4,7 +4,6 @@ import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.revio.social.core.earlyspotter.EarlySpotterCardState
 import com.revio.social.core.earlyspotter.EarlySpotterController
 import com.revio.social.core.image.CropTransform
 import com.revio.social.core.image.ImageCompressor
@@ -240,12 +239,10 @@ class ProfileCustomizationViewModel @Inject constructor(
 
                 // Arm the guided tour here: this is the genuine first entry into the main
                 // app for a brand-new signup, right before the isUserCreated flag triggers
-                // navigation to Feed. An Early Spotter arms later instead — once the welcome
-                // card is dismissed (see EarlySpotterHostViewModel.onWelcomeDismissed()) — so
-                // the two overlays never race for the screen at once.
-                if (earlySpotterController.state.value !is EarlySpotterCardState.Welcome) {
-                    userPreferences.setTourStatus(userId, TourStatus.Armed)
-                }
+                // navigation to Feed. The combined Early Spotter card (if eligible) only shows
+                // once the tour finishes — see EarlySpotterHostViewModel — so the two overlays
+                // never race for the screen at once.
+                userPreferences.setTourStatus(userId, TourStatus.Armed)
                 _uiState.update { it.copy(isLoading = false, isUserCreated = true) }
             } catch (e: Exception) {
                 setError(e.message.toString())

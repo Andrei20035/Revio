@@ -1,5 +1,6 @@
 package com.revio.social.core.ui.earlyspotter
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -19,14 +21,17 @@ import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.revio.social.R
 import com.revio.social.core.earlyspotter.EarlySpotterCardState
 import com.revio.social.core.ui.overlay.OverlayAccent
 import com.revio.social.core.ui.overlay.OverlayBorder
@@ -39,7 +44,7 @@ private val TextSecondary = Color(0xB3FFFFFF) // white @ 70%
 private val CardCornerRadius = 20.dp
 
 /**
- * One-time Early Spotter welcome/bonus card, presented modally over a scrim (see
+ * One-time, combined Early Spotter welcome+bonus card, presented modally over a scrim (see
  * [EarlySpotterHost]) the same way [com.revio.social.core.ui.feedback.FirstPostFeedbackCard]
  * presents its own. Renders nothing for [EarlySpotterCardState.Hidden] — callers still decide
  * whether to compose this at all.
@@ -76,8 +81,10 @@ fun EarlySpotterCard(
         }
 
         when (state) {
-            is EarlySpotterCardState.Welcome -> WelcomeContent(earlySpotterNumber = state.earlySpotterNumber)
-            is EarlySpotterCardState.Bonus -> BonusContent(points = state.points)
+            is EarlySpotterCardState.Visible -> VisibleContent(
+                earlySpotterNumber = state.earlySpotterNumber,
+                bonusPoints = state.bonusPoints,
+            )
             EarlySpotterCardState.Hidden -> Unit
         }
 
@@ -93,35 +100,32 @@ fun EarlySpotterCard(
 }
 
 @Composable
-private fun WelcomeContent(earlySpotterNumber: Int) {
-    Text(
-        text = "Congratulations, you're an Early Spotter!",
-        color = TextPrimary,
-        fontFamily = Poppins,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 18.sp,
-    )
+private fun VisibleContent(earlySpotterNumber: Int, bonusPoints: Int) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Image(
+            painter = painterResource(R.drawable.early_spotter_badge),
+            contentDescription = null,
+            modifier = Modifier.size(40.dp),
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(
+            text = "You are an Early Spotter!",
+            color = TextPrimary,
+            fontFamily = Poppins,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 18.sp,
+        )
+    }
     Spacer(modifier = Modifier.height(8.dp))
     Text(
-        text = "You're Early Spotter #$earlySpotterNumber.",
+        text = "Thank you for shaping the Revio community. You got a $bonusPoints points boost.",
         color = TextSecondary,
         fontFamily = Poppins,
         fontSize = 14.sp,
     )
-}
-
-@Composable
-private fun BonusContent(points: Int) {
+    Spacer(modifier = Modifier.height(4.dp))
     Text(
-        text = "You received $points points!",
-        color = TextPrimary,
-        fontFamily = Poppins,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 18.sp,
-    )
-    Spacer(modifier = Modifier.height(8.dp))
-    Text(
-        text = "Your Early Spotter bonus has been added to your score.",
+        text = "You're Early Spotter #$earlySpotterNumber.",
         color = TextSecondary,
         fontFamily = Poppins,
         fontSize = 14.sp,
@@ -132,12 +136,6 @@ private fun BonusContent(points: Int) {
 
 @Preview(showBackground = true, backgroundColor = 0xFF0A0A0C)
 @Composable
-private fun EarlySpotterCardWelcomePreview() {
-    EarlySpotterCard(state = EarlySpotterCardState.Welcome(earlySpotterNumber = 42), onDismiss = {})
-}
-
-@Preview(showBackground = true, backgroundColor = 0xFF0A0A0C)
-@Composable
-private fun EarlySpotterCardBonusPreview() {
-    EarlySpotterCard(state = EarlySpotterCardState.Bonus(points = 300), onDismiss = {})
+private fun EarlySpotterCardPreview() {
+    EarlySpotterCard(state = EarlySpotterCardState.Visible(earlySpotterNumber = 42, bonusPoints = 300), onDismiss = {})
 }

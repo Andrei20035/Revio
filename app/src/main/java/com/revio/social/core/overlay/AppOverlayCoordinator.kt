@@ -9,14 +9,13 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Exclusive, app-wide overlays, in fixed priority order (highest first): the Early Spotter
- * welcome card outranks the guided tour, which outranks the Early Spotter bonus card, which
- * outranks the first-post feedback prompt — matching the analysis plan's overlay ordering.
+ * Exclusive, app-wide overlays, in fixed priority order (highest first): the guided tour outranks
+ * the combined Early Spotter card (which only ever shows once the tour finishes), which outranks
+ * the first-post feedback prompt.
  */
 enum class ActiveOverlay {
-    EarlySpotterWelcome,
     Tour,
-    EarlySpotterBonus,
+    EarlySpotter,
     FirstPostFeedback,
 }
 

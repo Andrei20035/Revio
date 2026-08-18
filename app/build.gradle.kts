@@ -133,6 +133,9 @@ dependencies {
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)
+    // Pas 6.4: Compose UI tests mock EarlySpotterController (a concrete class, no interface) —
+    // mockk-android is the instrumented-test-compatible variant of mockk used elsewhere in tests.
+    androidTestImplementation(libs.mockk.android)
     // Pas 6: instrumented navigation test drives the four real screens (Hilt ViewModels) through
     // RevioNavigation with a TestNavHostController.
     androidTestImplementation(libs.hilt.android.testing)

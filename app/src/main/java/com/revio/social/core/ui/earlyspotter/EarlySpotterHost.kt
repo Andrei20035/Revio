@@ -20,7 +20,7 @@ import com.revio.social.core.earlyspotter.EarlySpotterCardState
 import com.revio.social.core.ui.overlay.OverlayScrim
 
 /**
- * Hosts the one-time Early Spotter welcome/bonus card, anchored above the floating nav bar the
+ * Hosts the one-time, combined Early Spotter card, anchored above the floating nav bar the
  * same way [com.revio.social.core.ui.feedback.FirstPostFeedbackHost] is. Meant to be composed
  * inside `AppScreenBackground`'s `foreground` slot (a [BoxScope]) alongside the nav bar.
  */
@@ -50,13 +50,7 @@ fun BoxScope.EarlySpotterHost(
     ) {
         EarlySpotterCard(
             state = state,
-            onDismiss = {
-                when (state) {
-                    is EarlySpotterCardState.Welcome -> viewModel.onWelcomeDismissed()
-                    is EarlySpotterCardState.Bonus -> viewModel.onBonusDismissed()
-                    EarlySpotterCardState.Hidden -> Unit
-                }
-            },
+            onDismiss = { viewModel.onDismissed() },
         )
     }
 }

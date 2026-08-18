@@ -8,6 +8,8 @@ import com.revio.social.data.model.AuthProvider
 import com.revio.social.data.model.User
 import com.revio.social.data.remote.dto.auth.AuthResponse
 import com.revio.social.data.remote.dto.auth.OnboardingStep
+import com.revio.social.data.remote.dto.auth.WaitlistPrefillDTO
+import com.revio.social.data.remote.dto.auth.WaitlistUsernameStatus
 import com.revio.social.data.repository.AuthRepository
 import com.revio.social.data.repository.UserRepository
 import io.mockk.coEvery
@@ -120,6 +122,42 @@ class AuthViewModelTest {
             vm.uiState.value.navigationEvent
         )
         coVerify(exactly = 1) { userPreferences.saveJwtToken("jwt-pc") }
+    }
+
+    /**
+     * Server returns a waitlist prefill on PROFILE_REQUIRED — the navigation event must carry it
+     * through so AuthScreen can thread suggestedUsername/suggestedUsernameStatus into the route.
+     */
+    @Test
+    fun `login regular cu PROFILE_REQUIRED si waitlist propaga waitlistPrefill in navigationEvent`() = runTest {
+        val waitlist = WaitlistPrefillDTO(
+            suggestedUsername = "coolname",
+            suggestedUsernameStatus = WaitlistUsernameStatus.AVAILABLE,
+        )
+        coEvery { authRepository.login(any(), any(), any(), AuthProvider.REGULAR) } returns
+                ApiResult.Success(AuthResponse("jwt-pc", OnboardingStep.PROFILE_REQUIRED, waitlist = waitlist))
+
+        vm.updateEmail("a@b.com"); vm.updatePassword("secret")
+        vm.submitEmailAuth()
+
+        assertEquals(
+            AuthNavigationEvent.ToProfileCustomization(waitlist),
+            vm.uiState.value.navigationEvent
+        )
+    }
+
+    @Test
+    fun `login regular cu PROFILE_REQUIRED fara waitlist navigheaza cu waitlistPrefill null`() = runTest {
+        coEvery { authRepository.login(any(), any(), any(), AuthProvider.REGULAR) } returns
+                ApiResult.Success(AuthResponse("jwt-pc", OnboardingStep.PROFILE_REQUIRED, waitlist = null))
+
+        vm.updateEmail("a@b.com"); vm.updatePassword("secret")
+        vm.submitEmailAuth()
+
+        assertEquals(
+            AuthNavigationEvent.ToProfileCustomization(null),
+            vm.uiState.value.navigationEvent
+        )
     }
 
     @Test
