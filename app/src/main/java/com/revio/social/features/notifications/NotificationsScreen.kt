@@ -30,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -52,6 +53,7 @@ import com.revio.social.core.ui.scaling.rememberActivityScale
 import com.revio.social.core.ui.theme.Poppins
 import com.revio.social.core.util.toRelativeTime
 import com.revio.social.data.remote.dto.notification.NotificationDto
+import kotlinx.coroutines.delay
 
 private val CardFill = Color(0x524E4E4E)
 private val CardBorder = Color(0xFF363636)
@@ -67,6 +69,13 @@ fun NotificationsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
+    LaunchedEffect(uiState.actionErrorMessage) {
+        if (uiState.actionErrorMessage != null) {
+            delay(3000)
+            viewModel.clearActionError()
+        }
+    }
+
     AppScreenBackground {
         CompositionLocalProvider(LocalActivityScale provides rememberActivityScale()) {
             Column(
@@ -80,6 +89,10 @@ fun NotificationsScreen(
                     onBack = { navController.popBackStack() },
                     onMarkAllRead = { viewModel.markAllRead() },
                 )
+
+                uiState.actionErrorMessage?.let { message ->
+                    ActionErrorBanner(message = message)
+                }
 
                 Box(modifier = Modifier.fillMaxSize()) {
                     when {
@@ -128,6 +141,26 @@ fun NotificationsScreen(
                 }
             }
         }
+    }
+}
+
+/** Dismissible failure banner for [NotificationsViewModel.markRead]/[NotificationsViewModel.markAllRead] (pas 5.1) — the list underneath stays visible. */
+@Composable
+private fun ActionErrorBanner(message: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp.actScaled())
+            .clip(CardShape)
+            .background(Color(0x33FF5252))
+            .padding(horizontal = 14.dp.actScaled(), vertical = 10.dp.actScaled()),
+    ) {
+        Text(
+            text = message,
+            color = Color.White,
+            fontSize = 13.sp.actScaledText(),
+            fontWeight = FontWeight.Medium,
+        )
     }
 }
 

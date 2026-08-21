@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import java.time.Clock
@@ -318,5 +319,42 @@ class FirstPostFeedbackControllerTest {
 
         assertEquals(FirstPostPromptState.Hidden, controller.state.value)
         coVerify(exactly = 0) { feedbackRepository.reportShown() }
+    }
+
+    // ----------------------------------------------------------------------
+    // pas 2.5c — lastPostCreatedEvent nu mai aruncă uploadDurationMs/retryCount/lastErrorCode
+    // ----------------------------------------------------------------------
+
+    @Test
+    fun `lastPostCreatedEvent captureaza campurile evenimentului emis`() {
+        val controller = controller()
+        val event = PostCreatedEvent(UUID.randomUUID(), uploadDurationMs = 4200L, retryCount = 2, lastErrorCode = "VALIDATION_ERROR")
+
+        runBlocking { postCreationSignal.emit(event) }
+        Thread.sleep(300)
+
+        assertEquals(event, controller.lastPostCreatedEvent)
+    }
+
+    @Test
+    fun `lastPostCreatedEvent e null inainte de orice PostCreatedEvent`() {
+        val controller = controller()
+
+        assertNull(controller.lastPostCreatedEvent)
+    }
+
+    @Test
+    fun `lastPostCreatedEvent se reseteaza la schimbarea contului`() {
+        val userB = UUID.randomUUID()
+        val controller = controller()
+        emitPostCreated()
+        Thread.sleep(300)
+        assertEquals(1200L, controller.lastPostCreatedEvent?.uploadDurationMs)
+
+        userIdFlow.value = null
+        userIdFlow.value = userB
+        Thread.sleep(300)
+
+        assertNull(controller.lastPostCreatedEvent)
     }
 }

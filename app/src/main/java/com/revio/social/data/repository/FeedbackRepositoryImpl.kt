@@ -1,6 +1,7 @@
 package com.revio.social.data.repository
 
 import com.revio.social.core.network.ApiResult
+import com.revio.social.core.network.ErrorPolicy
 import com.revio.social.core.network.NetworkConnectivityManager
 import com.revio.social.core.network.isNetworkError
 import com.revio.social.core.network.map
@@ -55,7 +56,7 @@ class FeedbackRepositoryImpl @Inject constructor(
     }
 
     override suspend fun getPromptState(): ApiResult<FeedbackPromptState> {
-        return safeApiCall { feedbackApi.getPromptState(FIRST_POST_FEEDBACK_KEY) }
+        return safeApiCall(policy = ErrorPolicy.SILENT) { feedbackApi.getPromptState(FIRST_POST_FEEDBACK_KEY) }
             .map { it.toDomain() }
     }
 
@@ -87,13 +88,13 @@ class FeedbackRepositoryImpl @Inject constructor(
     }
 
     override suspend fun reportShown(): ApiResult<Unit> {
-        return safeApiCallNoContent {
+        return safeApiCallNoContent(policy = ErrorPolicy.SILENT) {
             feedbackApi.updatePromptState(PromptStateUpdateRequest(FIRST_POST_FEEDBACK_KEY, PromptEvent.SHOWN))
         }
     }
 
     override suspend fun reportDismissed(): ApiResult<Unit> {
-        return safeApiCallNoContent {
+        return safeApiCallNoContent(policy = ErrorPolicy.SILENT) {
             feedbackApi.updatePromptState(PromptStateUpdateRequest(FIRST_POST_FEEDBACK_KEY, PromptEvent.DISMISSED))
         }
     }

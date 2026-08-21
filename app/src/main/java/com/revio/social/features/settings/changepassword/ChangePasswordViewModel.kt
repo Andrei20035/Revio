@@ -2,6 +2,9 @@ package com.revio.social.features.settings.changepassword
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.revio.social.core.analytics.AnalyticsClient
+import com.revio.social.core.analytics.AnalyticsEvent
+import com.revio.social.core.analytics.AnalyticsParamValue
 import com.revio.social.core.network.ApiResult
 import com.revio.social.data.repository.AuthRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -12,9 +15,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+/** Ev. — pas 5.8: password change outcome, same outcome/failure_code shape as auth_result (pas 2.2b). */
+private const val EVENT_AUTH_PASSWORD_CHANGE_RESULT = "auth_password_change_result"
+
 @HiltViewModel
 class ChangePasswordViewModel @Inject constructor(
     private val authRepository: AuthRepository,
+    private val analyticsClient: AnalyticsClient? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ChangePasswordUiState())
@@ -64,7 +71,19 @@ class ChangePasswordViewModel @Inject constructor(
                 )
             }
 
-            when (val result = authRepository.updatePassword(state.oldPassword, state.newPassword)) {
+            val result = authRepository.updatePassword(state.oldPassword, state.newPassword)
+            analyticsClient?.log(
+                AnalyticsEvent(
+                    name = EVENT_AUTH_PASSWORD_CHANGE_RESULT,
+                    params = buildMap {
+                        put("outcome", AnalyticsParamValue.StringValue(if (result is ApiResult.Success) "success" else "failure"))
+                        if (result is ApiResult.Error) {
+                            put("failure_code", AnalyticsParamValue.StringValue(result.code ?: "unknown"))
+                        }
+                    },
+                )
+            )
+            when (result) {
                 is ApiResult.Success -> _uiState.update {
                     it.copy(
                         isSaving = false,

@@ -90,12 +90,20 @@ class FirstPostFeedbackCardCoordinator @Inject constructor(
 
     fun onSkip() = submit(includeComment = false)
 
-    private fun buildPayload(rating: Int, quickReason: QuickReason?, comment: String?) = FirstPostFeedbackPayload(
-        rating = rating,
-        quickReason = quickReason,
-        comment = comment,
-        surface = lastSurface,
-    )
+    private fun buildPayload(rating: Int, quickReason: QuickReason?, comment: String?): FirstPostFeedbackPayload {
+        // pas 2.5c — reconnects the metrics from the post that armed this prompt, previously
+        // dropped at FirstPostFeedbackController.kt:94 instead of reaching the server.
+        val postMetrics = controller.lastPostCreatedEvent
+        return FirstPostFeedbackPayload(
+            rating = rating,
+            quickReason = quickReason,
+            comment = comment,
+            surface = lastSurface,
+            uploadDurationMs = postMetrics?.uploadDurationMs?.toInt(),
+            hadRetries = postMetrics?.retryCount?.let { it > 0 },
+            lastErrorCode = postMetrics?.lastErrorCode,
+        )
+    }
 
     private fun submit(includeComment: Boolean) {
         val current = _cardState.value ?: return

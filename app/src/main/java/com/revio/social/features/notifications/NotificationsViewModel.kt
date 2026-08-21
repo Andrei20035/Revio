@@ -2,6 +2,9 @@ package com.revio.social.features.notifications
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.revio.social.core.analytics.AnalyticsClient
+import com.revio.social.core.analytics.AnalyticsEvent
+import com.revio.social.core.analytics.AnalyticsParamValue
 import com.revio.social.core.network.ApiResult
 import com.revio.social.core.network.NetworkConnectivityManager
 import com.revio.social.core.network.isNetworkError
@@ -17,10 +20,14 @@ import java.time.Instant
 import java.util.UUID
 import javax.inject.Inject
 
+/** Ev. notification_action_result (pas 5.1) — best-effort actions (Categoria 3), aggregate rate only, never Crashlytics. */
+private const val EVENT_NOTIFICATION_ACTION_RESULT = "notification_action_result"
+
 @HiltViewModel
 class NotificationsViewModel @Inject constructor(
     private val notificationRepository: NotificationRepository,
     private val connectivity: NetworkConnectivityManager,
+    private val analyticsClient: AnalyticsClient? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NotificationsUiState())
@@ -53,7 +60,7 @@ class NotificationsViewModel @Inject constructor(
         if (alreadyRead) return
 
         viewModelScope.launch {
-            when (notificationRepository.markRead(id)) {
+            when (val result = notificationRepository.markRead(id)) {
                 is ApiResult.Success -> _uiState.update { state ->
                     state.copy(
                         items = state.items.map {
@@ -62,7 +69,10 @@ class NotificationsViewModel @Inject constructor(
                         unreadCount = (state.unreadCount - 1).coerceAtLeast(0),
                     )
                 }
-                is ApiResult.Error -> Unit
+                is ApiResult.Error -> {
+                    logActionResult("mark_read", result)
+                    _uiState.update { it.copy(actionErrorMessage = "Couldn't mark as read") }
+                }
             }
         }
     }
@@ -71,16 +81,36 @@ class NotificationsViewModel @Inject constructor(
         if (_uiState.value.unreadCount == 0L) return
 
         viewModelScope.launch {
-            when (notificationRepository.markAllRead()) {
+            when (val result = notificationRepository.markAllRead()) {
                 is ApiResult.Success -> _uiState.update { state ->
                     state.copy(
                         items = state.items.map { if (it.readAt == null) it.copy(readAt = Instant.now()) else it },
                         unreadCount = 0,
                     )
                 }
-                is ApiResult.Error -> Unit
+                is ApiResult.Error -> {
+                    logActionResult("mark_all_read", result)
+                    _uiState.update { it.copy(actionErrorMessage = "Couldn't mark all as read") }
+                }
             }
         }
+    }
+
+    fun clearActionError() {
+        _uiState.update { it.copy(actionErrorMessage = null) }
+    }
+
+    private fun logActionResult(action: String, error: ApiResult.Error) {
+        analyticsClient?.log(
+            AnalyticsEvent(
+                name = EVENT_NOTIFICATION_ACTION_RESULT,
+                params = mapOf(
+                    "action" to AnalyticsParamValue.StringValue(action),
+                    "outcome" to AnalyticsParamValue.StringValue("failure"),
+                    "failure_code" to AnalyticsParamValue.StringValue(error.code ?: "unknown"),
+                ),
+            )
+        )
     }
 
     private fun load() {

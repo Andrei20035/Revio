@@ -6,6 +6,7 @@ plugins {
     kotlin("kapt")
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.google.services)
+    alias(libs.plugins.firebase.crashlytics)
     alias(libs.plugins.ksp)
 }
 
@@ -36,14 +37,23 @@ android {
 
     buildTypes {
         debug {
+            applicationIdSuffix = ".debug"
             buildConfigField(
                 "String",
                 "API_BASE_URL",
                 "\"${property("DEBUG_API_BASE_URL")}\""
             )
+            // Separate Firebase project (revio-debug-47037) and OAuth Web client from release —
+            // see docs/firebase-environments.md. Overrides the WEB_CLIENT_ID field declared in
+            // defaultConfig for this build type only; release's field is untouched.
+            buildConfigField(
+                "String",
+                "WEB_CLIENT_ID",
+                "\"${property("DEBUG_WEB_CLIENT_ID")}\""
+            )
         }
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -53,6 +63,10 @@ android {
                 "API_BASE_URL",
                 "\"${property("RELEASE_API_BASE_URL")}\""
             )
+            // pas 1.9: niciun keystore de release există/e autorizat în acest mediu — decizia e
+            // să rămânem pe semnarea debug pentru closed testing (Play App Signing poate ridica
+            // ulterior propria cheie de upload); schimbarea la un keystore de producție rămâne
+            // un pas separat, explicit.
             signingConfig = signingConfigs.getByName("debug")
         }
     }
@@ -67,6 +81,10 @@ android {
     packaging {
         resources {
             excludes += "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
+            // mockk-android pulls junit-jupiter transitively; several of its jars ship the same
+            // license/notice files, which collide when androidTest's APK is merged.
+            excludes += "META-INF/LICENSE*.md"
+            excludes += "META-INF/NOTICE*.md"
         }
     }
 }
@@ -96,7 +114,6 @@ dependencies {
     implementation(libs.exifinterface)
     implementation(libs.hilt.core)
     implementation(libs.hilt.navigation.compose)
-    implementation(libs.firebase.crashlytics.buildtools)
     kapt(libs.hilt.compiler)
     implementation(libs.datastore.preferences)
     implementation(libs.compose.foundation)
@@ -104,6 +121,7 @@ dependencies {
     implementation(libs.play.services.location)
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.analytics)
+    implementation(libs.firebase.crashlytics)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.coil.compose)
     // Coil 3 needs an explicit network engine to load remote (http) images.

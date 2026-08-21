@@ -1,5 +1,8 @@
 package com.revio.social.features.feed
 
+import com.revio.social.core.analytics.AnalyticsClient
+import com.revio.social.core.analytics.AnalyticsEvent
+import com.revio.social.core.analytics.AnalyticsParamValue
 import com.revio.social.data.image.FeedImagePrefetcher
 import com.revio.social.data.image.PrefetchOutcome
 import com.revio.social.data.model.FeedPost
@@ -43,6 +46,12 @@ sealed interface GateStatus {
     data object ExhaustedNoContent : GateStatus
 }
 
+/**
+ * ev. 23 — a permanent or transient image-fetch skip, with [classifyPrefetchFailure]'s fixed
+ * `reason` code now actually reaching somewhere instead of being discarded (pas 2.6c).
+ */
+private const val EVENT_FEED_IMAGE_GATE = "feed_image_gate"
+
 private const val MAX_CONCURRENT_FETCHES = 3
 private const val READY_BUFFER_TARGET = 3
 private const val TRANSIENT_RETRY_DELAY_MS = 300L
@@ -71,6 +80,7 @@ class FeedImageGate(
     private val scope: CoroutineScope,
     private val onRefillNeeded: () -> Unit = {},
     private val isNetworkAvailable: () -> Boolean = { true },
+    private val analyticsClient: AnalyticsClient? = null,
 ) {
     private val mutex = Mutex()
     private val semaphore = Semaphore(MAX_CONCURRENT_FETCHES)
@@ -216,15 +226,41 @@ class FeedImageGate(
     private suspend fun resolveFetch(url: String): ImageState {
         val first = fetchWithTimeout(url)
         if (first is PrefetchOutcome.Success) return ImageState.Ready
-        if (first is PrefetchOutcome.PermanentFailure) return ImageState.Skipped(permanent = true)
+        if (first is PrefetchOutcome.PermanentFailure) {
+            logImageGateResult(permanent = true, reason = first.reason)
+            return ImageState.Skipped(permanent = true)
+        }
 
         delay(TRANSIENT_RETRY_DELAY_MS)
         val second = fetchWithTimeout(url)
-        return when {
-            second is PrefetchOutcome.Success -> ImageState.Ready
-            second is PrefetchOutcome.PermanentFailure -> ImageState.Skipped(permanent = true)
-            else -> ImageState.Skipped(permanent = false)
+        return when (second) {
+            is PrefetchOutcome.Success -> ImageState.Ready
+            is PrefetchOutcome.PermanentFailure -> {
+                logImageGateResult(permanent = true, reason = second.reason)
+                ImageState.Skipped(permanent = true)
+            }
+            is PrefetchOutcome.TransientFailure -> {
+                logImageGateResult(permanent = false, reason = second.reason)
+                ImageState.Skipped(permanent = false)
+            }
+            // Second attempt itself timed out — no PrefetchOutcome to read a reason from.
+            null -> {
+                logImageGateResult(permanent = false, reason = "timeout")
+                ImageState.Skipped(permanent = false)
+            }
         }
+    }
+
+    private fun logImageGateResult(permanent: Boolean, reason: String) {
+        analyticsClient?.log(
+            AnalyticsEvent(
+                name = EVENT_FEED_IMAGE_GATE,
+                params = mapOf(
+                    "outcome" to AnalyticsParamValue.StringValue(if (permanent) "permanent" else "transient"),
+                    "reason" to AnalyticsParamValue.StringValue(reason),
+                ),
+            )
+        )
     }
 
     private suspend fun fetchWithTimeout(url: String): PrefetchOutcome? =

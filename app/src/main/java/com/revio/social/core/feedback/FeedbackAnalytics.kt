@@ -1,8 +1,10 @@
 package com.revio.social.core.feedback
 
 import android.content.Context
-import android.os.Bundle
 import com.google.firebase.analytics.FirebaseAnalytics
+import com.revio.social.core.analytics.AnalyticsClient
+import com.revio.social.core.analytics.AnalyticsEvent
+import com.revio.social.core.analytics.AnalyticsParamValue
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -67,30 +69,31 @@ interface Analytics {
     fun log(event: FeedbackEvent)
 }
 
+/**
+ * Adapts [FeedbackEvent] onto [AnalyticsClient] — the feedback funnel keeps its own event
+ * catalogue and parameter shape (unchanged), but delegates the actual logging, and whatever
+ * build-type/consent gating [AnalyticsClient] applies, to the shared abstraction.
+ */
 @Singleton
-class FirebaseAnalyticsLogger @Inject constructor(
-    private val firebaseAnalytics: FirebaseAnalytics,
+class FeedbackAnalyticsAdapter @Inject constructor(
+    private val analyticsClient: AnalyticsClient,
 ) : Analytics {
 
     override fun log(event: FeedbackEvent) {
-        val params = Bundle().apply {
-            event.rating?.let { putInt("rating", it) }
-            event.reason?.let { putString("reason", it) }
-            event.surface?.let { putString("surface", it) }
-            event.hasComment?.let { putBoolean("has_comment", it) }
-            event.showIndex?.let { putInt("show_index", it) }
-            event.category?.let { putString("category", it) }
-            event.area?.let { putString("area", it) }
-            event.source?.let { putString("source", it) }
+        val params = buildMap<String, AnalyticsParamValue> {
+            event.rating?.let { put("rating", AnalyticsParamValue.LongValue(it.toLong())) }
+            event.reason?.let { put("reason", AnalyticsParamValue.StringValue(it)) }
+            event.surface?.let { put("surface", AnalyticsParamValue.StringValue(it)) }
+            // AnalyticsParamValue has no boolean variant — encoded as 0/1, same as Firebase's
+            // own numeric param types.
+            event.hasComment?.let { put("has_comment", AnalyticsParamValue.LongValue(if (it) 1L else 0L)) }
+            event.showIndex?.let { put("show_index", AnalyticsParamValue.LongValue(it.toLong())) }
+            event.category?.let { put("category", AnalyticsParamValue.StringValue(it)) }
+            event.area?.let { put("area", AnalyticsParamValue.StringValue(it)) }
+            event.source?.let { put("source", AnalyticsParamValue.StringValue(it)) }
         }
-        firebaseAnalytics.logEvent(event.name.eventName, params)
+        analyticsClient.log(AnalyticsEvent(name = event.name.eventName, params = params))
     }
-}
-
-/** No-op implementation for debug/test builds where events shouldn't reach real analytics. */
-@Singleton
-class NoOpAnalytics @Inject constructor() : Analytics {
-    override fun log(event: FeedbackEvent) = Unit
 }
 
 @Module
@@ -108,5 +111,5 @@ object FeedbackAnalyticsProviderModule {
 abstract class FeedbackAnalyticsModule {
     @Binds
     @Singleton
-    abstract fun bindAnalytics(impl: FirebaseAnalyticsLogger): Analytics
+    abstract fun bindAnalytics(impl: FeedbackAnalyticsAdapter): Analytics
 }

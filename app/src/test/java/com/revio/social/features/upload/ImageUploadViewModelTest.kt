@@ -2,11 +2,17 @@ package com.revio.social.features.upload
 
 import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.revio.social.MainDispatcherRule
+import com.revio.social.core.analytics.AnalyticsClient
+import com.revio.social.core.analytics.AnalyticsEvent
+import com.revio.social.core.analytics.AnalyticsParamValue
 import com.revio.social.core.feedback.PostCreatedEvent
 import com.revio.social.core.feedback.PostCreationSignal
 import com.revio.social.core.image.ImageCompressor
 import com.revio.social.core.network.ApiResult
+import com.revio.social.core.network.ERROR_CODE_NETWORK
+import com.revio.social.core.network.NETWORK_ERROR_MESSAGE
 import com.revio.social.core.navigation.Screen
 import com.revio.social.data.model.Coordinates
 import com.revio.social.data.model.FeedPost
@@ -25,10 +31,12 @@ import io.mockk.mockk
 import io.mockk.mockkStatic
 import io.mockk.slot
 import io.mockk.unmockkStatic
+import io.mockk.verify
 import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.test.runTest
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -53,11 +61,20 @@ class ImageUploadViewModelTest {
     private val imageCompressor: ImageCompressor = mockk()
     private val locationRepository: LocationRepository = mockk()
     private val postCreationSignal: PostCreationSignal = mockk(relaxed = true)
+    private val analyticsClient: AnalyticsClient = mockk(relaxed = true)
+    private val crashlytics: FirebaseCrashlytics = mockk(relaxed = true)
 
     @Before
     fun setUp() {
         coEvery { carModelRepository.getAllCarBrands() } returns ApiResult.Success(emptyList())
         every { locationRepository.hasLocationPermission() } returns false
+        mockkStatic(FirebaseCrashlytics::class)
+        every { FirebaseCrashlytics.getInstance() } returns crashlytics
+    }
+
+    @After
+    fun tearDown() {
+        unmockkStatic(FirebaseCrashlytics::class)
     }
 
     private fun feedPost(brand: String, model: String, vehicleLocked: Boolean = false) = FeedPost(
@@ -92,6 +109,7 @@ class ImageUploadViewModelTest {
             imageCompressor = imageCompressor,
             locationRepository = locationRepository,
             postCreationSignal = postCreationSignal,
+            analyticsClient = analyticsClient,
         )
     }
 
@@ -431,5 +449,304 @@ class ImageUploadViewModelTest {
 
         assertEquals(model.id, requestSlot.captured.carModelId)
         assertEquals(true, viewModel.uiState.value.postSuccess)
+    }
+
+    // ----------------------------------------------------------------------
+    // pas 2.5a — ev. 15 (post_create_start) + ev. 16 (post_compress_result) +
+    // ev. 17 (post_location_result), fiecare mod de eșec
+    // ----------------------------------------------------------------------
+
+    @Test
+    fun `locatie rezolvata cu succes - post_location_result outcome success`() = runTest {
+        coEvery { locationRepository.getCurrentLocation() } returns Coordinates(44.43, 26.10)
+        coEvery { locationRepository.reverseGeocode(any()) } returns PlaceName(town = "Bucharest", country = "Romania")
+        val viewModel = viewModel()
+
+        viewModel.onLocationPermissionResult(granted = true)
+
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "post_location_result",
+                    params = mapOf("outcome" to AnalyticsParamValue.StringValue("success")),
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `locatie indisponibila - servicii dezactivate - post_location_result failure_code services_disabled`() = runTest {
+        coEvery { locationRepository.getCurrentLocation() } returns null
+        every { locationRepository.locationServicesEnabled() } returns false
+        val viewModel = viewModel()
+
+        viewModel.onLocationPermissionResult(granted = true)
+
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "post_location_result",
+                    params = mapOf(
+                        "outcome" to AnalyticsParamValue.StringValue("failure"),
+                        "failure_code" to AnalyticsParamValue.StringValue("services_disabled"),
+                    ),
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `locatie indisponibila - fara fix - post_location_result failure_code no_fix`() = runTest {
+        coEvery { locationRepository.getCurrentLocation() } returns null
+        every { locationRepository.locationServicesEnabled() } returns true
+        val viewModel = viewModel()
+
+        viewModel.onLocationPermissionResult(granted = true)
+
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "post_location_result",
+                    params = mapOf(
+                        "outcome" to AnalyticsParamValue.StringValue("failure"),
+                        "failure_code" to AnalyticsParamValue.StringValue("no_fix"),
+                    ),
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `createNewPost - post_create_start si post_compress_result success`() = runTest {
+        mockkStatic(Uri::class)
+        try {
+            val fakeUri = mockk<Uri>()
+            every { Uri.parse(any()) } returns fakeUri
+            coEvery { locationRepository.getCurrentLocation() } returns null
+            every { locationRepository.locationServicesEnabled() } returns true
+            coEvery { imageCompressor.compress(fakeUri, any()) } returns
+                ImageCompressor.CompressedImage(byteArrayOf(1, 2, 3), "image/jpeg")
+            coEvery { postRepository.createPost(any(), any(), any()) } returns
+                ApiResult.Success(CreatePostResult(postId = UUID.randomUUID(), user = null))
+
+            val brand = "BMW"
+            val model = CarModelOption(id = UUID.randomUUID(), model = "M3")
+            coEvery { carModelRepository.getModelsForBrand(brand) } returns ApiResult.Success(listOf(model))
+
+            val viewModel = viewModel(imageUri = "content://fake/image.jpg")
+            viewModel.onBrandSelected(brand)
+            viewModel.onModelSelected(model.model)
+
+            viewModel.post()
+
+            verify(exactly = 1) { analyticsClient.log(AnalyticsEvent(name = "post_create_start")) }
+            verify(exactly = 1) {
+                analyticsClient.log(
+                    AnalyticsEvent(
+                        name = "post_compress_result",
+                        params = mapOf("outcome" to AnalyticsParamValue.StringValue("success")),
+                    )
+                )
+            }
+            verify(exactly = 0) { crashlytics.recordException(any()) }
+        } finally {
+            unmockkStatic(Uri::class)
+        }
+    }
+
+    @Test
+    fun `compresia esueaza - post_compress_result failure + non-fatal, postarea nu porneste`() = runTest {
+        mockkStatic(Uri::class)
+        try {
+            val fakeUri = mockk<Uri>()
+            every { Uri.parse(any()) } returns fakeUri
+            coEvery { locationRepository.getCurrentLocation() } returns null
+            every { locationRepository.locationServicesEnabled() } returns true
+            coEvery { imageCompressor.compress(fakeUri, any()) } throws RuntimeException("decode failed")
+
+            val brand = "BMW"
+            val model = CarModelOption(id = UUID.randomUUID(), model = "M3")
+            coEvery { carModelRepository.getModelsForBrand(brand) } returns ApiResult.Success(listOf(model))
+
+            val viewModel = viewModel(imageUri = "content://fake/image.jpg")
+            viewModel.onBrandSelected(brand)
+            viewModel.onModelSelected(model.model)
+
+            viewModel.post()
+
+            verify(exactly = 1) {
+                analyticsClient.log(
+                    AnalyticsEvent(
+                        name = "post_compress_result",
+                        params = mapOf("outcome" to AnalyticsParamValue.StringValue("failure")),
+                    )
+                )
+            }
+            verify(exactly = 1) { crashlytics.recordException(any()) }
+            coVerify(exactly = 0) { postRepository.createPost(any(), any(), any()) }
+            assertEquals("Couldn't process the image. Please try again.", viewModel.uiState.value.userMessage)
+        } finally {
+            unmockkStatic(Uri::class)
+        }
+    }
+
+    // ----------------------------------------------------------------------
+    // pas 2.5b — ev. 18: post_upload_result, succes/eșec, cu durată + retry în bucket-uri
+    // ----------------------------------------------------------------------
+
+    private fun preparePostableViewModel(
+        brand: String = "BMW",
+        modelName: String = "M3",
+    ): ImageUploadViewModel {
+        val fakeUri = mockk<Uri>()
+        every { Uri.parse(any()) } returns fakeUri
+        coEvery { locationRepository.getCurrentLocation() } returns null
+        every { locationRepository.locationServicesEnabled() } returns true
+        coEvery { imageCompressor.compress(fakeUri, any()) } returns
+            ImageCompressor.CompressedImage(byteArrayOf(1, 2, 3), "image/jpeg")
+
+        val model = CarModelOption(id = UUID.randomUUID(), model = modelName)
+        coEvery { carModelRepository.getModelsForBrand(brand) } returns ApiResult.Success(listOf(model))
+
+        val viewModel = viewModel(imageUri = "content://fake/image.jpg")
+        viewModel.onBrandSelected(brand)
+        viewModel.onModelSelected(model.model)
+        return viewModel
+    }
+
+    @Test
+    fun `upload reusit - post_upload_result outcome success cu duration_bucket si retry_bucket 0`() = runTest {
+        mockkStatic(Uri::class)
+        try {
+            coEvery { postRepository.createPost(any(), any(), any()) } returns
+                ApiResult.Success(CreatePostResult(postId = UUID.randomUUID(), user = null))
+
+            preparePostableViewModel().post()
+
+            verify(exactly = 1) {
+                analyticsClient.log(
+                    AnalyticsEvent(
+                        name = "post_upload_result",
+                        params = mapOf(
+                            "outcome" to AnalyticsParamValue.StringValue("success"),
+                            "duration_bucket" to AnalyticsParamValue.StringValue("lt_1s"),
+                            "retry_bucket" to AnalyticsParamValue.StringValue("0"),
+                        ),
+                    )
+                )
+            }
+        } finally {
+            unmockkStatic(Uri::class)
+        }
+    }
+
+    @Test
+    fun `upload esuat cu cod cunoscut - post_upload_result outcome failure cu failure_code`() = runTest {
+        mockkStatic(Uri::class)
+        try {
+            coEvery { postRepository.createPost(any(), any(), any()) } returns
+                ApiResult.Error("Server error", code = "VALIDATION_ERROR")
+
+            preparePostableViewModel().post()
+
+            verify(exactly = 1) {
+                analyticsClient.log(
+                    AnalyticsEvent(
+                        name = "post_upload_result",
+                        params = mapOf(
+                            "outcome" to AnalyticsParamValue.StringValue("failure"),
+                            "duration_bucket" to AnalyticsParamValue.StringValue("lt_1s"),
+                            "retry_bucket" to AnalyticsParamValue.StringValue("0"),
+                            "failure_code" to AnalyticsParamValue.StringValue("VALIDATION_ERROR"),
+                        ),
+                    )
+                )
+            }
+        } finally {
+            unmockkStatic(Uri::class)
+        }
+    }
+
+    @Test
+    fun `upload esuat fara cod - post_upload_result failure_code unrecognized`() = runTest {
+        mockkStatic(Uri::class)
+        try {
+            coEvery { postRepository.createPost(any(), any(), any()) } returns ApiResult.Error("server error")
+
+            preparePostableViewModel().post()
+
+            verify(exactly = 1) {
+                analyticsClient.log(
+                    AnalyticsEvent(
+                        name = "post_upload_result",
+                        params = mapOf(
+                            "outcome" to AnalyticsParamValue.StringValue("failure"),
+                            "duration_bucket" to AnalyticsParamValue.StringValue("lt_1s"),
+                            "retry_bucket" to AnalyticsParamValue.StringValue("0"),
+                            "failure_code" to AnalyticsParamValue.StringValue("unrecognized"),
+                        ),
+                    )
+                )
+            }
+        } finally {
+            unmockkStatic(Uri::class)
+        }
+    }
+
+    @Test
+    fun `upload esuat pentru eroare de retea - post_upload_result failure_code network_unavailable`() = runTest {
+        mockkStatic(Uri::class)
+        try {
+            coEvery { postRepository.createPost(any(), any(), any()) } returns
+                ApiResult.Error(NETWORK_ERROR_MESSAGE, code = ERROR_CODE_NETWORK)
+
+            preparePostableViewModel().post()
+
+            verify(exactly = 1) {
+                analyticsClient.log(
+                    AnalyticsEvent(
+                        name = "post_upload_result",
+                        params = mapOf(
+                            "outcome" to AnalyticsParamValue.StringValue("failure"),
+                            "duration_bucket" to AnalyticsParamValue.StringValue("lt_1s"),
+                            "retry_bucket" to AnalyticsParamValue.StringValue("0"),
+                            "failure_code" to AnalyticsParamValue.StringValue(ERROR_CODE_NETWORK),
+                        ),
+                    )
+                )
+            }
+        } finally {
+            unmockkStatic(Uri::class)
+        }
+    }
+
+    @Test
+    fun `a doua incercare dupa un esec anterior - retry_bucket 1`() = runTest {
+        mockkStatic(Uri::class)
+        try {
+            coEvery { postRepository.createPost(any(), any(), any()) } returns ApiResult.Error("server error")
+
+            val viewModel = preparePostableViewModel()
+            viewModel.post()
+
+            coEvery { postRepository.createPost(any(), any(), any()) } returns
+                ApiResult.Success(CreatePostResult(postId = UUID.randomUUID(), user = null))
+            viewModel.post()
+
+            verify(exactly = 1) {
+                analyticsClient.log(
+                    AnalyticsEvent(
+                        name = "post_upload_result",
+                        params = mapOf(
+                            "outcome" to AnalyticsParamValue.StringValue("success"),
+                            "duration_bucket" to AnalyticsParamValue.StringValue("lt_1s"),
+                            "retry_bucket" to AnalyticsParamValue.StringValue("1"),
+                        ),
+                    )
+                )
+            }
+        } finally {
+            unmockkStatic(Uri::class)
+        }
     }
 }

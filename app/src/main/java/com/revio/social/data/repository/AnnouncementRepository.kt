@@ -1,6 +1,7 @@
 package com.revio.social.data.repository
 
 import com.revio.social.core.network.ApiResult
+import com.revio.social.core.network.ErrorPolicy
 import com.revio.social.core.network.safeApiCall
 import com.revio.social.core.network.safeApiCallNoContent
 import com.revio.social.data.remote.api.AnnouncementApi
@@ -23,8 +24,8 @@ class AnnouncementRepositoryImpl @Inject constructor(
 ) : AnnouncementRepository {
 
     override suspend fun getPending(): ApiResult<List<AnnouncementDTO>> =
-        safeApiCall { announcementApi.getPendingAnnouncements() }
+        safeApiCall(policy = ErrorPolicy.SILENT) { announcementApi.getPendingAnnouncements() }
 
     override suspend fun acknowledge(key: String): ApiResult<Unit> =
-        safeApiCallNoContent { announcementApi.acknowledgeAnnouncement(AnnouncementAckRequest(key)) }
+        safeApiCallNoContent(policy = ErrorPolicy.SILENT) { announcementApi.acknowledgeAnnouncement(AnnouncementAckRequest(key)) }
 }

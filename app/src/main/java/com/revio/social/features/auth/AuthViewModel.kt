@@ -2,11 +2,16 @@ package com.revio.social.features.auth
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.revio.social.core.analytics.AnalyticsClient
+import com.revio.social.core.analytics.AnalyticsEvent
+import com.revio.social.core.analytics.AnalyticsParamValue
 import com.revio.social.data.local.preferences.UserPreferences
 import com.revio.social.data.local.auth.AuthTokens
 import com.revio.social.data.local.auth.TokenStore
 import com.revio.social.data.model.AuthProvider
 import com.revio.social.core.network.ApiResult
+import com.revio.social.core.network.ERROR_CODE_NETWORK
+import com.revio.social.core.network.isNetworkError
 import com.revio.social.data.remote.dto.auth.AuthErrorCode
 import com.revio.social.data.remote.dto.auth.OnboardingStep
 import com.revio.social.data.repository.AuthRepository
@@ -25,12 +30,24 @@ import java.util.Base64
 import java.util.UUID
 import javax.inject.Inject
 
+/** ev. 5 — fired once per attempt, before client-side validation runs. */
+private const val EVENT_AUTH_START = "auth_start"
+
+/**
+ * ev. 6/7 — single event for the whole attempt's outcome, whether it failed client-side
+ * validation (pas 2.2a, fired from [loginWithEmail]/[registerWithEmail]) or round-tripped to
+ * the server (pas 2.2b, fired from [handleAuthResult] with an [AuthErrorCode] failure code) —
+ * the funnel (`auth_start` → `auth_result{outcome=...}`) stays a single event series either way.
+ */
+private const val EVENT_AUTH_RESULT = "auth_result"
+
 @HiltViewModel
 class AuthViewModel @Inject constructor(
     private val userPreferences: UserPreferences,
     private val authRepository: AuthRepository,
     private val userRepository: UserRepository,
     private val tokenStore: TokenStore? = null,
+    private val analyticsClient: AnalyticsClient? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AuthUiState())
@@ -73,12 +90,38 @@ class AuthViewModel @Inject constructor(
         if (_uiState.value.isLoginMode) loginWithEmail() else registerWithEmail()
     }
 
+    private fun logAuthStart(method: String) {
+        analyticsClient?.log(
+            AnalyticsEvent(
+                name = EVENT_AUTH_START,
+                params = mapOf("method" to AnalyticsParamValue.StringValue(method)),
+            )
+        )
+    }
+
+    /**
+     * [failureCode] is a fixed set for client-side validation only: `email_empty`,
+     * `password_empty`, `invalid_email_format`, `password_mismatch`, `weak_password`.
+     */
+    private fun logAuthValidationFailure(failureCode: String) {
+        analyticsClient?.log(
+            AnalyticsEvent(
+                name = EVENT_AUTH_RESULT,
+                params = mapOf(
+                    "outcome" to AnalyticsParamValue.StringValue("failure"),
+                    "failure_code" to AnalyticsParamValue.StringValue(failureCode),
+                ),
+            )
+        )
+    }
+
     private fun loginWithEmail() {
+        logAuthStart("email_login")
         val email = _uiState.value.email.trim()
         val password = _uiState.value.password
 
-        if (email.isBlank()) { setError("Email cannot be empty"); return }
-        if (password.isBlank()) { setError("Password cannot be empty"); return }
+        if (email.isBlank()) { logAuthValidationFailure("email_empty"); setError("Email cannot be empty"); return }
+        if (password.isBlank()) { logAuthValidationFailure("password_empty"); setError("Password cannot be empty"); return }
 
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
@@ -93,14 +136,16 @@ class AuthViewModel @Inject constructor(
     }
 
     private fun registerWithEmail() {
+        logAuthStart("email_register")
         val email = _uiState.value.email.trim()
         val password = _uiState.value.password
         val confirm = _uiState.value.confirmPassword
 
-        if (email.isBlank()) { setError("Email cannot be empty"); return }
-        if (!isValidEmail(email)) { setError("Invalid email format"); return }
-        if (password != confirm) { setError("Passwords do not match"); return }
+        if (email.isBlank()) { logAuthValidationFailure("email_empty"); setError("Email cannot be empty"); return }
+        if (!isValidEmail(email)) { logAuthValidationFailure("invalid_email_format"); setError("Invalid email format"); return }
+        if (password != confirm) { logAuthValidationFailure("password_mismatch"); setError("Passwords do not match"); return }
         if (!isValidPassword(password)) {
+            logAuthValidationFailure("weak_password")
             setError("8+ characters with uppercase, lowercase, number, and symbol.")
             return
         }
@@ -139,6 +184,7 @@ class AuthViewModel @Inject constructor(
     private suspend fun handleAuthResult(result: ApiResult<com.revio.social.data.remote.dto.auth.AuthResponse>) {
         when (result) {
             is ApiResult.Success -> {
+                logAuthResult(outcome = "success")
                 tokenStore?.save(AuthTokens(result.data.accessToken, result.data.refreshToken))
                     ?: userPreferences.saveJwtToken(result.data.accessToken)
                 val jwtUserId = result.data.accessToken.extractUserIdFromJwt()
@@ -159,6 +205,7 @@ class AuthViewModel @Inject constructor(
                 }
             }
             is ApiResult.Error -> {
+                logAuthResult(outcome = "failure", failureCode = resolveAuthFailureCode(result))
                 // result.code is the machine-readable code — keep reading it so a suspended
                 // account gets its own blocking dialog instead of a dismissible snackbar.
                 if (result.code == AuthErrorCode.ACCOUNT_SUSPENDED.name) {
@@ -168,6 +215,24 @@ class AuthViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    private fun logAuthResult(outcome: String, failureCode: String? = null) {
+        val params = buildMap<String, AnalyticsParamValue> {
+            put("outcome", AnalyticsParamValue.StringValue(outcome))
+            failureCode?.let { put("failure_code", AnalyticsParamValue.StringValue(it)) }
+        }
+        analyticsClient?.log(AnalyticsEvent(name = EVENT_AUTH_RESULT, params = params))
+    }
+
+    /**
+     * ev. 7 — [AuthErrorCode] when [result]'s code matches the enum (pas 1.0 keeps it in sync
+     * with the server); [com.revio.social.core.network.ERROR_CODE_NETWORK] for offline; a fixed
+     * fallback for anything else (e.g. a 5xx with no machine-readable code).
+     */
+    private fun resolveAuthFailureCode(result: ApiResult.Error): String {
+        if (result.isNetworkError) return ERROR_CODE_NETWORK
+        return AuthErrorCode.entries.find { it.name == result.code }?.name ?: "unrecognized"
     }
 
     private suspend fun resolveCompletedProfileDestination(jwtUserId: UUID? = null): AuthNavigationEvent {

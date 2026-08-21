@@ -20,10 +20,6 @@ import com.revio.social.data.repository.AnnouncementRepository
 import com.revio.social.data.repository.AnnouncementRepositoryImpl
 import com.revio.social.data.repository.FeedbackRepository
 import com.revio.social.data.repository.FeedbackRepositoryImpl
-import com.revio.social.data.repository.FriendRepositoryImpl
-import com.revio.social.data.repository.FriendRepository
-import com.revio.social.data.repository.FriendRequestRepositoryImpl
-import com.revio.social.data.repository.FriendRequestRepository
 import com.revio.social.data.repository.LikeRepository
 import com.revio.social.data.repository.LikeRepositoryImpl
 import com.revio.social.data.repository.AdminCarFamilyRepository
@@ -82,18 +78,6 @@ abstract class RepositoryModule {
     abstract fun bindCommentRepository(
         impl: CommentRepositoryImpl
     ): CommentRepository
-
-    @Binds
-    @Singleton
-    abstract fun bindFriendRepository(
-        impl: FriendRepositoryImpl
-    ): FriendRepository
-
-    @Binds
-    @Singleton
-    abstract fun bindFriendRequestRepository(
-        impl: FriendRequestRepositoryImpl
-    ): FriendRequestRepository
 
     @Binds
     @Singleton

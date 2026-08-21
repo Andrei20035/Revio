@@ -7,4 +7,5 @@ data class SettingsUiState(
     val isLoading: Boolean = false,
     val isLoggingOut: Boolean = false,
     val logoutCompleted: Boolean = false,
+    val analyticsConsentGranted: Boolean = false,
 )

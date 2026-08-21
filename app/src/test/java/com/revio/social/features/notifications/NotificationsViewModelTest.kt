@@ -1,6 +1,8 @@
 package com.revio.social.features.notifications
 
 import com.revio.social.MainDispatcherRule
+import com.revio.social.core.analytics.AnalyticsClient
+import com.revio.social.core.analytics.AnalyticsEvent
 import com.revio.social.core.network.ApiResult
 import com.revio.social.core.network.NetworkConnectivityManager
 import com.revio.social.data.remote.dto.notification.NotificationDto
@@ -11,6 +13,8 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.slot
+import io.mockk.verify
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -144,6 +148,52 @@ class NotificationsViewModelTest {
         advanceUntilIdle()
 
         coVerify(exactly = 0) { repository.markAllRead() }
+    }
+
+    @Test
+    fun `markRead failure sets actionErrorMessage and logs an analytics failure event (pas 5_1)`() = runTest {
+        val id = UUID.randomUUID()
+        val n1 = notification(id = id)
+        coEvery { repository.getNotifications() } returns
+            ApiResult.Success(NotificationListResponseDto(unreadCount = 1, items = listOf(n1)))
+        coEvery { repository.markRead(id) } returns ApiResult.Error("boom", code = "http_5xx")
+        val analytics: AnalyticsClient = mockk(relaxed = true)
+        val eventSlot = slot<AnalyticsEvent>()
+
+        val vm = NotificationsViewModel(repository, connectivity, analytics)
+        advanceUntilIdle()
+
+        vm.markRead(id)
+        advanceUntilIdle()
+
+        val state = vm.uiState.value
+        assertEquals(1L, state.unreadCount) // unchanged — the optimistic update never ran
+        assertEquals("Couldn't mark as read", state.actionErrorMessage)
+        verify(exactly = 1) { analytics.log(capture(eventSlot)) }
+        assertEquals("notification_action_result", eventSlot.captured.name)
+
+        vm.clearActionError()
+        assertNull(vm.uiState.value.actionErrorMessage)
+    }
+
+    @Test
+    fun `markAllRead failure sets actionErrorMessage and logs an analytics failure event (pas 5_1)`() = runTest {
+        val n1 = notification()
+        coEvery { repository.getNotifications() } returns
+            ApiResult.Success(NotificationListResponseDto(unreadCount = 1, items = listOf(n1)))
+        coEvery { repository.markAllRead() } returns ApiResult.Error("boom", code = "http_5xx")
+        val analytics: AnalyticsClient = mockk(relaxed = true)
+
+        val vm = NotificationsViewModel(repository, connectivity, analytics)
+        advanceUntilIdle()
+
+        vm.markAllRead()
+        advanceUntilIdle()
+
+        val state = vm.uiState.value
+        assertEquals(1L, state.unreadCount) // unchanged
+        assertEquals("Couldn't mark all as read", state.actionErrorMessage)
+        verify(exactly = 1) { analytics.log(any()) }
     }
 
     @Test

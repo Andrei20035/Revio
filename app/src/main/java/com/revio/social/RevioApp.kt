@@ -1,6 +1,7 @@
 package com.revio.social
 
 import android.app.Application
+import android.content.Context
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -25,10 +26,52 @@ import androidx.navigation.compose.rememberNavController
 import com.revio.social.core.navigation.RevioNavigation
 import com.revio.social.core.navigation.StartDestinationViewModel
 import com.revio.social.features.notifications.ModerationNoticeHost
+import com.google.firebase.analytics.FirebaseAnalytics
+import com.google.firebase.crashlytics.FirebaseCrashlytics
+import com.revio.social.data.local.preferences.UserPreferences
 import dagger.hilt.android.HiltAndroidApp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+
+/**
+ * Applies an opt-in consent decision (docs/consent-decision.md) to both Firebase SDKs. Extracted
+ * from [RevioApp.onCreate] so both branches stay unit-testable without an Application instance.
+ */
+internal fun applyAnalyticsConsent(context: Context, granted: Boolean) {
+    FirebaseCrashlytics.getInstance().setCrashlyticsCollectionEnabled(granted)
+    FirebaseAnalytics.getInstance(context).setAnalyticsCollectionEnabled(granted)
+}
 
 @HiltAndroidApp
-class RevioApp : Application()
+class RevioApp : Application() {
+
+    @Inject lateinit var userPreferences: UserPreferences
+
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    override fun onCreate() {
+        super.onCreate()
+        // Opt-in consent (docs/consent-decision.md). A fresh install collects nothing: the
+        // manifest's firebase_*_collection_enabled=false meta-data applies before this runs.
+        //
+        // This used to hardcode false, which re-revoked consent on every cold start — a user who
+        // opted in was silently collected-from only for the session in which they touched the
+        // toggle. Firebase does persist the enabled flag across launches on its own, so for a
+        // consenting user this read is usually a no-op reassertion; it is done anyway because
+        // DataStore holds the value the Settings screen displays, and reasserting it here keeps
+        // the displayed choice and the SDKs' actual state from drifting apart.
+        //
+        // Read asynchronously (DataStore is disk-backed — a blocking read here would risk an ANR
+        // on startup). The window before it lands is covered by whichever value Firebase already
+        // persisted, so nothing is collected against a revoked consent in the meantime.
+        appScope.launch {
+            applyAnalyticsConsent(this@RevioApp, userPreferences.analyticsConsentGranted.first())
+        }
+    }
+}
 
 @Composable
 fun RevioAppUI(

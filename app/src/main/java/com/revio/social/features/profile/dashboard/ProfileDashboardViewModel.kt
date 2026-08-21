@@ -3,6 +3,9 @@ package com.revio.social.features.profile.dashboard
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.revio.social.core.analytics.AnalyticsClient
+import com.revio.social.core.analytics.AnalyticsEvent
+import com.revio.social.core.analytics.AnalyticsParamValue
 import com.revio.social.core.navigation.Screen
 import com.revio.social.core.network.ApiResult
 import com.revio.social.data.local.preferences.UserPreferences
@@ -26,6 +29,10 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 import javax.inject.Inject
 
+/** Ev. — pas 5.7: same events as FeedViewModel's like/comment results, fired from this screen too. */
+private const val EVENT_FEED_LIKE_RESULT = "feed_like_result"
+private const val EVENT_FEED_COMMENT_RESULT = "feed_comment_result"
+
 @HiltViewModel
 class ProfileDashboardViewModel @Inject constructor(
     private val savedStateHandle: SavedStateHandle,
@@ -34,7 +41,19 @@ class ProfileDashboardViewModel @Inject constructor(
     private val likeRepository: LikeRepository,
     private val commentRepository: CommentRepository,
     private val userPreferences: UserPreferences,
+    private val analyticsClient: AnalyticsClient? = null,
 ) : ViewModel() {
+
+    /** Mirrors FeedViewModel.logInteractionResult's shape (pas 5.7). */
+    private fun logInteractionResult(eventName: String, result: ApiResult<*>) {
+        val params = buildMap<String, AnalyticsParamValue> {
+            put("outcome", AnalyticsParamValue.StringValue(if (result is ApiResult.Success) "success" else "failure"))
+            if (result is ApiResult.Error) {
+                put("failure_code", AnalyticsParamValue.StringValue(result.code ?: "unknown"))
+            }
+        }
+        analyticsClient?.log(AnalyticsEvent(name = eventName, params = params))
+    }
 
     private val _uiState = MutableStateFlow(ProfileDashboardUiState())
     val uiState: StateFlow<ProfileDashboardUiState> = _uiState.asStateFlow()
@@ -384,7 +403,9 @@ class ProfileDashboardViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            when (val result = likeRepository.toggleLike(postId)) {
+            val result = likeRepository.toggleLike(postId)
+            logInteractionResult(EVENT_FEED_LIKE_RESULT, result)
+            when (result) {
                 is ApiResult.Success -> _uiState.update { state ->
                     state.copy(
                         posts = state.posts.replacePost(postId) {
@@ -468,7 +489,9 @@ class ProfileDashboardViewModel @Inject constructor(
                 state.copy(commentsSheet = s.copy(isSubmitting = true))
             }
 
-            when (val result = commentRepository.addComment(sheet.postId, text)) {
+            val result = commentRepository.addComment(sheet.postId, text)
+            logInteractionResult(EVENT_FEED_COMMENT_RESULT, result)
+            when (result) {
                 is ApiResult.Success -> _uiState.update { state ->
                     val s = state.commentsSheet?.takeIf { it.postId == sheet.postId }
                     state.copy(

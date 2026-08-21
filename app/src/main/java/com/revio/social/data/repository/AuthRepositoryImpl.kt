@@ -14,6 +14,7 @@ import com.revio.social.data.remote.dto.auth.RegisterRequest
 import com.revio.social.data.remote.dto.auth.UpdatePasswordRequest
 import com.revio.social.data.model.AuthProvider
 import com.revio.social.core.network.ApiResult
+import com.revio.social.core.network.ErrorPolicy
 import com.revio.social.core.network.safeApiCall
 import com.revio.social.core.network.safeApiCallNoContent
 import javax.inject.Inject
@@ -78,7 +79,7 @@ class AuthRepositoryImpl @Inject constructor(
     }
 
     override suspend fun logout(): ApiResult<Unit> {
-        val result = safeApiCallNoContent { authApi.logout() }
+        val result = safeApiCallNoContent(policy = ErrorPolicy.SILENT) { authApi.logout() }
         tokenStore?.clear()
         userPreferences.clearAuthData()
         feedCache?.clear()

@@ -7,7 +7,10 @@ data class AuthErrorResponse(val error: AuthApiError)
 
 @Serializable
 data class AuthApiError(
-    val code: AuthErrorCode,
+    // Nullable with a default so `coerceInputValues` (NetworkModule.kt) falls back to null
+    // instead of throwing SerializationException when the server sends a code this enum
+    // doesn't know about yet (e.g. added server-side before the next Android release).
+    val code: AuthErrorCode? = null,
     val message: String,
 )
 
@@ -19,5 +22,6 @@ enum class AuthErrorCode {
     INVALID_CREDENTIALS, PROVIDER_MISMATCH, INVALID_GOOGLE_TOKEN, EMAIL_TAKEN,
     WEAK_PASSWORD, VALIDATION_ERROR, USERNAME_TAKEN, PROFILE_EXISTS,
     ONBOARDING_REQUIRED, ACCOUNT_NOT_FOUND, ACCOUNT_DELETED,
-    INVALID_CURRENT_PASSWORD, PROVIDER_NOT_REGULAR, ACCOUNT_SUSPENDED,
+    INVALID_CURRENT_PASSWORD, PROVIDER_NOT_REGULAR, USERNAME_CONFIRMATION_MISMATCH,
+    ACCOUNT_SUSPENDED,
 }

@@ -1,6 +1,7 @@
 package com.revio.social.data.repository
 
 import com.revio.social.core.network.ApiResult
+import com.revio.social.core.network.ErrorPolicy
 import com.revio.social.data.local.auth.AuthTokens
 import com.revio.social.data.local.auth.TokenStore
 import com.revio.social.data.local.preferences.UserPreferences
@@ -106,6 +107,16 @@ class AuthRepositoryImplTest {
         repo.logout()
 
         coVerify(exactly = 1) { userPreferences.clearAuthData() }
+    }
+
+    // Pas 1.7c: logout e best-effort — eșecul lui nu trebuie raportat vreodată.
+    @Test
+    fun `logout is tagged SILENT on failure`() = runTest {
+        coEvery { authApi.logout() } throws RuntimeException("boom")
+
+        val result = repo.logout()
+
+        assertEquals(ErrorPolicy.SILENT, (result as ApiResult.Error).policy)
     }
 
     @Test

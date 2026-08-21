@@ -2,6 +2,9 @@ package com.revio.social.features.settings.deleteaccount
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.revio.social.core.analytics.AnalyticsClient
+import com.revio.social.core.analytics.AnalyticsEvent
+import com.revio.social.core.analytics.AnalyticsParamValue
 import com.revio.social.core.network.ApiResult
 import com.revio.social.data.remote.dto.auth.DeleteAccountRequest
 import com.revio.social.data.repository.AuthRepository
@@ -13,9 +16,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+/** Ev. — pas 5.8: account deletion outcome, same outcome/failure_code shape as auth_result (pas 2.2b). */
+private const val EVENT_AUTH_DELETE_ACCOUNT_RESULT = "auth_delete_account_result"
+
 @HiltViewModel
 class DeleteAccountViewModel @Inject constructor(
     private val authRepository: AuthRepository,
+    private val analyticsClient: AnalyticsClient? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DeleteAccountUiState())
@@ -105,7 +112,19 @@ class DeleteAccountViewModel @Inject constructor(
                 },
             )
 
-            when (val result = authRepository.deleteAccount(request)) {
+            val result = authRepository.deleteAccount(request)
+            analyticsClient?.log(
+                AnalyticsEvent(
+                    name = EVENT_AUTH_DELETE_ACCOUNT_RESULT,
+                    params = buildMap {
+                        put("outcome", AnalyticsParamValue.StringValue(if (result is ApiResult.Success) "success" else "failure"))
+                        if (result is ApiResult.Error) {
+                            put("failure_code", AnalyticsParamValue.StringValue(result.code ?: "unknown"))
+                        }
+                    },
+                )
+            )
+            when (result) {
                 is ApiResult.Success -> _uiState.update {
                     it.copy(isDeleting = false, deletionCompleted = true)
                 }

@@ -3,6 +3,7 @@ package com.revio.social.core.ui.feedback
 import com.revio.social.core.feedback.FeedbackEventName
 import com.revio.social.core.feedback.FirstPostFeedbackController
 import com.revio.social.core.feedback.FirstPostPromptState
+import com.revio.social.core.feedback.PostCreatedEvent
 import com.revio.social.core.network.ApiResult
 import com.revio.social.data.model.FeedbackSurface
 import com.revio.social.data.model.FirstPostFeedbackPayload
@@ -13,6 +14,7 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -35,6 +37,10 @@ class FirstPostFeedbackCardCoordinatorTest {
     fun setUp() {
         controllerState.value = FirstPostPromptState.Hidden
         every { controller.state } returns controllerState
+        // A relaxed mock would otherwise fabricate a non-null PostCreatedEvent for this nullable
+        // property instead of returning null — explicit default matching "no post yet" so tests
+        // that don't care about pas 2.5c's post metrics keep asserting a bare payload.
+        every { controller.lastPostCreatedEvent } returns null
         coEvery { feedbackRepository.submit(any()) } returns ApiResult.Success(Unit)
     }
 
@@ -143,5 +149,80 @@ class FirstPostFeedbackCardCoordinatorTest {
         assertNull(coordinator.cardState.value)
         coVerify(timeout = 2000) { feedbackRepository.submit(any()) }
         verify(exactly = 1) { controller.onSubmitted(FeedbackEventName.CLOSED_X) }
+    }
+
+    // ----------------------------------------------------------------------
+    // pas 2.5c — uploadDurationMs/retryCount/lastErrorCode ajung în payload-ul de feedback
+    // ----------------------------------------------------------------------
+
+    @Test
+    fun `payload-ul de feedback include metricile postarii care a armat prompt-ul`() {
+        every { controller.lastPostCreatedEvent } returns
+            PostCreatedEvent(UUID.randomUUID(), uploadDurationMs = 4200L, retryCount = 2, lastErrorCode = "VALIDATION_ERROR")
+        val coordinator = coordinator()
+        showCard(coordinator)
+        coordinator.onRatingSelected(3)
+
+        coordinator.onCloseX()
+
+        coVerify(timeout = 2000) {
+            feedbackRepository.submit(
+                FirstPostFeedbackPayload(
+                    rating = 3,
+                    quickReason = null,
+                    comment = null,
+                    surface = FeedbackSurface.FEED,
+                    uploadDurationMs = 4200,
+                    hadRetries = true,
+                    lastErrorCode = "VALIDATION_ERROR",
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun `fara PostCreatedEvent - payload-ul de feedback ramane fara metrici de postare`() {
+        every { controller.lastPostCreatedEvent } returns null
+        val coordinator = coordinator()
+        showCard(coordinator)
+        coordinator.onRatingSelected(3)
+
+        coordinator.onCloseX()
+
+        coVerify(timeout = 2000) {
+            feedbackRepository.submit(
+                FirstPostFeedbackPayload(
+                    rating = 3,
+                    quickReason = null,
+                    comment = null,
+                    surface = FeedbackSurface.FEED,
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun `retryCount zero devine hadRetries false, nu null`() {
+        every { controller.lastPostCreatedEvent } returns
+            PostCreatedEvent(UUID.randomUUID(), uploadDurationMs = 900L, retryCount = 0, lastErrorCode = null)
+        val coordinator = coordinator()
+        showCard(coordinator)
+        coordinator.onRatingSelected(5)
+
+        coordinator.onCloseX()
+
+        coVerify(timeout = 2000) {
+            feedbackRepository.submit(
+                FirstPostFeedbackPayload(
+                    rating = 5,
+                    quickReason = null,
+                    comment = null,
+                    surface = FeedbackSurface.FEED,
+                    uploadDurationMs = 900,
+                    hadRetries = false,
+                    lastErrorCode = null,
+                ),
+            )
+        }
     }
 }

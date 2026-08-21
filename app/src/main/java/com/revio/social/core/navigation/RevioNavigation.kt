@@ -11,6 +11,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.revio.social.BuildConfig
 import com.revio.social.features.activity.ActivityScreen
 import com.revio.social.features.admin.AdminHomeScreen
 import com.revio.social.features.admin.AdminModerationScreen
@@ -21,6 +22,7 @@ import com.revio.social.features.admin.challenge.AdminChallengesScreen
 import com.revio.social.features.admin.challenge.create.CreateChallengeScreen
 import com.revio.social.features.challenge.ChallengeDetailScreen
 import com.revio.social.features.challenge.MyChallengesScreen
+import com.revio.social.features.dev.DevToolsScreen
 import com.revio.social.features.feed.FeedScreen
 import com.revio.social.features.notifications.NotificationsScreen
 import com.revio.social.features.upload.ImageUploadScreen
@@ -316,6 +318,13 @@ fun RevioNavigation(
         ) {
             // The source and origin-screen nav args are read by FeedbackViewModel via SavedStateHandle.
             FeedbackScreen(navController = navController)
+        }
+
+        // pas 1.10 — doar debug: neînregistrat deloc în graf pentru build-urile de release.
+        if (BuildConfig.DEBUG) {
+            composable(Screen.DevTools.route) {
+                DevToolsScreen(navController = navController)
+            }
         }
 
         // Add other screens...

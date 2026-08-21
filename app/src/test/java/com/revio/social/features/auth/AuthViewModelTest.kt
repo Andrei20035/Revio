@@ -2,10 +2,16 @@ package com.revio.social.features.auth
 
 import app.cash.turbine.test
 import com.revio.social.MainDispatcherRule
+import com.revio.social.core.analytics.AnalyticsClient
+import com.revio.social.core.analytics.AnalyticsEvent
+import com.revio.social.core.analytics.AnalyticsParamValue
 import com.revio.social.core.network.ApiResult
+import com.revio.social.core.network.ERROR_CODE_NETWORK
+import com.revio.social.core.network.NETWORK_ERROR_MESSAGE
 import com.revio.social.data.local.preferences.UserPreferences
 import com.revio.social.data.model.AuthProvider
 import com.revio.social.data.model.User
+import com.revio.social.data.remote.dto.auth.AuthErrorCode
 import com.revio.social.data.remote.dto.auth.AuthResponse
 import com.revio.social.data.remote.dto.auth.OnboardingStep
 import com.revio.social.data.remote.dto.auth.WaitlistPrefillDTO
@@ -15,6 +21,7 @@ import com.revio.social.data.repository.UserRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -40,6 +47,7 @@ class AuthViewModelTest {
     private lateinit var authRepository: AuthRepository
     private lateinit var userRepository: UserRepository
     private lateinit var userPreferences: UserPreferences
+    private lateinit var analyticsClient: AnalyticsClient
     private lateinit var vm: AuthViewModel
     private val existingUserId = UUID.fromString("11111111-1111-1111-1111-111111111111")
 
@@ -48,8 +56,9 @@ class AuthViewModelTest {
         authRepository = mockk()
         userRepository = mockk()
         userPreferences = mockk(relaxed = true)
+        analyticsClient = mockk(relaxed = true)
         coEvery { userRepository.getCurrentUser() } returns ApiResult.Success(existingUser())
-        vm = AuthViewModel(userPreferences, authRepository, userRepository)
+        vm = AuthViewModel(userPreferences, authRepository, userRepository, analyticsClient = analyticsClient)
     }
 
     private fun existingUser() = User(
@@ -571,6 +580,336 @@ class AuthViewModelTest {
             assertNull(finalState.errorMessage)
 
             cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    // ----------------------------------------------------------------------
+    // pas 2.2a — ev. 5 (auth_start) + ev. 6 (auth_result, validare client), unit per regulă
+    // ----------------------------------------------------------------------
+
+    @Test
+    fun `login - auth_start cu method email_login la fiecare incercare`() = runTest {
+        coEvery { authRepository.login(any(), any(), any(), any()) } returns
+            ApiResult.Success(AuthResponse("jwt", OnboardingStep.COMPLETED))
+
+        vm.updateEmail("a@b.com"); vm.updatePassword("secret")
+        vm.submitEmailAuth()
+
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "auth_start",
+                    params = mapOf("method" to AnalyticsParamValue.StringValue("email_login")),
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `login cu email gol - auth_result failure email_empty`() = runTest {
+        vm.updateEmail(""); vm.updatePassword("secret")
+        vm.submitEmailAuth()
+
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "auth_result",
+                    params = mapOf(
+                        "outcome" to AnalyticsParamValue.StringValue("failure"),
+                        "failure_code" to AnalyticsParamValue.StringValue("email_empty"),
+                    ),
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `login cu parola goala - auth_result failure password_empty`() = runTest {
+        vm.updateEmail("a@b.com"); vm.updatePassword("")
+        vm.submitEmailAuth()
+
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "auth_result",
+                    params = mapOf(
+                        "outcome" to AnalyticsParamValue.StringValue("failure"),
+                        "failure_code" to AnalyticsParamValue.StringValue("password_empty"),
+                    ),
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `login valid trece de validare - fara auth_result failure de validare client`() = runTest {
+        coEvery { authRepository.login(any(), any(), any(), any()) } returns
+            ApiResult.Success(AuthResponse("jwt", OnboardingStep.COMPLETED))
+
+        vm.updateEmail("a@b.com"); vm.updatePassword("secret")
+        vm.submitEmailAuth()
+
+        // pas 2.2b: un auth_result{outcome=success} tot apare (din handleAuthResult) — doar
+        // eșecul de validare locală (pas 2.2a) trebuie să lipsească aici.
+        verify(exactly = 0) { analyticsClient.log(match { it.name == "auth_result" && it.params["outcome"] == AnalyticsParamValue.StringValue("failure") }) }
+    }
+
+    @Test
+    fun `register - auth_start cu method email_register`() = runTest {
+        coEvery { authRepository.register(any(), any(), any(), any()) } returns
+            ApiResult.Success(AuthResponse("jwt-new", OnboardingStep.PROFILE_REQUIRED))
+
+        vm.toggleLoginMode()
+        vm.updateEmail("a@b.com"); vm.updatePassword("Password!123"); vm.updateConfirmPassword("Password!123")
+        vm.submitEmailAuth()
+
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "auth_start",
+                    params = mapOf("method" to AnalyticsParamValue.StringValue("email_register")),
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `register cu email gol - auth_result failure email_empty`() = runTest {
+        vm.toggleLoginMode()
+        vm.updateEmail(""); vm.updatePassword("Password!123"); vm.updateConfirmPassword("Password!123")
+        vm.submitEmailAuth()
+
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "auth_result",
+                    params = mapOf(
+                        "outcome" to AnalyticsParamValue.StringValue("failure"),
+                        "failure_code" to AnalyticsParamValue.StringValue("email_empty"),
+                    ),
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `register cu email invalid - auth_result failure invalid_email_format`() = runTest {
+        vm.toggleLoginMode()
+        vm.updateEmail("not-an-email"); vm.updatePassword("Password!123"); vm.updateConfirmPassword("Password!123")
+        vm.submitEmailAuth()
+
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "auth_result",
+                    params = mapOf(
+                        "outcome" to AnalyticsParamValue.StringValue("failure"),
+                        "failure_code" to AnalyticsParamValue.StringValue("invalid_email_format"),
+                    ),
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `register cu parole diferite - auth_result failure password_mismatch`() = runTest {
+        vm.toggleLoginMode()
+        vm.updateEmail("a@b.com"); vm.updatePassword("Password!123"); vm.updateConfirmPassword("Password!124")
+        vm.submitEmailAuth()
+
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "auth_result",
+                    params = mapOf(
+                        "outcome" to AnalyticsParamValue.StringValue("failure"),
+                        "failure_code" to AnalyticsParamValue.StringValue("password_mismatch"),
+                    ),
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `register cu parola slaba - auth_result failure weak_password`() = runTest {
+        vm.toggleLoginMode()
+        vm.updateEmail("a@b.com"); vm.updatePassword("short"); vm.updateConfirmPassword("short")
+        vm.submitEmailAuth()
+
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "auth_result",
+                    params = mapOf(
+                        "outcome" to AnalyticsParamValue.StringValue("failure"),
+                        "failure_code" to AnalyticsParamValue.StringValue("weak_password"),
+                    ),
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `register valid trece de validare - fara auth_result failure de validare client`() = runTest {
+        coEvery { authRepository.register(any(), any(), any(), any()) } returns
+            ApiResult.Success(AuthResponse("jwt-new", OnboardingStep.PROFILE_REQUIRED))
+
+        vm.toggleLoginMode()
+        vm.updateEmail("new@user.com"); vm.updatePassword("Password!123"); vm.updateConfirmPassword("Password!123")
+        vm.submitEmailAuth()
+
+        // pas 2.2b: un auth_result{outcome=success} tot apare (din handleAuthResult) — doar
+        // eșecul de validare locală (pas 2.2a) trebuie să lipsească aici.
+        verify(exactly = 0) { analyticsClient.log(match { it.name == "auth_result" && it.params["outcome"] == AnalyticsParamValue.StringValue("failure") }) }
+    }
+
+    // ----------------------------------------------------------------------
+    // pas 2.2b — ev. 7: auth_result cu failure_code din AuthErrorCode, succes/eșec × 3 metode
+    // ----------------------------------------------------------------------
+
+    @Test
+    fun `login succes - auth_result outcome success`() = runTest {
+        coEvery { authRepository.login(any(), any(), any(), AuthProvider.REGULAR) } returns
+            ApiResult.Success(AuthResponse("jwt", OnboardingStep.COMPLETED))
+
+        vm.updateEmail("a@b.com"); vm.updatePassword("secret")
+        vm.submitEmailAuth()
+
+        verify(exactly = 1) {
+            analyticsClient.log(AnalyticsEvent(name = "auth_result", params = mapOf("outcome" to AnalyticsParamValue.StringValue("success"))))
+        }
+    }
+
+    @Test
+    fun `login esec cu cod cunoscut - auth_result outcome failure cu failure_code din enum`() = runTest {
+        coEvery { authRepository.login(any(), any(), any(), AuthProvider.REGULAR) } returns
+            ApiResult.Error("Invalid credentials", code = AuthErrorCode.INVALID_CREDENTIALS.name)
+
+        vm.updateEmail("a@b.com"); vm.updatePassword("wrong")
+        vm.submitEmailAuth()
+
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "auth_result",
+                    params = mapOf(
+                        "outcome" to AnalyticsParamValue.StringValue("failure"),
+                        "failure_code" to AnalyticsParamValue.StringValue("INVALID_CREDENTIALS"),
+                    ),
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `register succes - auth_result outcome success`() = runTest {
+        coEvery { authRepository.register(any(), any(), any(), AuthProvider.REGULAR) } returns
+            ApiResult.Success(AuthResponse("jwt-new", OnboardingStep.PROFILE_REQUIRED))
+
+        vm.toggleLoginMode()
+        vm.updateEmail("new@user.com"); vm.updatePassword("Password!123"); vm.updateConfirmPassword("Password!123")
+        vm.submitEmailAuth()
+
+        verify(exactly = 1) {
+            analyticsClient.log(AnalyticsEvent(name = "auth_result", params = mapOf("outcome" to AnalyticsParamValue.StringValue("success"))))
+        }
+    }
+
+    @Test
+    fun `register esec cu cod cunoscut - auth_result outcome failure cu failure_code din enum`() = runTest {
+        coEvery { authRepository.register(any(), any(), any(), AuthProvider.REGULAR) } returns
+            ApiResult.Error("Email already in use", code = AuthErrorCode.EMAIL_TAKEN.name)
+
+        vm.toggleLoginMode()
+        vm.updateEmail("taken@user.com"); vm.updatePassword("Password!123"); vm.updateConfirmPassword("Password!123")
+        vm.submitEmailAuth()
+
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "auth_result",
+                    params = mapOf(
+                        "outcome" to AnalyticsParamValue.StringValue("failure"),
+                        "failure_code" to AnalyticsParamValue.StringValue("EMAIL_TAKEN"),
+                    ),
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `google login succes - auth_result outcome success`() = runTest {
+        coEvery {
+            authRepository.login(email = null, password = null, googleIdToken = "real-id-token", provider = AuthProvider.GOOGLE)
+        } returns ApiResult.Success(AuthResponse("jwt-g", OnboardingStep.COMPLETED))
+
+        vm.loginWithGoogle("real-id-token")
+
+        verify(exactly = 1) {
+            analyticsClient.log(AnalyticsEvent(name = "auth_result", params = mapOf("outcome" to AnalyticsParamValue.StringValue("success"))))
+        }
+    }
+
+    @Test
+    fun `google login esec cu cod cunoscut - auth_result outcome failure cu failure_code din enum`() = runTest {
+        coEvery {
+            authRepository.login(email = null, password = null, googleIdToken = "real-id-token", provider = AuthProvider.GOOGLE)
+        } returns ApiResult.Error("Invalid Google token", code = AuthErrorCode.INVALID_GOOGLE_TOKEN.name)
+
+        vm.loginWithGoogle("real-id-token")
+
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "auth_result",
+                    params = mapOf(
+                        "outcome" to AnalyticsParamValue.StringValue("failure"),
+                        "failure_code" to AnalyticsParamValue.StringValue("INVALID_GOOGLE_TOKEN"),
+                    ),
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `eroare de retea - auth_result failure_code network_unavailable`() = runTest {
+        coEvery { authRepository.login(any(), any(), any(), AuthProvider.REGULAR) } returns
+            ApiResult.Error(NETWORK_ERROR_MESSAGE, code = ERROR_CODE_NETWORK)
+
+        vm.updateEmail("a@b.com"); vm.updatePassword("secret")
+        vm.submitEmailAuth()
+
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "auth_result",
+                    params = mapOf(
+                        "outcome" to AnalyticsParamValue.StringValue("failure"),
+                        "failure_code" to AnalyticsParamValue.StringValue(ERROR_CODE_NETWORK),
+                    ),
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `cod necunoscut sau lipsa - auth_result failure_code unrecognized`() = runTest {
+        coEvery { authRepository.login(any(), any(), any(), AuthProvider.REGULAR) } returns
+            ApiResult.Error("Server error")
+
+        vm.updateEmail("a@b.com"); vm.updatePassword("secret")
+        vm.submitEmailAuth()
+
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "auth_result",
+                    params = mapOf(
+                        "outcome" to AnalyticsParamValue.StringValue("failure"),
+                        "failure_code" to AnalyticsParamValue.StringValue("unrecognized"),
+                    ),
+                )
+            )
         }
     }
 }

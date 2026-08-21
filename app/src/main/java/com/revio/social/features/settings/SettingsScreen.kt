@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -43,6 +44,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import coil3.compose.AsyncImage
+import com.revio.social.BuildConfig
 import com.revio.social.R
 import com.revio.social.core.navigation.Screen
 import com.revio.social.core.ui.components.AppScreenBackground
@@ -214,6 +216,15 @@ fun SettingsScreen(
                 onClick = { navController.navigate(Screen.Feedback.createRoute()) },
             )
 
+            // ── Privacy section ──────────────────────────────────────────────
+            Spacer(modifier = Modifier.height(24.dp.actScaled()))
+            SectionLabel("Privacy")
+            Spacer(modifier = Modifier.height(8.dp.actScaled()))
+            AnalyticsConsentRow(
+                granted = uiState.analyticsConsentGranted,
+                onGrantedChange = viewModel::setAnalyticsConsentGranted,
+            )
+
             // ── Admin section — hidden unless the current user is an admin ────
             if (uiState.user?.isAdmin == true) {
                 Spacer(modifier = Modifier.height(24.dp.actScaled()))
@@ -226,6 +237,30 @@ fun SettingsScreen(
                     bottomRound = true,
                     onClick = { navController.navigate(Screen.AdminHome.route) },
                 )
+            }
+
+            // ── Developer section — pas 1.10, doar debug ────────────────────────
+            if (BuildConfig.DEBUG) {
+                Spacer(modifier = Modifier.height(24.dp.actScaled()))
+                SectionLabel("Developer")
+                Spacer(modifier = Modifier.height(8.dp.actScaled()))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(CardBg)
+                        .clickable { navController.navigate(Screen.DevTools.route) }
+                        .padding(horizontal = 16.dp.actScaled(), vertical = 14.dp.actScaled()),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "Dev Tools",
+                        color = ItemTextColor,
+                        fontFamily = FontFamily.Default,
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 16.sp.actScaledText(),
+                    )
+                }
             }
 
             // ── Others section ───────────────────────────────────────────────
@@ -347,5 +382,45 @@ private fun SettingsRow(
             fontWeight = FontWeight.Medium,
             fontSize = 16.sp.actScaledText(),
         )
+    }
+}
+
+/**
+ * Opt-in consent toggle — always visible in Settings so the choice can be changed anytime, per
+ * docs/consent-decision.md. Copy adapted from REVIO_LAUNCH_COPY.md's "Help improve Revio" draft.
+ */
+@Composable
+private fun AnalyticsConsentRow(
+    granted: Boolean,
+    onGrantedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(CardBg)
+            .padding(horizontal = 16.dp.actScaled(), vertical = 14.dp.actScaled()),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Help improve Revio",
+                color = ItemTextColor,
+                fontFamily = FontFamily.Default,
+                fontWeight = FontWeight.Medium,
+                fontSize = 16.sp.actScaledText(),
+            )
+            Spacer(modifier = Modifier.height(4.dp.actScaled()))
+            Text(
+                text = "Allow anonymous app-usage analytics to help us understand performance " +
+                    "and improve features. Analytics are not used for advertising.",
+                color = SectionLabelColor,
+                fontFamily = FontFamily.Default,
+                fontWeight = FontWeight.Normal,
+                fontSize = 13.sp.actScaledText(),
+            )
+        }
+        Spacer(modifier = Modifier.width(12.dp.actScaled()))
+        Switch(checked = granted, onCheckedChange = onGrantedChange)
     }
 }

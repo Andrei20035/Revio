@@ -59,6 +59,9 @@ class UserPreferences @Inject constructor(
 
     companion object {
         val ONBOARDING_KEY = booleanPreferencesKey("onboarding_completed")
+
+        /** Opt-in consent (docs/consent-decision.md) — device-wide, not per-user, mirroring [ONBOARDING_KEY]. */
+        val ANALYTICS_CONSENT_KEY = booleanPreferencesKey("analytics_consent_granted")
         val JWT_TOKEN_KEY = stringPreferencesKey("jwt_token")
         val USER_ID_KEY = stringPreferencesKey("user_id")
         val USERNAME_KEY = stringPreferencesKey("username")
@@ -106,6 +109,10 @@ class UserPreferences @Inject constructor(
 
     val onboardingCompleted: Flow<Boolean> = context.dataStore.data
         .map { it[ONBOARDING_KEY] ?: false }
+
+    /** Off by default (opt-in) until the user explicitly grants it — see docs/consent-decision.md. */
+    val analyticsConsentGranted: Flow<Boolean> = context.dataStore.data
+        .map { it[ANALYTICS_CONSENT_KEY] ?: false }
 
     /**
      * Per-user tour status, keyed by [userId] so a second account on a shared device never
@@ -206,6 +213,10 @@ class UserPreferences @Inject constructor(
 
     suspend fun setOnboardingCompleted(completed: Boolean) {
         context.dataStore.edit { it[ONBOARDING_KEY] = completed }
+    }
+
+    suspend fun setAnalyticsConsentGranted(granted: Boolean) {
+        context.dataStore.edit { it[ANALYTICS_CONSENT_KEY] = granted }
     }
 
     suspend fun setTourStatus(userId: UUID, status: TourStatus) {

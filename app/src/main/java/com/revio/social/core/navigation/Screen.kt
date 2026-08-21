@@ -78,6 +78,9 @@ sealed class Screen(val route: String) {
     object PrivacyPolicy : Screen("privacy_policy")
     object TermsConditions : Screen("terms_conditions")
 
+    /** pas 1.10 — forțează crash/non-fatal/ANR pentru verificarea Crashlytics. Doar debug, vezi RevioNavigation.kt. */
+    object DevTools : Screen("dev_tools")
+
     /**
      * Upload-image screen reached after the user captures/picks a photo from the
      * "Post your find" overlay. Carries the selected image URI and post source as query arguments.

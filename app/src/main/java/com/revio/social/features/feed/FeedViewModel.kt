@@ -2,7 +2,11 @@ package com.revio.social.features.feed
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.revio.social.core.analytics.AnalyticsClient
+import com.revio.social.core.analytics.AnalyticsEvent
+import com.revio.social.core.analytics.AnalyticsParamValue
 import com.revio.social.core.network.ApiResult
+import com.revio.social.core.network.ERROR_CODE_NETWORK
 import com.revio.social.core.network.NetworkConnectivityManager
 import com.revio.social.core.network.isNetworkError
 import com.revio.social.core.network.onValidatedReconnect
@@ -33,6 +37,30 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
+/** ev. 21 — fired once, the first time the feed has any content to show. */
+private const val EVENT_FEED_FIRST_CONTENT = "feed_first_content"
+
+private fun feedContentDurationBucket(durationMs: Long): String = when {
+    durationMs < 1_000 -> "lt_1s"
+    durationMs < 3_000 -> "1_3s"
+    durationMs < 10_000 -> "3_10s"
+    durationMs < 30_000 -> "10_30s"
+    else -> "gte_30s"
+}
+
+/**
+ * ev. 22 — every [FeedViewModel.load] attempt's result, including the `isSilent` branch
+ * (previously invisible — see plan's "Sync-ul silențios devine vizibil"). `trigger` is a fixed
+ * set matching each public entry point into `load()`: `initial`, `refresh`, `load_more`,
+ * `footer_retry`, `silent_sync`.
+ */
+private const val EVENT_FEED_LOAD_RESULT = "feed_load_result"
+
+/** Ev. — pas 5.7: like/comment/report outcomes, measured the same way as feed_load_result. */
+private const val EVENT_FEED_LIKE_RESULT = "feed_like_result"
+private const val EVENT_FEED_COMMENT_RESULT = "feed_comment_result"
+private const val EVENT_FEED_REPORT_RESULT = "feed_report_result"
+
 @HiltViewModel
 class FeedViewModel @Inject constructor(
     private val postRepository: PostRepository,
@@ -44,10 +72,18 @@ class FeedViewModel @Inject constructor(
     private val connectivity: NetworkConnectivityManager,
     private val userPreferences: UserPreferences,
     private val feedImagePrefetcher: FeedImagePrefetcher,
+    private val analyticsClient: AnalyticsClient? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(FeedUiState())
     val uiState: StateFlow<FeedUiState> = _uiState.asStateFlow()
+
+    // ev. 21 bookkeeping — feedStartedAt marks when this ViewModel (i.e. the Feed screen) began
+    // loading; firstContentLogged ensures a single fire regardless of which of the two
+    // authoritative call sites (hydrateFromCache's already-non-empty cache, or load()'s
+    // network-driven first-page write) gets there first.
+    private val feedStartedAt = System.currentTimeMillis()
+    private var firstContentLogged = false
 
     private var feedLoadJob: Job? = null
     private var ownerUserId: UUID? = null
@@ -61,6 +97,7 @@ class FeedViewModel @Inject constructor(
         scope = viewModelScope,
         onRefillNeeded = { loadNextPage() },
         isNetworkAvailable = { connectivity.isNetworkAvailable.value },
+        analyticsClient = analyticsClient,
     )
 
     init {
@@ -113,6 +150,42 @@ class FeedViewModel @Inject constructor(
         }
     }
 
+    /** No-op after the first call — see [firstContentLogged]. */
+    private fun logFeedFirstContent(source: String) {
+        if (firstContentLogged) return
+        firstContentLogged = true
+        val durationMs = System.currentTimeMillis() - feedStartedAt
+        analyticsClient?.log(
+            AnalyticsEvent(
+                name = EVENT_FEED_FIRST_CONTENT,
+                params = mapOf(
+                    "source" to AnalyticsParamValue.StringValue(source),
+                    "duration_bucket" to AnalyticsParamValue.StringValue(feedContentDurationBucket(durationMs)),
+                ),
+            )
+        )
+    }
+
+    private fun logFeedLoadResult(trigger: String, success: Boolean, failureCode: String? = null) {
+        val params = buildMap<String, AnalyticsParamValue> {
+            put("trigger", AnalyticsParamValue.StringValue(trigger))
+            put("outcome", AnalyticsParamValue.StringValue(if (success) "success" else "failure"))
+            failureCode?.let { put("failure_code", AnalyticsParamValue.StringValue(it)) }
+        }
+        analyticsClient?.log(AnalyticsEvent(name = EVENT_FEED_LOAD_RESULT, params = params))
+    }
+
+    /** Ev. — pas 5.7: outcome=success/failure for like/comment/report, mirroring logFeedLoadResult's shape. */
+    private fun logInteractionResult(eventName: String, result: ApiResult<*>) {
+        val params = buildMap<String, AnalyticsParamValue> {
+            put("outcome", AnalyticsParamValue.StringValue(if (result is ApiResult.Success) "success" else "failure"))
+            if (result is ApiResult.Error) {
+                put("failure_code", AnalyticsParamValue.StringValue(result.code ?: "unknown"))
+            }
+        }
+        analyticsClient?.log(AnalyticsEvent(name = eventName, params = params))
+    }
+
     /**
      * Hydrates from the persistent cache before deciding whether to hit the network: an owner
      * mismatch (different logged-in user than the one the cache was written for) wipes it, a
@@ -155,6 +228,7 @@ class FeedViewModel @Inject constructor(
             if (cachedPosts.isEmpty()) {
                 loadFirstPage()
             } else {
+                logFeedFirstContent(source = "cache")
                 maybeSyncSilently()
             }
         } catch (e: CancellationException) {
@@ -214,7 +288,7 @@ class FeedViewModel @Inject constructor(
         val meta = feedCache.readMeta()
         val isStale = meta?.lastSyncedAt?.let { Duration.between(it, Instant.now()) > STALE_AFTER } ?: true
         if (isStale) {
-            load(reset = true, isRefresh = false, isSilent = true)
+            load(reset = true, isRefresh = false, isSilent = true, trigger = "silent_sync")
         }
     }
 
@@ -224,26 +298,26 @@ class FeedViewModel @Inject constructor(
     }
 
     /** Initial load into an empty feed. */
-    private fun loadFirstPage() = load(reset = true, isRefresh = false)
+    private fun loadFirstPage() = load(reset = true, isRefresh = false, trigger = "initial")
 
     /** Pull-to-refresh: reload from the top, keeping current content visible until it returns. */
-    fun refresh() = load(reset = true, isRefresh = true)
+    fun refresh() = load(reset = true, isRefresh = true, trigger = "refresh")
 
     /** Infinite scroll: append the next page if there is one and nothing is already in flight. */
-    fun loadNextPage() {
+    fun loadNextPage(trigger: String = "load_more") {
         val state = _uiState.value
         if (state.phase !is FeedPhase.ShowingPosts) return
         if (!state.hasMore || state.isAnyLoading) return
-        load(reset = false, isRefresh = false)
+        load(reset = false, isRefresh = false, trigger = trigger)
     }
 
     /** Footer Retry tap — retries the next page only; offline, it never reaches the network. */
-    fun onFooterRetry() = loadNextPage()
+    fun onFooterRetry() = loadNextPage(trigger = "footer_retry")
 
     /** Retry from the full-screen error state (the [LoadError.Generic] case — NoInternet auto-retries on its own). */
-    fun onInitialRetry() = load(reset = true, isRefresh = false)
+    fun onInitialRetry() = load(reset = true, isRefresh = false, trigger = "initial")
 
-    private fun load(reset: Boolean, isRefresh: Boolean, isSilent: Boolean = false) {
+    private fun load(reset: Boolean, isRefresh: Boolean, isSilent: Boolean = false, trigger: String) {
         val isInitial = reset && !isRefresh && !isSilent
         val previousJob = feedLoadJob
         if (previousJob?.isActive == true && !isInitial) return
@@ -312,6 +386,9 @@ class FeedViewModel @Inject constructor(
                             ownerUserId = ownerUserId,
                             syncedAt = syncedAt,
                         )
+                        if (result.data.posts.isNotEmpty()) {
+                            logFeedFirstContent(source = "network")
+                        }
                     } else if (!reset) {
                         feedCache.appendPage(page = result.data, syncedAt = syncedAt)
                     } else if (silentEmptySync) {
@@ -342,6 +419,7 @@ class FeedViewModel @Inject constructor(
                             else -> cleared.copy(initialLoadError = null)
                         }
                     }
+                    logFeedLoadResult(trigger = trigger, success = true)
                 }
 
                 is ApiResult.Error -> {
@@ -367,6 +445,8 @@ class FeedViewModel @Inject constructor(
                             else -> cleared.copy(initialLoadError = error)
                         }
                     }
+                    val failureCode = if (result.isNetworkError) ERROR_CODE_NETWORK else result.code ?: "unrecognized"
+                    logFeedLoadResult(trigger = trigger, success = false, failureCode = failureCode)
                 }
             }
         }
@@ -413,7 +493,9 @@ class FeedViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(reportDialog = dialog.copy(isSubmitting = true)) }
 
-            val message = when (reportRepository.reportPost(dialog.postId, dialog.reason)) {
+            val reportResult = reportRepository.reportPost(dialog.postId, dialog.reason)
+            logInteractionResult(EVENT_FEED_REPORT_RESULT, reportResult)
+            val message = when (reportResult) {
                 is ApiResult.Success -> "Report submitted. Thanks for helping keep Revio accurate."
                 is ApiResult.Error -> "Couldn't submit your report. Please try again."
             }
@@ -460,7 +542,9 @@ class FeedViewModel @Inject constructor(
             viewModelScope.launch {
                 feedCache.updateLike(postId, liked = !wasLiked, likeCount = optimisticCount)
 
-                when (val result = likeRepository.toggleLike(postId)) {
+                val result = likeRepository.toggleLike(postId)
+                logInteractionResult(EVENT_FEED_LIKE_RESULT, result)
+                when (result) {
                     is ApiResult.Success -> {
                         // Reconcile with the server's authoritative state.
                         feedCache.updateLike(postId, liked = result.data.liked, likeCount = result.data.count)
@@ -548,7 +632,9 @@ class FeedViewModel @Inject constructor(
                     state.copy(commentsSheet = s.copy(isSubmitting = true))
                 }
 
-                when (val result = commentRepository.addComment(sheet.postId, text)) {
+                val result = commentRepository.addComment(sheet.postId, text)
+                logInteractionResult(EVENT_FEED_COMMENT_RESULT, result)
+                when (result) {
                     is ApiResult.Success -> {
                         // Keep the feed's comment count consistent with the new comment.
                         val currentCount = _uiState.value.feedPosts.firstOrNull { it.id == sheet.postId }?.commentCount ?: 0

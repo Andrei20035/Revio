@@ -1,6 +1,7 @@
 package com.revio.social.data.repository
 
 import com.revio.social.core.network.ApiResult
+import com.revio.social.core.network.ErrorPolicy
 import com.revio.social.core.network.safeApiCall
 import com.revio.social.core.network.safeApiCallNoContent
 import com.revio.social.data.remote.api.NotificationApi
@@ -24,8 +25,8 @@ class NotificationRepositoryImpl @Inject constructor(
         safeApiCall { notificationApi.getNotifications(limit) }
 
     override suspend fun markRead(id: UUID): ApiResult<Unit> =
-        safeApiCallNoContent { notificationApi.markRead(id) }
+        safeApiCallNoContent(policy = ErrorPolicy.SILENT) { notificationApi.markRead(id) }
 
     override suspend fun markAllRead(): ApiResult<Unit> =
-        safeApiCallNoContent { notificationApi.markAllRead() }
+        safeApiCallNoContent(policy = ErrorPolicy.SILENT) { notificationApi.markAllRead() }
 }

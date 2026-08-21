@@ -3,6 +3,9 @@ package com.revio.social.features.settings.personalinfo
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.revio.social.core.analytics.AnalyticsClient
+import com.revio.social.core.analytics.AnalyticsEvent
+import com.revio.social.core.analytics.AnalyticsParamValue
 import com.revio.social.core.image.CropTransform
 import com.revio.social.core.image.ImageCompressor
 import com.revio.social.core.network.ApiResult
@@ -34,6 +37,9 @@ private const val MAX_USERNAME_LENGTH = 50
 private val USERNAME_REGEX = Regex("^[a-z0-9._]+$")
 private const val USERNAME_CHECK_DEBOUNCE_MS = 400L
 
+/** Ev. — pas 5.9: profile edit outcome, same outcome/failure_code shape as auth_result (pas 2.2b). */
+private const val EVENT_PROFILE_EDIT_RESULT = "profile_edit_result"
+
 private val PROFILE_RESTRICTION_ERROR_CODE_TO_FIELD = mapOf(
     "FULL_NAME_ALREADY_CHANGED" to PersonalInfoField.FULL_NAME,
     "COUNTRY_ALREADY_CHANGED" to PersonalInfoField.COUNTRY,
@@ -47,6 +53,7 @@ private val PROFILE_RESTRICTION_ERROR_CODE_TO_FIELD = mapOf(
 class PersonalInfoViewModel @Inject constructor(
     private val userRepository: UserRepository,
     private val imageCompressor: ImageCompressor,
+    private val analyticsClient: AnalyticsClient? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PersonalInfoUiState())
@@ -319,7 +326,19 @@ class PersonalInfoViewModel @Inject constructor(
                 it.copy(isSaving = true, generalError = null, fieldErrors = emptyMap(), saveSuccess = false)
             }
 
-            when (val result = userRepository.updateUser(request)) {
+            val result = userRepository.updateUser(request)
+            analyticsClient?.log(
+                AnalyticsEvent(
+                    name = EVENT_PROFILE_EDIT_RESULT,
+                    params = buildMap {
+                        put("outcome", AnalyticsParamValue.StringValue(if (result is ApiResult.Success) "success" else "failure"))
+                        if (result is ApiResult.Error) {
+                            put("failure_code", AnalyticsParamValue.StringValue(result.code ?: "unknown"))
+                        }
+                    },
+                )
+            )
+            when (result) {
                 is ApiResult.Success -> _uiState.update {
                     it.copy(
                         user = result.data,

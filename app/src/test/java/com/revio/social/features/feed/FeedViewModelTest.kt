@@ -1,12 +1,16 @@
 package com.revio.social.features.feed
 
 import com.revio.social.MainDispatcherRule
+import com.revio.social.core.analytics.AnalyticsClient
+import com.revio.social.core.analytics.AnalyticsEvent
+import com.revio.social.core.analytics.AnalyticsParamValue
 import com.revio.social.core.network.ApiResult
 import com.revio.social.core.network.ERROR_CODE_NETWORK
 import com.revio.social.core.network.NETWORK_ERROR_MESSAGE
 import com.revio.social.core.network.NetworkConnectivityManager
 import com.revio.social.data.image.PrefetchOutcome
 import com.revio.social.data.local.preferences.UserPreferences
+import com.revio.social.data.model.Comment
 import com.revio.social.data.model.FeedPost
 import com.revio.social.data.model.LikeStatus
 import com.revio.social.data.model.ReportReason
@@ -23,6 +27,7 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
+import io.mockk.verify
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
@@ -73,6 +78,7 @@ class FeedViewModelTest {
     private lateinit var connectivity: NetworkConnectivityManager
     private lateinit var userPreferences: UserPreferences
     private lateinit var feedImagePrefetcher: FakeFeedImagePrefetcher
+    private lateinit var analyticsClient: AnalyticsClient
 
     @Before
     fun setup() {
@@ -95,6 +101,7 @@ class FeedViewModelTest {
             every { userId } returns flowOf(ownerUserId)
         }
         feedImagePrefetcher = FakeFeedImagePrefetcher()
+        analyticsClient = mockk(relaxed = true)
     }
 
     private fun createViewModel() = FeedViewModel(
@@ -107,6 +114,7 @@ class FeedViewModelTest {
         connectivity = connectivity,
         userPreferences = userPreferences,
         feedImagePrefetcher = feedImagePrefetcher,
+        analyticsClient = analyticsClient,
     )
 
     private fun post(
@@ -713,6 +721,10 @@ class FeedViewModelTest {
         assertTrue(updated.likedByCurrentUser)
         assertEquals(6L, updated.likeCount)
         assertTrue(vm.uiState.value.likeInFlight.isEmpty())
+        // pas 5.7
+        verify(exactly = 1) {
+            analyticsClient.log(match { it.name == "feed_like_result" && it.params["outcome"] == AnalyticsParamValue.StringValue("success") })
+        }
     }
 
     @Test
@@ -737,6 +749,10 @@ class FeedViewModelTest {
         assertFalse(reverted.likedByCurrentUser)
         assertEquals(5L, reverted.likeCount)
         assertEquals("Couldn't update your like. Please try again.", vm.uiState.value.userMessage)
+        // pas 5.7
+        verify(exactly = 1) {
+            analyticsClient.log(match { it.name == "feed_like_result" && it.params["outcome"] == AnalyticsParamValue.StringValue("failure") })
+        }
     }
 
     // ---- 15. like offline: fara apel, fara scriere in cache, mesaj afisat ----
@@ -791,6 +807,35 @@ class FeedViewModelTest {
         coVerify(exactly = 0) { commentRepository.addComment(any(), any()) }
     }
 
+    @Test
+    fun `submitComment online loghează feed_comment_result la succes (pas 5_7)`() = runTest {
+        val target = post()
+        feedCache.replaceWithFirstPage(
+            page = feedResult(posts = listOf(target), hasMore = false),
+            ownerUserId = ownerUserId,
+            syncedAt = Instant.now(),
+        )
+        networkAvailable.value = true
+        internetValidated.value = true
+        coEvery { commentRepository.getCommentsForPost(target.id) } returns ApiResult.Success(emptyList())
+        coEvery { commentRepository.addComment(target.id, "hello there") } returns ApiResult.Success(
+            Comment(id = UUID.randomUUID(), userId = ownerUserId, postId = target.id, username = "me", profilePictureUrl = null, text = "hello there", createdAt = Instant.now())
+        )
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+        vm.openComments(target.id)
+        advanceUntilIdle()
+        vm.onCommentDraftChange("hello there")
+
+        vm.submitComment()
+        advanceUntilIdle()
+
+        verify(exactly = 1) {
+            analyticsClient.log(match { it.name == "feed_comment_result" && it.params["outcome"] == AnalyticsParamValue.StringValue("success") })
+        }
+    }
+
     // ---- 17. report offline: dialog inchis, fara apel ----
 
     @Test
@@ -811,6 +856,30 @@ class FeedViewModelTest {
         assertNull(vm.uiState.value.reportDialog)
         assertEquals("You're offline — your report wasn't sent.", vm.uiState.value.userMessage)
         coVerify(exactly = 0) { reportRepository.reportPost(any(), any()) }
+    }
+
+    @Test
+    fun `confirmReport online loghează feed_report_result la succes (pas 5_7)`() = runTest {
+        val target = post()
+        feedCache.replaceWithFirstPage(
+            page = feedResult(posts = listOf(target), hasMore = false),
+            ownerUserId = ownerUserId,
+            syncedAt = Instant.now(),
+        )
+        networkAvailable.value = true
+        internetValidated.value = true
+        coEvery { reportRepository.reportPost(target.id, ReportReason.INAPPROPRIATE_CONTENT) } returns ApiResult.Success(Unit)
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        vm.onReportReasonSelected(target.id, ReportReason.INAPPROPRIATE_CONTENT)
+        vm.confirmReport()
+        advanceUntilIdle()
+
+        verify(exactly = 1) {
+            analyticsClient.log(match { it.name == "feed_report_result" && it.params["outcome"] == AnalyticsParamValue.StringValue("success") })
+        }
     }
 
     // ---- 18. eroare de retea la comentarii -> reconectarea nu reincarca automat ----
@@ -1266,5 +1335,260 @@ class FeedViewModelTest {
 
         assertEquals(FeedContent.Posts, vm.uiState.value.content)
         assertEquals(listOf(recoveredPost.id), vm.uiState.value.visiblePosts.map { it.id })
+    }
+
+    // ----------------------------------------------------------------------
+    // pas 2.6a — ev. 21: feed_first_content, cache vs network
+    // ----------------------------------------------------------------------
+
+    @Test
+    fun `cache nevid la startup - feed_first_content cu source cache`() = runTest {
+        feedCache.replaceWithFirstPage(
+            page = feedResult(posts = listOf(post()), hasMore = false),
+            ownerUserId = ownerUserId,
+            syncedAt = Instant.now(),
+        )
+
+        createViewModel()
+        advanceUntilIdle()
+
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "feed_first_content",
+                    params = mapOf(
+                        "source" to AnalyticsParamValue.StringValue("cache"),
+                        "duration_bucket" to AnalyticsParamValue.StringValue("lt_1s"),
+                    ),
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `cache gol si online la startup - feed_first_content cu source network`() = runTest {
+        networkAvailable.value = true
+        internetValidated.value = true
+        coEvery { postRepository.getFeedPosts(limit = 15, cursor = null) } returns
+            ApiResult.Success(feedResult(posts = listOf(post())))
+
+        createViewModel()
+        advanceUntilIdle()
+
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "feed_first_content",
+                    params = mapOf(
+                        "source" to AnalyticsParamValue.StringValue("network"),
+                        "duration_bucket" to AnalyticsParamValue.StringValue("lt_1s"),
+                    ),
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `cache gol si offline la startup - fara feed_first_content, nu exista continut`() = runTest {
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        assertEquals(FeedContent.NoInternet, vm.uiState.value.content)
+        verify(exactly = 0) { analyticsClient.log(match { it.name == "feed_first_content" }) }
+    }
+
+    @Test
+    fun `feed_first_content se declanseaza o singura data chiar daca sosesc pagini suplimentare`() = runTest {
+        val cursor = FeedCursor(lastCreatedAt = Instant.now(), lastPostId = UUID.randomUUID())
+        feedCache.replaceWithFirstPage(
+            page = feedResult(posts = listOf(post()), nextCursor = cursor, hasMore = true),
+            ownerUserId = ownerUserId,
+            syncedAt = Instant.now(),
+        )
+        networkAvailable.value = true
+        internetValidated.value = true
+        coEvery { postRepository.getFeedPosts(limit = 15, cursor = cursor) } returns
+            ApiResult.Success(feedResult(posts = listOf(post()), hasMore = false))
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+        vm.onFooterRetry()
+        advanceUntilIdle()
+
+        verify(exactly = 1) { analyticsClient.log(match { it.name == "feed_first_content" }) }
+    }
+
+    // ----------------------------------------------------------------------
+    // pas 2.6b — ev. 22: feed_load_result, cele 5 triggere + ramura isSilent
+    // ----------------------------------------------------------------------
+
+    private fun feedLoadResultEvent(trigger: String, outcome: String) = AnalyticsEvent(
+        name = "feed_load_result",
+        params = mapOf(
+            "trigger" to AnalyticsParamValue.StringValue(trigger),
+            "outcome" to AnalyticsParamValue.StringValue(outcome),
+        ),
+    )
+
+    @Test
+    fun `initial - feed_load_result trigger initial outcome success`() = runTest {
+        networkAvailable.value = true
+        internetValidated.value = true
+        coEvery { postRepository.getFeedPosts(limit = 15, cursor = null) } returns
+            ApiResult.Success(feedResult(posts = listOf(post())))
+
+        createViewModel()
+        advanceUntilIdle()
+
+        verify(exactly = 1) { analyticsClient.log(feedLoadResultEvent("initial", "success")) }
+    }
+
+    @Test
+    fun `refresh - feed_load_result trigger refresh outcome success`() = runTest {
+        feedCache.replaceWithFirstPage(
+            page = feedResult(posts = listOf(post()), hasMore = false),
+            ownerUserId = ownerUserId,
+            syncedAt = Instant.now(),
+        )
+        networkAvailable.value = true
+        internetValidated.value = true
+        coEvery { postRepository.getFeedPosts(limit = 15, cursor = null) } returns
+            ApiResult.Success(feedResult(posts = listOf(post()), hasMore = false))
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+        vm.refresh()
+        advanceUntilIdle()
+
+        verify(exactly = 1) { analyticsClient.log(feedLoadResultEvent("refresh", "success")) }
+    }
+
+    @Test
+    fun `loadNextPage - feed_load_result trigger load_more outcome success`() = runTest {
+        val cursor = FeedCursor(lastCreatedAt = Instant.now(), lastPostId = UUID.randomUUID())
+        feedCache.replaceWithFirstPage(
+            page = feedResult(posts = listOf(post()), nextCursor = cursor, hasMore = true),
+            ownerUserId = ownerUserId,
+            syncedAt = Instant.now(),
+        )
+        networkAvailable.value = true
+        internetValidated.value = true
+        coEvery { postRepository.getFeedPosts(limit = 15, cursor = cursor) } returns
+            ApiResult.Success(feedResult(posts = listOf(post()), hasMore = false))
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+        vm.loadNextPage()
+        advanceUntilIdle()
+
+        // FeedImageGate poate cere și el singur un refill (onRefillNeeded -> loadNextPage(),
+        // același trigger "load_more") — nu contează care apel a produs efectiv evenimentul,
+        // doar că trigger-ul "load_more" e cel corect pentru această cale.
+        verify(atLeast = 1) { analyticsClient.log(feedLoadResultEvent("load_more", "success")) }
+    }
+
+    @Test
+    fun `onFooterRetry - feed_load_result trigger footer_retry`() = runTest {
+        val cursor = FeedCursor(lastCreatedAt = Instant.now(), lastPostId = UUID.randomUUID())
+        feedCache.replaceWithFirstPage(
+            page = feedResult(posts = listOf(post()), nextCursor = cursor, hasMore = true),
+            ownerUserId = ownerUserId,
+            syncedAt = Instant.now(),
+        )
+        networkAvailable.value = true
+        internetValidated.value = true
+        // Vezi comentariul din testul anterior — hasMore rămâne true ca apelul explicit de mai
+        // jos să nu fie blocat de un eventual refill automat al FeedImageGate.
+        coEvery { postRepository.getFeedPosts(limit = 15, cursor = cursor) } returns
+            ApiResult.Success(feedResult(posts = listOf(post()), nextCursor = cursor, hasMore = true))
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+        vm.onFooterRetry()
+        advanceUntilIdle()
+
+        verify(exactly = 1) { analyticsClient.log(feedLoadResultEvent("footer_retry", "success")) }
+    }
+
+    @Test
+    fun `sync silentios reusit - feed_load_result trigger silent_sync outcome success`() = runTest {
+        // Online chiar de la construcție: hydrateFromCache() găsește cache-ul stale și cheamă
+        // maybeSyncSilently() direct, fără nicio tranziție offline->reconnect (acea cale trece
+        // prin FeedImageGate și e deja instabilă în acest harness de test, independent de 2.6b).
+        val staleSyncedAt = Instant.now().minus(Duration.ofMinutes(31))
+        feedCache.replaceWithFirstPage(
+            page = feedResult(posts = listOf(post()), hasMore = false),
+            ownerUserId = ownerUserId,
+            syncedAt = staleSyncedAt,
+        )
+        networkAvailable.value = true
+        internetValidated.value = true
+        coEvery { postRepository.getFeedPosts(limit = 15, cursor = null) } returns
+            ApiResult.Success(feedResult(posts = listOf(post()), hasMore = false))
+
+        createViewModel()
+        advanceUntilIdle()
+
+        verify(exactly = 1) { analyticsClient.log(feedLoadResultEvent("silent_sync", "success")) }
+    }
+
+    @Test
+    fun `sync silentios esuat - devine vizibil ca feed_load_result, desi UI ramane tacut`() = runTest {
+        // Online chiar de la construcție — vezi comentariul din testul anterior.
+        val staleSyncedAt = Instant.now().minus(Duration.ofMinutes(31))
+        val originalPost = post()
+        feedCache.replaceWithFirstPage(
+            page = feedResult(posts = listOf(originalPost), hasMore = false),
+            ownerUserId = ownerUserId,
+            syncedAt = staleSyncedAt,
+        )
+        networkAvailable.value = true
+        internetValidated.value = true
+        coEvery { postRepository.getFeedPosts(limit = 15, cursor = null) } returns
+            ApiResult.Error("Server error", code = "SERVER_ERROR")
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        // UI-ul rămâne complet tăcut (comportament neschimbat)...
+        assertNull(vm.uiState.value.userMessage)
+        assertNull(vm.uiState.value.refreshError)
+        // ...dar evenimentul acum există, cu failure_code inclus.
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "feed_load_result",
+                    params = mapOf(
+                        "trigger" to AnalyticsParamValue.StringValue("silent_sync"),
+                        "outcome" to AnalyticsParamValue.StringValue("failure"),
+                        "failure_code" to AnalyticsParamValue.StringValue("SERVER_ERROR"),
+                    ),
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `esec initial - feed_load_result cu failure_code`() = runTest {
+        networkAvailable.value = true
+        internetValidated.value = true
+        coEvery { postRepository.getFeedPosts(limit = 15, cursor = null) } returns
+            ApiResult.Error("Server error", code = "SERVER_ERROR")
+
+        createViewModel()
+        advanceUntilIdle()
+
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "feed_load_result",
+                    params = mapOf(
+                        "trigger" to AnalyticsParamValue.StringValue("initial"),
+                        "outcome" to AnalyticsParamValue.StringValue("failure"),
+                        "failure_code" to AnalyticsParamValue.StringValue("SERVER_ERROR"),
+                    ),
+                )
+            )
+        }
     }
 }

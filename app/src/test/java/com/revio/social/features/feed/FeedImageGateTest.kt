@@ -1,7 +1,12 @@
 package com.revio.social.features.feed
 
+import com.revio.social.core.analytics.AnalyticsClient
+import com.revio.social.core.analytics.AnalyticsEvent
+import com.revio.social.core.analytics.AnalyticsParamValue
 import com.revio.social.data.image.PrefetchOutcome
 import com.revio.social.data.model.FeedPost
+import io.mockk.mockk
+import io.mockk.verify
 import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -448,5 +453,74 @@ class FeedImageGateTest {
         runCurrent()
 
         assertEquals(listOf(a.id, b.id), gate.visiblePosts.value.map { it.id })
+    }
+
+    // ----------------------------------------------------------------------
+    // pas 2.6c — ev. 23: feed_image_gate, reason nu mai e aruncat, permanent vs tranzitoriu
+    // ----------------------------------------------------------------------
+
+    @Test
+    fun `esec permanent - feed_image_gate cu outcome permanent si reason-ul clasificarii`() = runTest {
+        val fake = FakeFeedImagePrefetcher()
+        val analyticsClient = mockk<AnalyticsClient>(relaxed = true)
+        val gate = FeedImageGate(fake, backgroundScope, analyticsClient = analyticsClient)
+
+        val a = post("A")
+        fake.outcomes[a.imageUrl] = PrefetchOutcome.PermanentFailure("http_404")
+
+        gate.onCandidates(listOf(a), resetToken = 0)
+        runCurrent()
+
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "feed_image_gate",
+                    params = mapOf(
+                        "outcome" to AnalyticsParamValue.StringValue("permanent"),
+                        "reason" to AnalyticsParamValue.StringValue("http_404"),
+                    ),
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `esec tranzitoriu epuizat dupa retry - feed_image_gate cu outcome transient`() = runTest {
+        val fake = FakeFeedImagePrefetcher()
+        val analyticsClient = mockk<AnalyticsClient>(relaxed = true)
+        val gate = FeedImageGate(fake, backgroundScope, analyticsClient = analyticsClient)
+
+        val a = post("A")
+        fake.outcomes[a.imageUrl] = PrefetchOutcome.TransientFailure("http_5xx")
+
+        gate.onCandidates(listOf(a), resetToken = 0)
+        runCurrent()
+        advanceTimeBy(301) // past TRANSIENT_RETRY_DELAY_MS
+        runCurrent()
+
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "feed_image_gate",
+                    params = mapOf(
+                        "outcome" to AnalyticsParamValue.StringValue("transient"),
+                        "reason" to AnalyticsParamValue.StringValue("http_5xx"),
+                    ),
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `succes - nu se genereaza feed_image_gate`() = runTest {
+        val fake = FakeFeedImagePrefetcher()
+        val analyticsClient = mockk<AnalyticsClient>(relaxed = true)
+        val gate = FeedImageGate(fake, backgroundScope, analyticsClient = analyticsClient)
+
+        val a = post("A")
+        gate.onCandidates(listOf(a), resetToken = 0)
+        runCurrent()
+
+        verify(exactly = 0) { analyticsClient.log(match { it.name == "feed_image_gate" }) }
     }
 }

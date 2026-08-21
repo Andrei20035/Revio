@@ -42,7 +42,7 @@ class EarlySpotterCardTest {
     )
 
     @Test
-    fun `combined card displays the early spotter number and the bonus points`() {
+    fun `combined_card_displays_the_early_spotter_number_and_the_bonus_points`() {
         composeTestRule.setContent {
             EarlySpotterCard(
                 state = EarlySpotterCardState.Visible(earlySpotterNumber = 42, bonusPoints = 300),
@@ -55,7 +55,7 @@ class EarlySpotterCardTest {
     }
 
     @Test
-    fun `tapping Got it calls onDismiss`() {
+    fun `tapping_Got_it_calls_onDismiss`() {
         var dismissed = false
         composeTestRule.setContent {
             EarlySpotterCard(
@@ -70,7 +70,7 @@ class EarlySpotterCardTest {
     }
 
     @Test
-    fun `tapping Got it in the host acknowledges via the controller`() {
+    fun `tapping_Got_it_in_the_host_acknowledges_via_the_controller`() {
         val controller = mockk<EarlySpotterController>(relaxed = true)
         every { controller.state } returns MutableStateFlow(
             EarlySpotterCardState.Visible(earlySpotterNumber = 7, bonusPoints = 300)
@@ -86,7 +86,7 @@ class EarlySpotterCardTest {
     }
 
     @Test
-    fun `back press is consumed and does not dismiss or acknowledge the card`() {
+    fun `back_press_is_consumed_and_does_not_dismiss_or_acknowledge_the_card`() {
         val controller = mockk<EarlySpotterController>(relaxed = true)
         every { controller.state } returns MutableStateFlow(
             EarlySpotterCardState.Visible(earlySpotterNumber = 7, bonusPoints = 300)

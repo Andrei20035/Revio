@@ -1,6 +1,7 @@
 package com.revio.social.di
 
 import com.revio.social.BuildConfig
+import com.revio.social.core.analytics.CrashContext
 import com.revio.social.data.local.auth.TokenStore
 import com.revio.social.core.network.TokenAuthenticator
 import com.revio.social.data.remote.api.*
@@ -18,6 +19,7 @@ import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 import javax.inject.Named
@@ -49,6 +51,25 @@ object NetworkModule {
         }
     }
 
+    /** Correlates a client request with the matching server-side log line — see pas 3.1. */
+    @Provides
+    @Singleton
+    @Named("requestId")
+    fun provideRequestIdInterceptor(): Interceptor {
+        return Interceptor { chain ->
+            val requestId = UUID.randomUUID().toString()
+            val newRequest = chain.request().newBuilder()
+                .addHeader("X-Request-Id", requestId)
+                .build()
+
+            // pas 6.5 — singurul loc unde clientul poate corela un request cu logul serverului:
+            // fără asta, X-Request-Id era generat și aruncat, nevizibil oriunde pe client.
+            CrashContext.breadcrumb("request_id=$requestId ${newRequest.method} ${newRequest.url.encodedPath}")
+
+            chain.proceed(newRequest)
+        }
+    }
+
     @Provides
     @Singleton
     fun provideLoggingInterceptor(): HttpLoggingInterceptor {
@@ -65,12 +86,14 @@ object NetworkModule {
     @Singleton
     fun provideOkHttpClient(
         authInterceptor: Interceptor,
+        @Named("requestId") requestIdInterceptor: Interceptor,
         tokenAuthenticator: TokenAuthenticator,
         loggingInterceptor: HttpLoggingInterceptor,
         networkConnectivityInterceptor: NetworkConnectivityInterceptor
     ): OkHttpClient {
         return OkHttpClient.Builder()
             .addInterceptor(networkConnectivityInterceptor)
+            .addInterceptor(requestIdInterceptor)
             .addInterceptor(authInterceptor)
             .addInterceptor(loggingInterceptor)
             .authenticator(tokenAuthenticator)
@@ -103,12 +126,14 @@ object NetworkModule {
     @Singleton
     @Named("refresh")
     fun provideRefreshAuthApi(
+        @Named("requestId") requestIdInterceptor: Interceptor,
         loggingInterceptor: HttpLoggingInterceptor,
         networkConnectivityInterceptor: NetworkConnectivityInterceptor,
         json: Json,
     ): AuthApi {
         val rawClient = OkHttpClient.Builder()
             .addInterceptor(networkConnectivityInterceptor)
+            .addInterceptor(requestIdInterceptor)
             .addInterceptor(loggingInterceptor)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
@@ -145,18 +170,6 @@ object NetworkModule {
     @Singleton
     fun provideCommentApi(retrofit: Retrofit): CommentApi {
         return retrofit.create(CommentApi::class.java)
-    }
-
-    @Provides
-    @Singleton
-    fun provideFriendApi(retrofit: Retrofit): FriendApi {
-        return retrofit.create(FriendApi::class.java)
-    }
-
-    @Provides
-    @Singleton
-    fun provideFriendRequestApi(retrofit: Retrofit): FriendRequestApi {
-        return retrofit.create(FriendRequestApi::class.java)
     }
 
     @Provides

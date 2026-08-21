@@ -51,22 +51,28 @@ class CoilFeedImagePrefetcher @Inject constructor(
  * Classifies a failed fetch as permanent (won't succeed on retry within this session) or
  * transient (worth retrying). `internal` so [FeedImagePrefetcher] callers never need to reason
  * about raw exceptions, but the mapping itself is still directly unit-testable.
+ *
+ * [PrefetchOutcome.PermanentFailure.reason]/[PrefetchOutcome.TransientFailure.reason] are a
+ * fixed, closed set — never `throwable.message` or an interpolated raw value — so the reason can
+ * reach `feed_image_gate` (pas 2.6c) as an Analytics param without leaking free text: `http_404`,
+ * `http_403`, `http_429`, `http_5xx`, `http_other`, `dns_failure`, `timeout`, `io_error`,
+ * `decode_failure`.
  */
 internal fun classifyPrefetchFailure(throwable: Throwable): PrefetchOutcome = when (throwable) {
     is HttpException -> {
-        val code = throwable.response.code
-        when (code) {
-            404, 403 -> PrefetchOutcome.PermanentFailure("HTTP $code")
-            429 -> PrefetchOutcome.TransientFailure("HTTP $code")
-            in 500..599 -> PrefetchOutcome.TransientFailure("HTTP $code")
+        when (val code = throwable.response.code) {
+            404 -> PrefetchOutcome.PermanentFailure("http_404")
+            403 -> PrefetchOutcome.PermanentFailure("http_403")
+            429 -> PrefetchOutcome.TransientFailure("http_429")
+            in 500..599 -> PrefetchOutcome.TransientFailure("http_5xx")
             // Other 4xx (400, 401, 410, ...) won't fix themselves on a plain retry.
-            else -> PrefetchOutcome.PermanentFailure("HTTP $code")
+            else -> PrefetchOutcome.PermanentFailure("http_other")
         }
     }
-    is UnknownHostException -> PrefetchOutcome.TransientFailure("DNS: ${throwable.message}")
-    is SocketTimeoutException -> PrefetchOutcome.TransientFailure("Timeout: ${throwable.message}")
-    is IOException -> PrefetchOutcome.TransientFailure("IO: ${throwable.message}")
+    is UnknownHostException -> PrefetchOutcome.TransientFailure("dns_failure")
+    is SocketTimeoutException -> PrefetchOutcome.TransientFailure("timeout")
+    is IOException -> PrefetchOutcome.TransientFailure("io_error")
     // Anything else (decode failure, malformed image, OOM, ...) is treated as permanent — a
     // second attempt at the same bytes is very unlikely to decode differently.
-    else -> PrefetchOutcome.PermanentFailure(throwable.message ?: throwable::class.simpleName.orEmpty())
+    else -> PrefetchOutcome.PermanentFailure("decode_failure")
 }

@@ -4,11 +4,17 @@ import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.crashlytics.FirebaseCrashlytics
+import com.revio.social.core.analytics.AnalyticsClient
+import com.revio.social.core.analytics.AnalyticsEvent
+import com.revio.social.core.analytics.AnalyticsParamValue
 import com.revio.social.core.feedback.PostCreatedEvent
 import com.revio.social.core.feedback.PostCreationSignal
 import com.revio.social.core.image.CropTransform
 import com.revio.social.core.image.ImageCompressor
 import com.revio.social.core.network.ApiResult
+import com.revio.social.core.network.ERROR_CODE_NETWORK
+import com.revio.social.core.network.isNetworkError
 import com.revio.social.features.profile.components.ImageTransformState
 import com.revio.social.core.navigation.Screen
 import com.revio.social.data.remote.dto.post.CreatePostMetadata
@@ -27,6 +33,48 @@ import java.time.ZoneId
 import java.util.UUID
 import javax.inject.Inject
 
+/** ev. 15 — fired once per attempt, right before compression starts. */
+private const val EVENT_POST_CREATE_START = "post_create_start"
+
+/**
+ * ev. 16 — image compression outcome. A failure also records a Crashlytics non-fatal (taxonomy
+ * category 1 — unexpected, see plan's error taxonomy for `ImageUploadViewModel.kt:306-317`).
+ */
+private const val EVENT_POST_COMPRESS_RESULT = "post_compress_result"
+
+/**
+ * ev. 17 — best-effort location resolution outcome (taxonomy category 4 — control flow, never a
+ * non-fatal). `failure_code` fixed set: `permission_denied`, `permission_denied_permanently`,
+ * `services_disabled`, `no_fix` (mirrors [LocationFailure]).
+ */
+private const val EVENT_POST_LOCATION_RESULT = "post_location_result"
+
+/** Reported to Crashlytics on [EVENT_POST_COMPRESS_RESULT] failure — see pas 2.5a. */
+private class ImageCompressionFailedException(cause: Throwable) : Exception("post_compress_failed", cause)
+
+/**
+ * ev. 18 — `POST /posts` result. `duration_bucket`/`retry_bucket` use the fixed vocabularies
+ * frozen in docs/telemetry-naming-and-forbidden-data.md; `failure_code` is [ApiResult.Error.code]
+ * when present, [com.revio.social.core.network.ERROR_CODE_NETWORK] for offline, or a fixed
+ * fallback (`unrecognized`) otherwise — same pattern as pas 2.2b's `resolveAuthFailureCode`.
+ */
+private const val EVENT_POST_UPLOAD_RESULT = "post_upload_result"
+
+private fun durationBucket(durationMs: Long): String = when {
+    durationMs < 1_000 -> "lt_1s"
+    durationMs < 3_000 -> "1_3s"
+    durationMs < 10_000 -> "3_10s"
+    durationMs < 30_000 -> "10_30s"
+    else -> "gte_30s"
+}
+
+private fun retryBucket(retryCount: Int): String = when {
+    retryCount <= 0 -> "0"
+    retryCount == 1 -> "1"
+    retryCount == 2 -> "2"
+    else -> "gte_3"
+}
+
 @HiltViewModel
 class ImageUploadViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
@@ -35,6 +83,7 @@ class ImageUploadViewModel @Inject constructor(
     private val imageCompressor: ImageCompressor,
     private val locationRepository: LocationRepository,
     private val postCreationSignal: PostCreationSignal,
+    private val analyticsClient: AnalyticsClient? = null,
 ) : ViewModel() {
 
     // In-flight location resolution, if any. Prevents concurrent requests but allows retries
@@ -255,6 +304,7 @@ class ImageUploadViewModel @Inject constructor(
                     LocationFailure.NoFix
                 }
                 _uiState.update { it.copy(locationStatus = LocationStatus.Unavailable(reason)) }
+                logLocationResult(success = false, reason = reason)
                 return@launch
             }
 
@@ -269,7 +319,23 @@ class ImageUploadViewModel @Inject constructor(
                     locationStatus = LocationStatus.Resolved,
                 )
             }
+            logLocationResult(success = true)
         }
+    }
+
+    private fun logLocationResult(success: Boolean, reason: LocationFailure? = null) {
+        val failureCode = when (reason) {
+            LocationFailure.PermissionDenied -> "permission_denied"
+            LocationFailure.PermissionDeniedPermanently -> "permission_denied_permanently"
+            LocationFailure.ServicesDisabled -> "services_disabled"
+            LocationFailure.NoFix -> "no_fix"
+            null -> null
+        }
+        val params = buildMap<String, AnalyticsParamValue> {
+            put("outcome", AnalyticsParamValue.StringValue(if (success) "success" else "failure"))
+            failureCode?.let { put("failure_code", AnalyticsParamValue.StringValue(it)) }
+        }
+        analyticsClient?.log(AnalyticsEvent(name = EVENT_POST_LOCATION_RESULT, params = params))
     }
 
     // ---- Description ----
@@ -294,6 +360,33 @@ class ImageUploadViewModel @Inject constructor(
         }
     }
 
+    private fun logCompressResult(success: Boolean) {
+        analyticsClient?.log(
+            AnalyticsEvent(
+                name = EVENT_POST_COMPRESS_RESULT,
+                params = mapOf("outcome" to AnalyticsParamValue.StringValue(if (success) "success" else "failure")),
+            )
+        )
+    }
+
+    private fun logUploadResult(success: Boolean, durationMs: Long, retryCount: Int, failureCode: String? = null) {
+        val params = buildMap<String, AnalyticsParamValue> {
+            put("outcome", AnalyticsParamValue.StringValue(if (success) "success" else "failure"))
+            put("duration_bucket", AnalyticsParamValue.StringValue(durationBucket(durationMs)))
+            put("retry_bucket", AnalyticsParamValue.StringValue(retryBucket(retryCount)))
+            failureCode?.let { put("failure_code", AnalyticsParamValue.StringValue(it)) }
+        }
+        analyticsClient?.log(AnalyticsEvent(name = EVENT_POST_UPLOAD_RESULT, params = params))
+    }
+
+    /** Never breaks post creation even if Crashlytics itself throws (e.g. not initialized). */
+    private fun reportCompressionFailureNonFatal(cause: Throwable) {
+        try {
+            FirebaseCrashlytics.getInstance().recordException(ImageCompressionFailedException(cause))
+        } catch (_: Exception) {
+        }
+    }
+
     private fun createNewPost(state: ImageUploadUiState) {
         val imageUri = state.imageUri
         val model = state.selectedModel
@@ -301,6 +394,7 @@ class ImageUploadViewModel @Inject constructor(
 
         viewModelScope.launch {
             _uiState.update { it.copy(isPosting = true) }
+            analyticsClient?.log(AnalyticsEvent(name = EVENT_POST_CREATE_START))
 
             val cropTransform = state.cropTransform?.toCropTransformOrNull()
             val compressed = runCatching {
@@ -309,12 +403,15 @@ class ImageUploadViewModel @Inject constructor(
                 } else {
                     imageCompressor.compress(imageUri, ImageCompressor.CarParams)
                 }
-            }.getOrElse {
+            }.getOrElse { e ->
+                logCompressResult(success = false)
+                reportCompressionFailureNonFatal(e)
                 _uiState.update {
                     it.copy(isPosting = false, userMessage = "Couldn't process the image. Please try again.")
                 }
                 return@launch
             }
+            logCompressResult(success = true)
 
             // Attach whatever location has resolved by now (may be partial or absent) — never blocks.
             val metadata = CreatePostMetadata(
@@ -329,8 +426,10 @@ class ImageUploadViewModel @Inject constructor(
             )
 
             val uploadStartedAt = System.currentTimeMillis()
+            val attemptRetryCount = createPostRetryCount
             when (val result = postRepository.createPost(metadata, compressed.bytes, compressed.mimeType)) {
                 is ApiResult.Success -> {
+                    logUploadResult(success = true, durationMs = System.currentTimeMillis() - uploadStartedAt, retryCount = attemptRetryCount)
                     _uiState.update { it.copy(isPosting = false, postSuccess = true) }
                     postCreationSignal.emit(
                         PostCreatedEvent(
@@ -344,6 +443,13 @@ class ImageUploadViewModel @Inject constructor(
                     lastCreatePostErrorCode = null
                 }
                 is ApiResult.Error -> {
+                    val failureCode = if (result.isNetworkError) ERROR_CODE_NETWORK else result.code ?: "unrecognized"
+                    logUploadResult(
+                        success = false,
+                        durationMs = System.currentTimeMillis() - uploadStartedAt,
+                        retryCount = attemptRetryCount,
+                        failureCode = failureCode,
+                    )
                     createPostRetryCount++
                     lastCreatePostErrorCode = result.code
                     _uiState.update {

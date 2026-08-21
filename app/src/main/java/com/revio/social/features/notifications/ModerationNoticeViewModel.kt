@@ -2,6 +2,9 @@ package com.revio.social.features.notifications
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.revio.social.core.analytics.AnalyticsClient
+import com.revio.social.core.analytics.AnalyticsEvent
+import com.revio.social.core.analytics.AnalyticsParamValue
 import com.revio.social.core.network.ApiResult
 import com.revio.social.data.remote.dto.notification.NotificationDto
 import com.revio.social.data.repository.NotificationRepository
@@ -14,6 +17,9 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/** Ev. notification_action_result (pas 5.1) — best-effort actions (Categoria 3), aggregate rate only, never Crashlytics. */
+private const val EVENT_NOTIFICATION_ACTION_RESULT = "notification_action_result"
+
 /**
  * Drives [ModerationNoticeHost]: fetches unread blocking notifications and hands them out one at
  * a time. [checkForNotices] is meant to be called whenever the app reaches Feed — both a cold
@@ -22,6 +28,7 @@ import javax.inject.Inject
 @HiltViewModel
 class ModerationNoticeViewModel @Inject constructor(
     private val notificationRepository: NotificationRepository,
+    private val analyticsClient: AnalyticsClient? = null,
 ) : ViewModel() {
 
     private val _pending = MutableStateFlow<List<NotificationDto>>(emptyList())
@@ -37,7 +44,7 @@ class ModerationNoticeViewModel @Inject constructor(
                 is ApiResult.Success -> {
                     _pending.value = result.data.items.filter { it.blocking && it.readAt == null }
                 }
-                is ApiResult.Error -> Unit
+                is ApiResult.Error -> logActionResult("check_notices", result)
             }
         }
     }
@@ -45,8 +52,28 @@ class ModerationNoticeViewModel @Inject constructor(
     fun acknowledgeCurrent() {
         val current = _pending.value.firstOrNull() ?: return
         viewModelScope.launch {
-            notificationRepository.markRead(current.id)
+            when (val result = notificationRepository.markRead(current.id)) {
+                is ApiResult.Success -> Unit
+                is ApiResult.Error -> logActionResult("acknowledge", result)
+            }
+            // Dropped from the local queue either way: a failure here just means this notice may
+            // reappear on the next checkForNotices — acceptable for a best-effort bookkeeping call
+            // (see ErrorPolicy.SILENT on NotificationRepositoryImpl.markRead), not worth retrying
+            // or blocking the user from continuing past the dialog.
             _pending.value = _pending.value.drop(1)
         }
+    }
+
+    private fun logActionResult(action: String, error: ApiResult.Error) {
+        analyticsClient?.log(
+            AnalyticsEvent(
+                name = EVENT_NOTIFICATION_ACTION_RESULT,
+                params = mapOf(
+                    "action" to AnalyticsParamValue.StringValue(action),
+                    "outcome" to AnalyticsParamValue.StringValue("failure"),
+                    "failure_code" to AnalyticsParamValue.StringValue(error.code ?: "unknown"),
+                ),
+            )
+        )
     }
 }

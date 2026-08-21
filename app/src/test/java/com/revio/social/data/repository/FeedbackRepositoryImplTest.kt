@@ -1,6 +1,7 @@
 package com.revio.social.data.repository
 
 import com.revio.social.core.network.ApiResult
+import com.revio.social.core.network.ErrorPolicy
 import com.revio.social.core.network.NetworkConnectivityManager
 import com.revio.social.core.network.isNetworkError
 import com.revio.social.data.local.preferences.UserPreferences
@@ -20,6 +21,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody.Companion.toResponseBody
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import retrofit2.Response
@@ -230,5 +232,40 @@ class FeedbackRepositoryImplTest {
 
         coVerify(exactly = 1) { feedbackApi.submitFirstPostFeedback(firstPostPending) }
         coVerify(exactly = 1) { userPreferences.setPendingFirstPostFeedback(userId, null) }
+    }
+
+    // ── Pas 1.7c — best-effort call-sites tagged SILENT, so a later step never reports them ──
+
+    @Test
+    fun `getPromptState is tagged SILENT on failure`() = runTest {
+        val feedbackApi: FeedbackApi = mockk()
+        coEvery { feedbackApi.getPromptState(any()) } throws RuntimeException("boom")
+        val (repo, _, _) = repository(feedbackApi)
+
+        val result = repo.getPromptState()
+
+        assertEquals(ErrorPolicy.SILENT, (result as ApiResult.Error).policy)
+    }
+
+    @Test
+    fun `reportShown is tagged SILENT on failure`() = runTest {
+        val feedbackApi: FeedbackApi = mockk()
+        coEvery { feedbackApi.updatePromptState(any()) } throws RuntimeException("boom")
+        val (repo, _, _) = repository(feedbackApi)
+
+        val result = repo.reportShown()
+
+        assertEquals(ErrorPolicy.SILENT, (result as ApiResult.Error).policy)
+    }
+
+    @Test
+    fun `reportDismissed is tagged SILENT on failure`() = runTest {
+        val feedbackApi: FeedbackApi = mockk()
+        coEvery { feedbackApi.updatePromptState(any()) } throws RuntimeException("boom")
+        val (repo, _, _) = repository(feedbackApi)
+
+        val result = repo.reportDismissed()
+
+        assertEquals(ErrorPolicy.SILENT, (result as ApiResult.Error).policy)
     }
 }

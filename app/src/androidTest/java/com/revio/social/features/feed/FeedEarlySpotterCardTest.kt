@@ -66,7 +66,7 @@ class FeedEarlySpotterCardTest {
     )
 
     @Test
-    fun `with a visible state the card is present in the feed and the scrim blocks touches to content underneath`() {
+    fun `visible_state_shows_the_card_and_its_scrim_blocks_touches_underneath`() {
         var underlyingTapped = false
         val hostViewModel = earlySpotterHostViewModel(
             state = EarlySpotterCardState.Visible(earlySpotterNumber = 7, bonusPoints = 300),
@@ -98,7 +98,7 @@ class FeedEarlySpotterCardTest {
      * coordinator) is what's supposed to keep it hidden while Early Spotter is active.
      */
     @Test
-    fun `Early Spotter card and FirstPostFeedbackHost never overlap`() {
+    fun `Early_Spotter_card_and_FirstPostFeedbackHost_never_overlap`() {
         val sharedCoordinator = AppOverlayCoordinator()
         val earlySpotterHostViewModel = earlySpotterHostViewModel(
             state = EarlySpotterCardState.Visible(earlySpotterNumber = 7, bonusPoints = 300),

@@ -89,9 +89,18 @@ class FirstPostFeedbackController @Inject constructor(
 
     private var pendingShowJob: Job? = null
 
+    /**
+     * The most recent [PostCreatedEvent] this controller observed — read by
+     * [com.revio.social.core.ui.feedback.FirstPostFeedbackCardCoordinator] when building the
+     * feedback payload, so `uploadDurationMs`/`retryCount`/`lastErrorCode` reach the server
+     * instead of being dropped (pas 2.5c).
+     */
+    var lastPostCreatedEvent: PostCreatedEvent? = null
+        private set
+
     init {
         scope.launch {
-            postCreationSignal.events.collect { handlePostCreated() }
+            postCreationSignal.events.collect { event -> handlePostCreated(event) }
         }
         scope.launch {
             // Skip the first emission — that's the state at process start, not an account switch.
@@ -103,10 +112,12 @@ class FirstPostFeedbackController @Inject constructor(
         pendingShowJob?.cancel()
         pendingShowJob = null
         sessionShownForUserId = null
+        lastPostCreatedEvent = null
         setState(FirstPostPromptState.Hidden)
     }
 
-    private suspend fun handlePostCreated() {
+    private suspend fun handlePostCreated(event: PostCreatedEvent) {
+        lastPostCreatedEvent = event
         val userId = currentUserId() ?: return
         if (sessionShownForUserId == userId) return
 

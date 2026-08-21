@@ -2,6 +2,9 @@ package com.revio.social.features.challenge
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.revio.social.core.analytics.AnalyticsClient
+import com.revio.social.core.analytics.AnalyticsEvent
+import com.revio.social.core.analytics.AnalyticsParamValue
 import com.revio.social.core.feedback.PostCreationSignal
 import com.revio.social.core.network.ApiResult
 import com.revio.social.data.model.Challenge
@@ -38,6 +41,14 @@ enum class ChallengeRefreshTrigger {
 private val MIN_REFRESH_INTERVAL: Duration = Duration.ofSeconds(5)
 
 /**
+ * Ev. — pas 5.10: `/challenges/current` outcome. Measurement only, no UI surface — the card's own
+ * KDoc is explicit that it never shows its own error state, so a failure here stays invisible to
+ * the user (Categoria 4-ish: silent by design), but an aggregate failure rate is still worth
+ * knowing about.
+ */
+private const val EVENT_CHALLENGE_LOAD_RESULT = "challenge_load_result"
+
+/**
  * Owns the weekend-challenge card's data, independent of [com.revio.social.features.feed.FeedViewModel] —
  * an error or slow response on `/challenges/current` must never affect the feed itself. See the
  * plan's §4: no Room, server is the authority, the card is allowed to be absent or stale but never
@@ -49,6 +60,7 @@ class ChallengeViewModel @Inject constructor(
     private val challengeRepository: ChallengeRepository,
     private val clock: Clock,
     private val postCreationSignal: PostCreationSignal,
+    private val analyticsClient: AnalyticsClient? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<ChallengeUiState>(ChallengeUiState.Hidden)
@@ -139,7 +151,19 @@ class ChallengeViewModel @Inject constructor(
 
         challengeLoadJob?.cancel()
         challengeLoadJob = viewModelScope.launch {
-            when (val result = challengeRepository.getCurrentChallenge()) {
+            val result = challengeRepository.getCurrentChallenge()
+            analyticsClient?.log(
+                AnalyticsEvent(
+                    name = EVENT_CHALLENGE_LOAD_RESULT,
+                    params = buildMap {
+                        put("outcome", AnalyticsParamValue.StringValue(if (result is ApiResult.Success) "success" else "failure"))
+                        if (result is ApiResult.Error) {
+                            put("failure_code", AnalyticsParamValue.StringValue(result.code ?: "unknown"))
+                        }
+                    },
+                )
+            )
+            when (result) {
                 is ApiResult.Success -> {
                     lastSuccessfulLoadAt = clock.instant()
                     _uiState.value = toUiState(result.data.challenge, result.data.progress)

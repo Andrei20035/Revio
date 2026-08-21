@@ -1,6 +1,9 @@
 package com.revio.social.core.navigation
 
 import com.revio.social.MainDispatcherRule
+import com.revio.social.core.analytics.AnalyticsClient
+import com.revio.social.core.analytics.AnalyticsEvent
+import com.revio.social.core.analytics.AnalyticsParamValue
 import com.revio.social.core.overlay.AppOverlayCoordinator
 import com.revio.social.core.tour.TourController
 import com.revio.social.data.local.auth.AuthTokens
@@ -129,5 +132,104 @@ class StartDestinationViewModelTest {
 
         assertEquals(Screen.Auth.route, vm.startDestination.value)
         coVerify(exactly = 0) { prefs.setTourStatus(any(), any()) }
+    }
+
+    // ── pas 2.1 — ev. 1 (app_start) + ev. 2 (session_restore_result), cele 4 ramuri ──────────
+
+    @Test
+    fun `onboarding nefacut - app_start cu destination onboarding, fara session_restore_result`() = runTest {
+        val analyticsClient = mockk<AnalyticsClient>(relaxed = true)
+
+        StartDestinationViewModel(
+            prefsMock(onboardingDone = false, token = "any", userId = UUID.randomUUID()),
+            analyticsClient = analyticsClient,
+        )
+
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "app_start",
+                    params = mapOf("destination" to AnalyticsParamValue.StringValue("onboarding")),
+                )
+            )
+        }
+        verify(exactly = 0) { analyticsClient.log(match { it.name == "session_restore_result" }) }
+    }
+
+    @Test
+    fun `fara token - session_restore_result failure no_token si app_start cu destination auth`() = runTest {
+        val analyticsClient = mockk<AnalyticsClient>(relaxed = true)
+
+        StartDestinationViewModel(
+            prefsMock(onboardingDone = true, token = null, userId = null),
+            analyticsClient = analyticsClient,
+        )
+
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "session_restore_result",
+                    params = mapOf(
+                        "outcome" to AnalyticsParamValue.StringValue("failure"),
+                        "failure_code" to AnalyticsParamValue.StringValue("no_token"),
+                    ),
+                )
+            )
+        }
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "app_start",
+                    params = mapOf("destination" to AnalyticsParamValue.StringValue("auth")),
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `token dar userId null - session_restore_result failure missing_user_id`() = runTest {
+        val analyticsClient = mockk<AnalyticsClient>(relaxed = true)
+        val prefs = prefsMock(onboardingDone = true, token = "jwt", userId = null)
+
+        StartDestinationViewModel(prefs, analyticsClient = analyticsClient)
+
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "session_restore_result",
+                    params = mapOf(
+                        "outcome" to AnalyticsParamValue.StringValue("failure"),
+                        "failure_code" to AnalyticsParamValue.StringValue("missing_user_id"),
+                    ),
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `token + userId salvate - session_restore_result success si app_start cu destination feed`() = runTest {
+        val analyticsClient = mockk<AnalyticsClient>(relaxed = true)
+
+        StartDestinationViewModel(
+            prefsMock(onboardingDone = true, token = "jwt", userId = UUID.randomUUID()),
+            analyticsClient = analyticsClient,
+        )
+
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "session_restore_result",
+                    params = mapOf("outcome" to AnalyticsParamValue.StringValue("success")),
+                )
+            )
+        }
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "app_start",
+                    params = mapOf("destination" to AnalyticsParamValue.StringValue("feed")),
+                )
+            )
+        }
     }
 }

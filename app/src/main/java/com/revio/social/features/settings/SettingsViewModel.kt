@@ -1,11 +1,19 @@
 package com.revio.social.features.settings
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.analytics.FirebaseAnalytics
+import com.google.firebase.crashlytics.FirebaseCrashlytics
+import com.revio.social.core.analytics.AnalyticsClient
+import com.revio.social.core.analytics.AnalyticsEvent
+import com.revio.social.core.analytics.AnalyticsParamValue
 import com.revio.social.core.network.ApiResult
+import com.revio.social.data.local.preferences.UserPreferences
 import com.revio.social.data.repository.UserRepository
 import com.revio.social.data.repository.AuthRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -14,10 +22,16 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/** Ev. — pas 5.8: logout is best-effort server-side (local session always clears — Categoria 3), aggregate rate only. */
+private const val EVENT_AUTH_LOGOUT_RESULT = "auth_logout_result"
+
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val userRepository: UserRepository,
     private val authRepository: AuthRepository,
+    private val userPreferences: UserPreferences,
+    @ApplicationContext private val appContext: Context,
+    private val analyticsClient: AnalyticsClient? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -28,6 +42,11 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             userRepository.currentUser.filterNotNull().collect { user ->
                 _uiState.update { it.copy(user = user) }
+            }
+        }
+        viewModelScope.launch {
+            userPreferences.analyticsConsentGranted.collect { granted ->
+                _uiState.update { it.copy(analyticsConsentGranted = granted) }
             }
         }
     }
@@ -42,11 +61,39 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Persists the user's choice and applies it immediately for the rest of this session.
+     * Note: `RevioApp.onCreate()` still hardcodes collection off at cold start (pas 1.5b) — it
+     * hasn't been updated yet to read this persisted value, so a granted choice must be
+     * re-applied here every session until that's wired up in a later step.
+     */
+    fun setAnalyticsConsentGranted(granted: Boolean) {
+        viewModelScope.launch {
+            userPreferences.setAnalyticsConsentGranted(granted)
+        }
+        FirebaseCrashlytics.getInstance().setCrashlyticsCollectionEnabled(granted)
+        FirebaseAnalytics.getInstance(appContext).setAnalyticsCollectionEnabled(granted)
+    }
+
     fun logout() {
         if (_uiState.value.isLoggingOut) return
         viewModelScope.launch {
             _uiState.update { it.copy(isLoggingOut = true) }
-            authRepository.logout()
+            val result = authRepository.logout()
+            analyticsClient?.log(
+                AnalyticsEvent(
+                    name = EVENT_AUTH_LOGOUT_RESULT,
+                    params = buildMap {
+                        put("outcome", AnalyticsParamValue.StringValue(if (result is ApiResult.Success) "success" else "failure"))
+                        if (result is ApiResult.Error) {
+                            put("failure_code", AnalyticsParamValue.StringValue(result.code ?: "unknown"))
+                        }
+                    },
+                )
+            )
+            // Local session clears either way (AuthRepositoryImpl.logout) — the server-side
+            // revoke failing is best-effort (Categoria 3), never blocks the user from logging
+            // out on this device.
             _uiState.update { it.copy(isLoggingOut = false, logoutCompleted = true) }
         }
     }

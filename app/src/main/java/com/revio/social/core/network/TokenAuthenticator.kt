@@ -1,5 +1,8 @@
 package com.revio.social.core.network
 
+import com.revio.social.core.analytics.AnalyticsClient
+import com.revio.social.core.analytics.AnalyticsEvent
+import com.revio.social.core.analytics.AnalyticsParamValue
 import com.revio.social.core.auth.SessionManager
 import com.revio.social.data.local.auth.AuthTokens
 import com.revio.social.data.local.auth.DeviceIdentity
@@ -18,6 +21,9 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import javax.inject.Named
 
+/** ev. 3 — fired for every /auth/refresh attempt this authenticator makes. */
+private const val EVENT_TOKEN_REFRESH_RESULT = "token_refresh_result"
+
 @Singleton
 class TokenAuthenticator @Inject constructor(
     private val tokenStore: TokenStore,
@@ -25,6 +31,7 @@ class TokenAuthenticator @Inject constructor(
     private val deviceIdentity: DeviceIdentity,
     private val sessionManager: SessionManager,
     private val json: Json,
+    private val analyticsClient: AnalyticsClient? = null,
 ) : Authenticator {
     private val lock = Any()
 
@@ -35,7 +42,7 @@ class TokenAuthenticator @Inject constructor(
             if (errorCode == AuthErrorCode.SESSION_REVOKED ||
                 errorCode == AuthErrorCode.SIGNED_IN_ON_ANOTHER_DEVICE ||
                 errorCode == AuthErrorCode.ACCOUNT_SUSPENDED
-            ) runBlocking { sessionManager.expire(messageFor(errorCode)) }
+            ) runBlocking { sessionManager.expire(message = messageFor(errorCode), failureCode = errorCode.name) }
             return null
         }
 
@@ -53,17 +60,30 @@ class TokenAuthenticator @Inject constructor(
             }
             if (!refreshResponse.isSuccessful) {
                 val refreshCode = refreshResponse.errorBody()?.string()?.let(::parseErrorCode)
-                if (refreshCode in terminalRefreshErrors) {
-                    runBlocking { sessionManager.expire(messageFor(refreshCode)) }
+                logTokenRefreshResult(success = false, failureCode = refreshCode?.name ?: "unrecognized")
+                if (refreshCode != null && refreshCode in terminalRefreshErrors) {
+                    runBlocking { sessionManager.expire(message = messageFor(refreshCode), failureCode = refreshCode.name) }
                 }
                 return null
             }
-            val body = refreshResponse.body() ?: return null
+            val body = refreshResponse.body() ?: run {
+                logTokenRefreshResult(success = false, failureCode = "empty_response")
+                return null
+            }
             tokenStore.save(AuthTokens(body.accessToken, body.refreshToken))
+            logTokenRefreshResult(success = true)
             return response.request.newBuilder()
                 .header("Authorization", "Bearer ${body.accessToken}")
                 .build()
         }
+    }
+
+    private fun logTokenRefreshResult(success: Boolean, failureCode: String? = null) {
+        val params = buildMap<String, AnalyticsParamValue> {
+            put("outcome", AnalyticsParamValue.StringValue(if (success) "success" else "failure"))
+            failureCode?.let { put("failure_code", AnalyticsParamValue.StringValue(it)) }
+        }
+        analyticsClient?.log(AnalyticsEvent(name = EVENT_TOKEN_REFRESH_RESULT, params = params))
     }
 
     private fun parseErrorCode(response: Response): AuthErrorCode? =

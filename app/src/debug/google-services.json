@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "807894033900",
+    "project_id": "revio-debug-47037",
+    "storage_bucket": "revio-debug-47037.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:807894033900:android:c87f4013b8f2f98015ccc9",
+        "android_client_info": {
+          "package_name": "com.revio.social.debug"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC8vvk9EWwKMWXnD7qeTF6YCSHbGxSdaOQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,11 +1,21 @@
 package com.revio.social.core.network
 
+import com.google.firebase.crashlytics.FirebaseCrashlytics
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.mockkStatic
+import io.mockk.unmockkStatic
+import io.mockk.verify
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody.Companion.toResponseBody
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import retrofit2.Response
 import java.io.IOException
@@ -21,6 +31,19 @@ class SafeApiCallTest {
     private val jsonMedia = "application/json".toMediaType()
     private val htmlMedia = "text/html".toMediaType()
     private val textMedia = "text/plain".toMediaType()
+
+    private val crashlytics = mockk<FirebaseCrashlytics>(relaxed = true)
+
+    @Before
+    fun setUp() {
+        mockkStatic(FirebaseCrashlytics::class)
+        every { FirebaseCrashlytics.getInstance() } returns crashlytics
+    }
+
+    @After
+    fun tearDown() {
+        unmockkStatic(FirebaseCrashlytics::class)
+    }
 
     @Test
     fun `success cu body returneaza ApiResult Success`() = runTest {
@@ -158,5 +181,118 @@ class SafeApiCallTest {
 
         assertTrue(result is ApiResult.Error)
         assertTrue((result as ApiResult.Error).message.startsWith("Unexpected error"))
+    }
+
+    @Test(expected = CancellationException::class)
+    fun `CancellationException propaga in loc sa devina ApiResult Error`() = runTest {
+        safeApiCall<String> { throw CancellationException("navigare/scope inchis") }
+    }
+
+    @Test(expected = CancellationException::class)
+    fun `CancellationException propaga si in safeApiCallNoContent`() = runTest {
+        safeApiCallNoContent { throw CancellationException("navigare/scope inchis") }
+    }
+
+    @Test
+    fun `fara policy explicit, ApiResult Error e taguit REPORT`() = runTest {
+        val result = safeApiCall<String> { throw RuntimeException("boom") }
+
+        assertEquals(ErrorPolicy.REPORT, (result as ApiResult.Error).policy)
+    }
+
+    @Test
+    fun `policy SILENT trece prin safeApiCall pana pe ApiResult Error`() = runTest {
+        val result = safeApiCall<String>(policy = ErrorPolicy.SILENT) { throw RuntimeException("boom") }
+
+        assertEquals(ErrorPolicy.SILENT, (result as ApiResult.Error).policy)
+    }
+
+    @Test
+    fun `policy SILENT trece prin safeApiCallNoContent pana pe ApiResult Error`() = runTest {
+        val result = safeApiCallNoContent(policy = ErrorPolicy.SILENT) { throw RuntimeException("boom") }
+
+        assertEquals(ErrorPolicy.SILENT, (result as ApiResult.Error).policy)
+    }
+
+    @Test
+    fun `IOException offline nu genereaza non-fatal`() = runTest {
+        safeApiCall<String> { throw IOException("timeout") }
+
+        verify(exactly = 0) { crashlytics.recordException(any()) }
+    }
+
+    @Test
+    fun `eroare HTTP 5xx genereaza non-fatal cu stack`() = runTest {
+        val body = """{"message":"db down"}""".toResponseBody(jsonMedia)
+
+        safeApiCall<String> { Response.error(503, body) }
+
+        verify(exactly = 1) { crashlytics.recordException(any()) }
+    }
+
+    @Test
+    fun `eroare HTTP 4xx cunoscuta nu genereaza non-fatal`() = runTest {
+        val body = """{"error":{"code":"EMAIL_TAKEN","message":"Email already in use"}}""".toResponseBody(jsonMedia)
+
+        safeApiCall<String> { Response.error(409, body) }
+
+        verify(exactly = 0) { crashlytics.recordException(any()) }
+    }
+
+    @Test
+    fun `CancellationException cancel nu genereaza non-fatal`() = runTest {
+        try {
+            safeApiCall<String> { throw CancellationException("navigare/scope inchis") }
+        } catch (_: CancellationException) {
+            // propagarea e deja acoperita in alt test; aici verificam doar absenta raportarii
+        }
+
+        verify(exactly = 0) { crashlytics.recordException(any()) }
+    }
+
+    @Test
+    fun `JsonDecodingException sintetic ajunge la Crashlytics cu stack`() = runTest {
+        val decodingException = try {
+            Json.decodeFromString<String>("{not valid json")
+            error("ar fi trebuit sa arunce")
+        } catch (e: Exception) {
+            e
+        }
+
+        safeApiCall<String> { throw decodingException }
+
+        verify(exactly = 1) { crashlytics.recordException(decodingException) }
+    }
+
+    @Test
+    fun `policy SILENT nu raporteaza nici pentru o eroare 5xx`() = runTest {
+        val body = "".toResponseBody(jsonMedia)
+
+        safeApiCall<String>(policy = ErrorPolicy.SILENT) { Response.error(500, body) }
+
+        verify(exactly = 0) { crashlytics.recordException(any()) }
+    }
+
+    @Test
+    fun `policy BUSINESS nu raporteaza nici pentru o eroare 5xx`() = runTest {
+        val body = "".toResponseBody(jsonMedia)
+
+        safeApiCall<String>(policy = ErrorPolicy.BUSINESS) { Response.error(500, body) }
+
+        verify(exactly = 0) { crashlytics.recordException(any()) }
+    }
+
+    @Test
+    fun `policy BUSINESS nu raporteaza pentru o exceptie neasteptata`() = runTest {
+        safeApiCall<String>(policy = ErrorPolicy.BUSINESS) { throw RuntimeException("boom") }
+
+        verify(exactly = 0) { crashlytics.recordException(any()) }
+    }
+
+    @Test
+    fun `policy BUSINESS trece prin safeApiCall pana pe ApiResult Error`() = runTest {
+        val result = safeApiCall<String>(policy = ErrorPolicy.BUSINESS) { throw RuntimeException("boom") }
+
+        assertEquals(ErrorPolicy.BUSINESS, (result as ApiResult.Error).policy)
     }
 }

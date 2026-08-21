@@ -1,10 +1,14 @@
 package com.revio.social.core.network
 
+import com.revio.social.core.analytics.AnalyticsClient
+import com.revio.social.core.analytics.AnalyticsEvent
+import com.revio.social.core.analytics.AnalyticsParamValue
 import com.revio.social.core.auth.SessionManager
 import com.revio.social.data.local.auth.AuthTokens
 import com.revio.social.data.local.auth.DeviceIdentity
 import com.revio.social.data.local.auth.TokenStore
 import com.revio.social.data.remote.api.AuthApi
+import com.revio.social.data.remote.dto.auth.AuthErrorCode
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -34,6 +38,7 @@ class TokenAuthenticatorTest {
     private lateinit var refreshApi: AuthApi
     private lateinit var deviceIdentity: DeviceIdentity
     private lateinit var sessionManager: SessionManager
+    private lateinit var analyticsClient: AnalyticsClient
     private lateinit var authenticator: TokenAuthenticator
 
     private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
@@ -45,7 +50,8 @@ class TokenAuthenticatorTest {
         refreshApi = mockk()
         deviceIdentity = mockk(relaxed = true)
         sessionManager = mockk(relaxed = true)
-        authenticator = TokenAuthenticator(tokenStore, refreshApi, deviceIdentity, sessionManager, json)
+        analyticsClient = mockk(relaxed = true)
+        authenticator = TokenAuthenticator(tokenStore, refreshApi, deviceIdentity, sessionManager, json, analyticsClient)
     }
 
     private fun errorBody(code: String, message: String = "err") =
@@ -73,7 +79,10 @@ class TokenAuthenticatorTest {
 
         assertNull(result)
         coVerify(exactly = 1) {
-            sessionManager.expire("Your account has been suspended. Contact threvioapp@gmail.com if you believe this is a mistake.")
+            sessionManager.expire(
+                "Your account has been suspended. Contact threvioapp@gmail.com if you believe this is a mistake.",
+                "ACCOUNT_SUSPENDED",
+            )
         }
     }
 
@@ -90,7 +99,10 @@ class TokenAuthenticatorTest {
 
         assertNull(result)
         coVerify(exactly = 1) {
-            sessionManager.expire("Your account has been suspended. Contact threvioapp@gmail.com if you believe this is a mistake.")
+            sessionManager.expire(
+                "Your account has been suspended. Contact threvioapp@gmail.com if you believe this is a mistake.",
+                "ACCOUNT_SUSPENDED",
+            )
         }
         verify(exactly = 0) { tokenStore.save(any()) }
     }
@@ -113,7 +125,7 @@ class TokenAuthenticatorTest {
 
         authenticator.authenticate(null, original)
 
-        coVerify(exactly = 0) { sessionManager.expire(any()) }
+        coVerify(exactly = 0) { sessionManager.expire(any(), any()) }
     }
 
     @Test
@@ -127,6 +139,139 @@ class TokenAuthenticatorTest {
         val result = authenticator.authenticate(null, original)
 
         assertNull(result)
-        coVerify(exactly = 0) { sessionManager.expire(any()) }
+        coVerify(exactly = 0) { sessionManager.expire(any(), any()) }
+    }
+
+    // ----------------------------------------------------------------------
+    // pas 2.4 — ev. 3 (token_refresh_result) + ev. 4 (session_expired), cele 7 coduri terminale
+    // ----------------------------------------------------------------------
+
+    @Test
+    fun `cele 7 coduri terminale expira sesiunea cu failure_code din enum`() {
+        val terminalCodes = listOf(
+            AuthErrorCode.REFRESH_TOKEN_INVALID,
+            AuthErrorCode.REFRESH_TOKEN_EXPIRED,
+            AuthErrorCode.REFRESH_TOKEN_REUSED,
+            AuthErrorCode.REFRESH_TOKEN_CONSUMED,
+            AuthErrorCode.SESSION_REVOKED,
+            AuthErrorCode.SIGNED_IN_ON_ANOTHER_DEVICE,
+            AuthErrorCode.ACCOUNT_SUSPENDED,
+        )
+
+        for (code in terminalCodes) {
+            every { tokenStore.read() } returns AuthTokens("expired-token", "refresh-token")
+            every { deviceIdentity.id } returns "device-1"
+            coEvery { refreshApi.refresh(any()) } returns RetrofitResponse.error(401, errorBody(code.name))
+
+            val original = responseWithCode("ACCESS_TOKEN_EXPIRED", httpCode = 401)
+            val result = authenticator.authenticate(null, original)
+
+            assertNull(result)
+            coVerify(exactly = 1) { sessionManager.expire(any(), code.name) }
+        }
+    }
+
+    @Test
+    fun `refresh reusit - token_refresh_result outcome success`() {
+        every { tokenStore.read() } returns AuthTokens("expired-token", "refresh-token")
+        every { deviceIdentity.id } returns "device-1"
+        coEvery { refreshApi.refresh(any()) } returns
+            RetrofitResponse.success(
+                com.revio.social.data.remote.dto.auth.AuthResponse(
+                    accessToken = "new-token",
+                    refreshToken = "new-refresh",
+                    scope = "FULL",
+                    onboardingStep = com.revio.social.data.remote.dto.auth.OnboardingStep.COMPLETED,
+                )
+            )
+
+        val original = responseWithCode("ACCESS_TOKEN_EXPIRED", httpCode = 401)
+        authenticator.authenticate(null, original)
+
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "token_refresh_result",
+                    params = mapOf("outcome" to AnalyticsParamValue.StringValue("success")),
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `refresh esuat cu cod terminal - token_refresh_result outcome failure cu failure_code din enum`() {
+        every { tokenStore.read() } returns AuthTokens("expired-token", "refresh-token")
+        every { deviceIdentity.id } returns "device-1"
+        coEvery { refreshApi.refresh(any()) } returns RetrofitResponse.error(401, errorBody("REFRESH_TOKEN_EXPIRED"))
+
+        val original = responseWithCode("ACCESS_TOKEN_EXPIRED", httpCode = 401)
+        authenticator.authenticate(null, original)
+
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "token_refresh_result",
+                    params = mapOf(
+                        "outcome" to AnalyticsParamValue.StringValue("failure"),
+                        "failure_code" to AnalyticsParamValue.StringValue("REFRESH_TOKEN_EXPIRED"),
+                    ),
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `refresh esuat cu cod necunoscut - token_refresh_result failure_code unrecognized`() {
+        every { tokenStore.read() } returns AuthTokens("expired-token", "refresh-token")
+        every { deviceIdentity.id } returns "device-1"
+        coEvery { refreshApi.refresh(any()) } returns
+            RetrofitResponse.error(500, "".toResponseBody(jsonMedia))
+
+        val original = responseWithCode("ACCESS_TOKEN_EXPIRED", httpCode = 401)
+        authenticator.authenticate(null, original)
+
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "token_refresh_result",
+                    params = mapOf(
+                        "outcome" to AnalyticsParamValue.StringValue("failure"),
+                        "failure_code" to AnalyticsParamValue.StringValue("unrecognized"),
+                    ),
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `raspuns de refresh gol - token_refresh_result failure_code empty_response`() {
+        every { tokenStore.read() } returns AuthTokens("expired-token", "refresh-token")
+        every { deviceIdentity.id } returns "device-1"
+        coEvery { refreshApi.refresh(any()) } returns RetrofitResponse.success(null)
+
+        val original = responseWithCode("ACCESS_TOKEN_EXPIRED", httpCode = 401)
+        authenticator.authenticate(null, original)
+
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "token_refresh_result",
+                    params = mapOf(
+                        "outcome" to AnalyticsParamValue.StringValue("failure"),
+                        "failure_code" to AnalyticsParamValue.StringValue("empty_response"),
+                    ),
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `cod terminal direct pe raspunsul original - session_expired dar fara token_refresh_result`() {
+        val response = responseWithCode("SESSION_REVOKED", httpCode = 401)
+
+        authenticator.authenticate(null, response)
+
+        coVerify(exactly = 1) { sessionManager.expire(any(), "SESSION_REVOKED") }
+        verify(exactly = 0) { analyticsClient.log(match { it.name == "token_refresh_result" }) }
     }
 }

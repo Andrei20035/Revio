@@ -4,6 +4,10 @@ import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.crashlytics.FirebaseCrashlytics
+import com.revio.social.core.analytics.AnalyticsClient
+import com.revio.social.core.analytics.AnalyticsEvent
+import com.revio.social.core.analytics.AnalyticsParamValue
 import com.revio.social.core.earlyspotter.EarlySpotterController
 import com.revio.social.core.image.CropTransform
 import com.revio.social.core.image.ImageCompressor
@@ -32,6 +36,41 @@ import java.time.LocalDate
 import java.util.UUID
 import javax.inject.Inject
 
+/** ev. 10 — fired whenever a profile-customization step becomes visible. Fixed set: `personal`, `car`. */
+private const val EVENT_ONB_STEP_VIEW = "onb_step_view"
+
+/**
+ * ev. 11 — fired at each of [completeProfileSetup]'s 7 stages, so a drop-off funnel shows
+ * exactly where users get stuck. `stage` is a fixed, closed set (this event's own `stage`
+ * parameter is the failure identifier — no separate `failure_code` on top of it):
+ * `car_info_validation`, `user_profile`, `profile_image_upload`, `user_car`, `tour_arm`,
+ * `completed` (success-only — the terminal marker), `unexpected_error` (failure-only — the
+ * catch-all for any of the above throwing instead of returning a result).
+ */
+private const val EVENT_ONB_STAGE_RESULT = "onb_stage_result"
+private const val STAGE_CAR_INFO_VALIDATION = "car_info_validation"
+private const val STAGE_USER_PROFILE = "user_profile"
+private const val STAGE_PROFILE_IMAGE_UPLOAD = "profile_image_upload"
+private const val STAGE_USER_CAR = "user_car"
+private const val STAGE_TOUR_ARM = "tour_arm"
+private const val STAGE_COMPLETED = "completed"
+private const val STAGE_UNEXPECTED_ERROR = "unexpected_error"
+
+/** ev. 12 — fired once, when [completeProfileSetup] reaches its terminal success. */
+private const val EVENT_ONB_COMPLETED = "onb_completed"
+
+/**
+ * ev. 13 — the account was already committed server-side (a userId was obtained — either
+ * freshly via `POST /users` or reused from a prior attempt), but a later stage in
+ * [completeProfileSetup] then failed, leaving the user with a created account and incomplete
+ * onboarding (risc H8/G12 din plan — "cont creat, onboarding incomplet, nereparabil"). Also
+ * records a non-fatal, once per attempt (each invocation takes exactly one exit path).
+ */
+private const val EVENT_ONB_ABANDONED_AFTER_COMMIT = "onb_abandoned_after_commit"
+
+/** Reported to Crashlytics alongside [EVENT_ONB_ABANDONED_AFTER_COMMIT] — see pas 2.3c. */
+private class OnboardingAbandonedAfterCommitException : Exception("onb_abandoned_after_commit")
+
 @HiltViewModel
 class ProfileCustomizationViewModel @Inject constructor(
     private val userRepository: UserRepository,
@@ -42,6 +81,7 @@ class ProfileCustomizationViewModel @Inject constructor(
     private val tokenStore: TokenStore,
     private val earlySpotterController: EarlySpotterController,
     savedStateHandle: SavedStateHandle,
+    private val analyticsClient: AnalyticsClient? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ProfileCustomizationUiState())
@@ -65,6 +105,48 @@ class ProfileCustomizationViewModel @Inject constructor(
                     username = suggestedUsername ?: it.username,
                 )
             }
+        }
+
+        logStepView(_uiState.value.currentStep)
+    }
+
+    private fun logStepView(step: ProfileStep) {
+        val stepValue = when (step) {
+            ProfileStep.Personal -> "personal"
+            ProfileStep.Car -> "car"
+        }
+        analyticsClient?.log(
+            AnalyticsEvent(
+                name = EVENT_ONB_STEP_VIEW,
+                params = mapOf("step" to AnalyticsParamValue.StringValue(stepValue)),
+            )
+        )
+    }
+
+    private fun logStageResult(stage: String, success: Boolean) {
+        analyticsClient?.log(
+            AnalyticsEvent(
+                name = EVENT_ONB_STAGE_RESULT,
+                params = mapOf(
+                    "stage" to AnalyticsParamValue.StringValue(stage),
+                    "outcome" to AnalyticsParamValue.StringValue(if (success) "success" else "failure"),
+                ),
+            )
+        )
+    }
+
+    private fun logOnboardingCompleted() {
+        analyticsClient?.log(AnalyticsEvent(name = EVENT_ONB_COMPLETED))
+    }
+
+    /** No-op when [committedUserId] is null — nothing was committed yet, so nothing to abandon. */
+    private fun logAbandonedAfterCommit(committedUserId: UUID?) {
+        if (committedUserId == null) return
+        analyticsClient?.log(AnalyticsEvent(name = EVENT_ONB_ABANDONED_AFTER_COMMIT))
+        try {
+            FirebaseCrashlytics.getInstance().recordException(OnboardingAbandonedAfterCommitException())
+        } catch (_: Exception) {
+            // Reporting must never break the real call path (e.g. Firebase not initialized in tests).
         }
     }
 
@@ -201,6 +283,7 @@ class ProfileCustomizationViewModel @Inject constructor(
                         errorMessage = null
                     )
                 }
+                logStepView(ProfileStep.Personal)
             }
         }
     }
@@ -209,13 +292,20 @@ class ProfileCustomizationViewModel @Inject constructor(
 
     fun completeProfileSetup() {
         viewModelScope.launch {
+            // Non-null once a userId is obtained (fresh POST /users or reused from a prior
+            // attempt) — from that point on, a later-stage failure means an abandoned account
+            // rather than a plain create attempt that never landed. Declared outside the try
+            // block so the catch block below can read it too.
+            var committedUserId: UUID? = null
             try {
                 _uiState.update { it.copy(isLoading = true) }
 
                 if (!isCarInfoValid()) {
+                    logStageResult(STAGE_CAR_INFO_VALIDATION, success = false)
                     _uiState.update { it.copy(isLoading = false) }
                     return@launch
                 }
+                logStageResult(STAGE_CAR_INFO_VALIDATION, success = true)
 
                 // A prior attempt may have already created the profile (e.g. this retry follows
                 // an upload/car-creation failure right after a successful POST /users) — reuse
@@ -223,19 +313,28 @@ class ProfileCustomizationViewModel @Inject constructor(
                 // hit a 409 UserProfileAlreadyExistsException and leave the user stuck with no
                 // way to finish.
                 val userId = userPreferences.userId.first() ?: createUserProfile() ?: run {
+                    logStageResult(STAGE_USER_PROFILE, success = false)
                     _uiState.update { it.copy(isLoading = false) }
                     return@launch
                 }
+                logStageResult(STAGE_USER_PROFILE, success = true)
+                committedUserId = userId
 
                 if (!uploadProfileImageIfNeeded()) {
+                    logStageResult(STAGE_PROFILE_IMAGE_UPLOAD, success = false)
+                    logAbandonedAfterCommit(committedUserId)
                     _uiState.update { it.copy(isLoading = false) }
                     return@launch
                 }
+                logStageResult(STAGE_PROFILE_IMAGE_UPLOAD, success = true)
 
                 if (!createUserCarIfNeeded(userId)) {
+                    logStageResult(STAGE_USER_CAR, success = false)
+                    logAbandonedAfterCommit(committedUserId)
                     _uiState.update { it.copy(isLoading = false) }
                     return@launch
                 }
+                logStageResult(STAGE_USER_CAR, success = true)
 
                 // Arm the guided tour here: this is the genuine first entry into the main
                 // app for a brand-new signup, right before the isUserCreated flag triggers
@@ -243,8 +342,13 @@ class ProfileCustomizationViewModel @Inject constructor(
                 // once the tour finishes — see EarlySpotterHostViewModel — so the two overlays
                 // never race for the screen at once.
                 userPreferences.setTourStatus(userId, TourStatus.Armed)
+                logStageResult(STAGE_TOUR_ARM, success = true)
                 _uiState.update { it.copy(isLoading = false, isUserCreated = true) }
+                logStageResult(STAGE_COMPLETED, success = true)
+                logOnboardingCompleted()
             } catch (e: Exception) {
+                logStageResult(STAGE_UNEXPECTED_ERROR, success = false)
+                logAbandonedAfterCommit(committedUserId)
                 setError(e.message.toString())
                 _uiState.update { it.copy(isLoading = false) }
             }
@@ -279,7 +383,6 @@ class ProfileCustomizationViewModel @Inject constructor(
             username = _uiState.value.username.trim(),
             country = _uiState.value.country.trim(),
         )
-        Log.d("BIRTHDATE" ,_uiState.value.birthDate.toString())
         return when (val result = userRepository.createUser(createUserRequest)) {
             is ApiResult.Success -> {
                 tokenStore.save(AuthTokens(result.data.accessToken, result.data.refreshToken))

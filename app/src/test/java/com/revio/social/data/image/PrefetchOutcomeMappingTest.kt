@@ -80,8 +80,15 @@ class PrefetchOutcomeMappingTest {
     }
 
     @Test
-    fun `motivul permanent contine codul HTTP`() {
-        val outcome = classifyPrefetchFailure(httpException(404)) as PrefetchOutcome.PermanentFailure
-        assertEquals("HTTP 404", outcome.reason)
+    fun `motivul e un cod fix, niciodata text liber - pas 2_6c`() {
+        assertEquals("http_404", (classifyPrefetchFailure(httpException(404)) as PrefetchOutcome.PermanentFailure).reason)
+        assertEquals("http_403", (classifyPrefetchFailure(httpException(403)) as PrefetchOutcome.PermanentFailure).reason)
+        assertEquals("http_other", (classifyPrefetchFailure(httpException(400)) as PrefetchOutcome.PermanentFailure).reason)
+        assertEquals("http_429", (classifyPrefetchFailure(httpException(429)) as PrefetchOutcome.TransientFailure).reason)
+        assertEquals("http_5xx", (classifyPrefetchFailure(httpException(500)) as PrefetchOutcome.TransientFailure).reason)
+        assertEquals("dns_failure", (classifyPrefetchFailure(UnknownHostException("no dns")) as PrefetchOutcome.TransientFailure).reason)
+        assertEquals("timeout", (classifyPrefetchFailure(SocketTimeoutException("timeout")) as PrefetchOutcome.TransientFailure).reason)
+        assertEquals("io_error", (classifyPrefetchFailure(IOException("connection reset")) as PrefetchOutcome.TransientFailure).reason)
+        assertEquals("decode_failure", (classifyPrefetchFailure(IllegalStateException("corrupt image data")) as PrefetchOutcome.PermanentFailure).reason)
     }
 }

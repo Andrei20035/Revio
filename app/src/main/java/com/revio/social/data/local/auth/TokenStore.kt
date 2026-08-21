@@ -4,6 +4,7 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.security.KeyStore
 import javax.crypto.Cipher
@@ -12,6 +13,9 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/** Reported to Crashlytics when [TokenStore.read] can't decrypt a saved session — see pas 2.1. */
+private class TokenDecryptFailedException(cause: Throwable) : Exception("decrypt_failed", cause)
 
 @Singleton
 class TokenStore @Inject constructor(
@@ -39,9 +43,18 @@ class TokenStore @Inject constructor(
                 accessToken = plaintext.substring(0, separator),
                 refreshToken = plaintext.substring(separator + 1),
             )
-        }.getOrElse {
+        }.getOrElse { e ->
+            reportDecryptFailure(e)
             clear()
             null
+        }
+    }
+
+    /** Never breaks session restore even if Crashlytics itself throws (e.g. not initialized). */
+    private fun reportDecryptFailure(cause: Throwable) {
+        try {
+            FirebaseCrashlytics.getInstance().recordException(TokenDecryptFailedException(cause))
+        } catch (_: Exception) {
         }
     }
 
