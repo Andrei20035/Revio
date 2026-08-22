@@ -54,19 +54,22 @@ class RevioApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        // Opt-in consent (docs/consent-decision.md). A fresh install collects nothing: the
-        // manifest's firebase_*_collection_enabled=false meta-data applies before this runs.
+        // Opt-out consent (docs/consent-decision.md). A fresh install collects immediately: the
+        // manifest's firebase_*_collection_enabled=true meta-data applies before this runs.
         //
         // This used to hardcode false, which re-revoked consent on every cold start — a user who
         // opted in was silently collected-from only for the session in which they touched the
-        // toggle. Firebase does persist the enabled flag across launches on its own, so for a
-        // consenting user this read is usually a no-op reassertion; it is done anyway because
-        // DataStore holds the value the Settings screen displays, and reasserting it here keeps
-        // the displayed choice and the SDKs' actual state from drifting apart.
+        // toggle. Firebase does persist the enabled flag across launches on its own — and that
+        // persisted flag takes priority over the manifest default after the first launch — so
+        // for a user who hasn't changed the default this read is usually a no-op reassertion; it
+        // is done anyway because DataStore holds the value the Settings screen displays, and
+        // reasserting it here keeps the displayed choice and the SDKs' actual state from
+        // drifting apart. It's also what turns a user who revoked consent under the old opt-in
+        // regime back on: DataStore has no key for them, so this read resolves to true.
         //
         // Read asynchronously (DataStore is disk-backed — a blocking read here would risk an ANR
         // on startup). The window before it lands is covered by whichever value Firebase already
-        // persisted, so nothing is collected against a revoked consent in the meantime.
+        // persisted, so a user who previously revoked consent stays opted out throughout it.
         appScope.launch {
             applyAnalyticsConsent(this@RevioApp, userPreferences.analyticsConsentGranted.first())
         }

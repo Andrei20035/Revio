@@ -11,9 +11,12 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Opt-in consent (docs/consent-decision.md): [UserPreferences.analyticsConsentGranted] is backed
+ * Opt-out consent (docs/consent-decision.md): [UserPreferences.analyticsConsentGranted] is backed
  * by DataStore, which needs a real Android [android.content.Context] — hence instrumented, not
- * a JVM unit test.
+ * a JVM unit test. The "no key persisted yet" default (`?: true`) is exercised at the unit level
+ * instead (RevioAppTest, SettingsViewModelTest, with a mocked flow) since this suite shares a
+ * single app process/DataStore file with other instrumented tests and has no reliable way to
+ * observe the key in an untouched state.
  */
 @RunWith(AndroidJUnit4::class)
 class UserPreferencesAnalyticsConsentTest {

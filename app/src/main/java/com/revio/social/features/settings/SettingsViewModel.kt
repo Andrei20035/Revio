@@ -3,8 +3,7 @@ package com.revio.social.features.settings
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.google.firebase.analytics.FirebaseAnalytics
-import com.google.firebase.crashlytics.FirebaseCrashlytics
+import com.revio.social.applyAnalyticsConsent
 import com.revio.social.core.analytics.AnalyticsClient
 import com.revio.social.core.analytics.AnalyticsEvent
 import com.revio.social.core.analytics.AnalyticsParamValue
@@ -45,8 +44,10 @@ class SettingsViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
-            userPreferences.analyticsConsentGranted.collect { granted ->
-                _uiState.update { it.copy(analyticsConsentGranted = granted) }
+            userPreferences.analyticsConsentGrantedOrNull.collect { granted ->
+                _uiState.update {
+                    it.copy(analyticsConsentGranted = granted ?: true, analyticsConsentLoaded = true)
+                }
             }
         }
     }
@@ -66,8 +67,7 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             userPreferences.setAnalyticsConsentGranted(granted)
         }
-        FirebaseCrashlytics.getInstance().setCrashlyticsCollectionEnabled(granted)
-        FirebaseAnalytics.getInstance(appContext).setAnalyticsCollectionEnabled(granted)
+        applyAnalyticsConsent(appContext, granted)
     }
 
     fun logout() {

@@ -36,11 +36,11 @@ Uploaded photos are re-encoded before upload, so EXIF metadata such as GPS tags 
 
 If you send feedback or request support, we collect your messages, category, ratings, and related context. If you choose to include diagnostics, we may also receive app version, Android version, device model, connection type, and recent technical error information. An optional account-deletion reason may be retained without your user ID for product analysis.
 
-### Optional analytics and crash diagnostics
+### Analytics and crash diagnostics
 
-Firebase Analytics and Firebase Crashlytics collection are disabled by default. If you enable **Help improve Revio** in Settings, Google may process app interactions, feature-performance events, app and device information, identifiers, crash reports, non-fatal errors, and technical breadcrumbs.
+Firebase Analytics and Firebase Crashlytics collection are enabled by default to help us understand app performance and improve features. You can turn this off at any time via **Help improve Revio** in Settings. While enabled, Google may process app interactions, feature-performance events, app and device information, identifiers, crash reports, non-fatal errors, and technical breadcrumbs.
 
-We design Revio's own analytics event parameters to avoid names, email, phone number, birth date, captions, comments, exact location, image URLs, passwords, tokens, and internal user or post IDs. You can turn collection off at any time to stop future collection. We do not use this data for advertising.
+We design Revio's own analytics event parameters to avoid names, email, phone number, birth date, captions, comments, exact location, image URLs, passwords, tokens, and internal user or post IDs. Turning collection off stops future analytics collection immediately; crash diagnostics fully stop the next time you open the app, and any crash report already captured before you turned it off may still be sent. We do not use this data for advertising.
 
 ### On-device data
 
@@ -60,7 +60,7 @@ We use data to:
 - maintain, troubleshoot, analyse, and improve the Services; and
 - comply with legal obligations and lawful requests.
 
-We process optional location and Firebase analytics/crash data based on your choices. Other processing is necessary to provide the Services, keep them secure, or comply with law.
+We process optional location based on your choice, and Firebase analytics/crash data unless you turn it off in Settings. Other processing is necessary to provide the Services, keep them secure, or comply with law.
 
 ## 4. Visibility and sharing
 
@@ -93,7 +93,7 @@ Limited de-identified deletion feedback, aggregated statistics, and security/aud
 
 ## 7. Your choices and rights
 
-You can edit profile information, deny or revoke Android location permission, turn optional Firebase collection on or off in Settings, omit optional feedback diagnostics, and delete your account.
+You can edit profile information, deny or revoke Android location permission, turn Firebase analytics/crash collection off (or back on) at any time in Settings, omit optional feedback diagnostics, and delete your account.
 
 Depending on where you live, you may request access, correction, deletion, restriction, objection, or portability, and withdraw consent where processing relies on consent. Email threvioapp@gmail.com from the address associated with your account. We may verify your identity. You may also complain to your local data-protection authority.
 

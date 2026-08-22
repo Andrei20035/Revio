@@ -22,14 +22,14 @@ Do not use the policy drafts in this file for Google Play. The reviewed sources 
 - [ ] Add a Child Safety Standards page and a child-safety contact method before submitting in Google Play's Social category.
 - [ ] Implement an age gate (date of birth capture + 16+ enforcement) before submitting. **Status: not implemented.** No `dateOfBirth`/`age` field exists anywhere in either repo, even though §2.A of the Privacy Policy below states date of birth is collected and used to apply the age requirement.
 - [ ] Strip EXIF metadata (including GPS tags) from uploaded photos before storage, as §2.C of the Privacy Policy claims. **Status: not implemented — and currently does the opposite of "stripped."** `core/image/ImageCompressor.kt` reads EXIF orientation and bakes the rotation into the output bitmap, but never clears/strips EXIF tags before upload.
-- [ ] Gate Firebase Analytics behind user consent before submitting. **Status: SDK is integrated, but not consent-gated.** `FirebaseAnalyticsLogger`/`core/feedback/FeedbackAnalytics.kt` exist and events are sent unconditionally today. Consent model decided (`docs/consent-decision.md`): opt-in, global. §2.D of the Privacy Policy and the "Help improve Revio" consent copy in §5 describe the target state, not the current one — they must ship together with the enforcement.
+- [x] Gate Firebase Analytics behind a user-controlled toggle before submitting. **Status: implemented.** `RevioApp.applyAnalyticsConsent()` and the "Help improve Revio" switch in `SettingsScreen.kt`/`SettingsViewModel.kt` gate both `FirebaseAnalytics`/`FirebaseCrashlytics` collection together. Consent model decided (`docs/consent-decision.md`): **opt-out, global** — collection defaults to on for a fresh install and the user can turn it off at any time. §2.D of the Privacy Policy and PrivacyPolicyScreen.kt now reflect this.
 
 ### Accuracy blockers for the policy
 
 - [ ] Add the legal name and country/address of the data controller: `[REQUIRED BEFORE LAUNCH: legal entity or individual name and postal address]`.
 - [ ] Add the production API/database host and its processing region after it is chosen.
 - [ ] Verify the final authentication implementation. **Confirmed: the current Android code uses Google Sign-In (`GoogleSignIn`/`GoogleSignInOptions` in `AuthScreen.kt`) with server-side token verification — there is no Firebase Authentication anywhere in the app.** The Firebase Auth wording in §2.A and §5 of the Privacy Policy below is therefore inaccurate today and must be replaced with Google Sign-In wording (or the Firebase wording restored only once Firebase Authentication actually ships).
-- [ ] Enforce that Firebase Analytics begins only after consent. **Confirmed: the SDK is integrated** (`core/feedback/FeedbackAnalytics.kt`), but collection is unconditional today — no consent gate exists in code. Consent model decided (`docs/consent-decision.md`): opt-in, global, regardless of market. §2.D of the Privacy Policy and the "Help improve Revio" consent screen in §5 must ship together with the enforcement, not before.
+- [x] Enforce that Firebase Analytics respects the user's toggle. **Confirmed: implemented.** The SDK is integrated (`core/feedback/FeedbackAnalytics.kt`) and both `FirebaseAnalytics`/`FirebaseCrashlytics` collection are gated by `RevioApp.applyAnalyticsConsent()`, driven by the persisted "Help improve Revio" choice. Consent model decided (`docs/consent-decision.md`): **opt-out, global, regardless of market** — collection defaults to on, and the user can revoke it in Settings.
 - [ ] Do not collect a phone number until a real MVP feature requires it. A future use is not a valid reason to collect data now. **Confirmed: phone number is already collected end-to-end** (server migrations/DTOs, Android `PersonalInfoScreen`), but the Privacy Policy §2.A below does not mention it. Either remove phone collection before launch, or add "phone number" to the list of account/profile data collected in §2.A and confirm the MVP need for it.
 - [ ] Confirm the minimum age gate: **16+ is the recommended MVP policy**. **Confirmed: not implemented.** No date-of-birth capture or age check exists in either repo, even though §2.A of the Privacy Policy states date of birth is collected to apply the age requirement, and §1 of the Terms states users must be 16+.
 
@@ -82,7 +82,7 @@ Uploaded photographs are reprocessed on-device before upload: the image is re-en
 
 #### D. Analytics and technical data
 
-We use Firebase Analytics to understand how the Services are used, measure feature performance, and improve reliability and user experience. This may involve usage data, app interactions, device and app information, identifiers, and diagnostic information collected by Firebase/Google according to its applicable terms and privacy practices. `[REQUIRED BEFORE LAUNCH: the SDK is integrated, but collection is not yet gated on the consent screen described in §5. Ship the consent gate before this section can be published as accurate.]`
+We use Firebase Analytics to understand how the Services are used, measure feature performance, and improve reliability and user experience. This may involve usage data, app interactions, device and app information, identifiers, and diagnostic information collected by Firebase/Google according to its applicable terms and privacy practices. `[Resolved: the SDK is integrated and collection is gated by the "Help improve Revio" toggle described in §5 — see PRIVACY_POLICY.md §2 for the current, opt-out wording actually shipped.]`
 
 We do not use analytics data for targeted advertising and do not sell personal data.
 
@@ -275,9 +275,9 @@ This permanently deletes your Revio account, profile, posts, comments, likes, re
 
 Buttons: **Cancel** / **Delete account permanently**
 
-### Analytics consent copy — use only if consent is implemented
+### Analytics consent copy — draft first-run screen, not shipped
 
-`[REQUIRED BEFORE LAUNCH: Firebase Analytics is not integrated in the app today. Do not ship this screen until the SDK exists — otherwise it asks for consent to a feature that doesn't run.]`
+`[Not shipped: the app does not ask for consent on first run. Firebase Analytics/Crashlytics are integrated and enabled by default (opt-out, per docs/consent-decision.md); the only surface is the "Help improve Revio" toggle in Settings (SettingsScreen.kt), which starts ON and lets the user turn it off. This first-run dialog draft is kept only as a historical alternative that was not built.]`
 
 **Help improve Revio**
 

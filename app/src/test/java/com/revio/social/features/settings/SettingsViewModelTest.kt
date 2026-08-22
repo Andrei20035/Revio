@@ -16,6 +16,7 @@ import io.mockk.mockkStatic
 import io.mockk.unmockkStatic
 import io.mockk.verify
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -28,7 +29,7 @@ import org.junit.Rule
 import org.junit.Test
 
 /**
- * Opt-in consent (docs/consent-decision.md): covers persistence and the immediate in-session
+ * Opt-out consent (docs/consent-decision.md): covers persistence and the immediate in-session
  * Firebase SDK toggle. Cold-start re-application of the persisted choice lives in
  * RevioApp.onCreate() and is covered by RevioAppTest instead.
  */
@@ -49,7 +50,7 @@ class SettingsViewModelTest {
     fun setUp() {
         every { userRepository.currentUser } returns MutableStateFlow(null)
         coEvery { userRepository.getCurrentUser() } returns ApiResult.Error("n/a")
-        every { userPreferences.analyticsConsentGranted } returns flowOf(false)
+        every { userPreferences.analyticsConsentGrantedOrNull } returns flowOf(null)
 
         mockkStatic(FirebaseCrashlytics::class)
         mockkStatic(FirebaseAnalytics::class)
@@ -71,8 +72,8 @@ class SettingsViewModelTest {
     )
 
     @Test
-    fun `uiState reflects the persisted consent value`() = runTest {
-        every { userPreferences.analyticsConsentGranted } returns flowOf(true)
+    fun `uiState reflects the persisted consent value when true`() = runTest {
+        every { userPreferences.analyticsConsentGrantedOrNull } returns flowOf(true)
 
         val vm = buildVm()
         advanceUntilIdle()
@@ -81,11 +82,35 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `uiState defaults to off when no consent is persisted yet`() = runTest {
+    fun `uiState reflects the persisted consent value when false`() = runTest {
+        every { userPreferences.analyticsConsentGrantedOrNull } returns flowOf(false)
+
         val vm = buildVm()
         advanceUntilIdle()
 
         assertFalse(vm.uiState.value.analyticsConsentGranted)
+    }
+
+    @Test
+    fun `uiState defaults to on when no consent is persisted yet`() = runTest {
+        val vm = buildVm()
+        advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.analyticsConsentGranted)
+    }
+
+    @Test
+    fun `analyticsConsentLoaded is false until the persisted value arrives`() = runTest {
+        val consentFlow = MutableSharedFlow<Boolean?>()
+        every { userPreferences.analyticsConsentGrantedOrNull } returns consentFlow
+
+        val vm = buildVm()
+
+        assertFalse(vm.uiState.value.analyticsConsentLoaded)
+
+        consentFlow.emit(true)
+
+        assertTrue(vm.uiState.value.analyticsConsentLoaded)
     }
 
     @Test
@@ -111,8 +136,22 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun `reactivating consent persists the choice and enables both Firebase SDKs`() = runTest {
+        every { userPreferences.analyticsConsentGrantedOrNull } returns flowOf(false)
+        val vm = buildVm()
+        advanceUntilIdle()
+
+        vm.setAnalyticsConsentGranted(true)
+        advanceUntilIdle()
+
+        coVerify { userPreferences.setAnalyticsConsentGranted(true) }
+        verify { crashlytics.setCrashlyticsCollectionEnabled(true) }
+        verify { firebaseAnalytics.setAnalyticsCollectionEnabled(true) }
+    }
+
+    @Test
     fun `revoking consent persists the choice and disables both Firebase SDKs`() = runTest {
-        every { userPreferences.analyticsConsentGranted } returns flowOf(true)
+        every { userPreferences.analyticsConsentGrantedOrNull } returns flowOf(true)
         val vm = buildVm()
         advanceUntilIdle()
 
@@ -120,5 +159,7 @@ class SettingsViewModelTest {
         advanceUntilIdle()
 
         coVerify { userPreferences.setAnalyticsConsentGranted(false) }
+        verify { crashlytics.setCrashlyticsCollectionEnabled(false) }
+        verify { firebaseAnalytics.setAnalyticsCollectionEnabled(false) }
     }
 }

@@ -110,9 +110,17 @@ class UserPreferences @Inject constructor(
     val onboardingCompleted: Flow<Boolean> = context.dataStore.data
         .map { it[ONBOARDING_KEY] ?: false }
 
-    /** Off by default (opt-in) until the user explicitly grants it — see docs/consent-decision.md. */
+    /** On by default (opt-out) until the user explicitly revokes it — see docs/consent-decision.md. */
     val analyticsConsentGranted: Flow<Boolean> = context.dataStore.data
-        .map { it[ANALYTICS_CONSENT_KEY] ?: false }
+        .map { it[ANALYTICS_CONSENT_KEY] ?: true }
+
+    /**
+     * Same as [analyticsConsentGranted] but preserves `null` when the key is absent, so callers
+     * can distinguish "no choice persisted yet" from an explicit `false` — see
+     * docs/consent-decision.md.
+     */
+    val analyticsConsentGrantedOrNull: Flow<Boolean?> = context.dataStore.data
+        .map { it[ANALYTICS_CONSENT_KEY] }
 
     /**
      * Per-user tour status, keyed by [userId] so a second account on a shared device never

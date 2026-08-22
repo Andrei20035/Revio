@@ -222,6 +222,7 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(8.dp.actScaled()))
             AnalyticsConsentRow(
                 granted = uiState.analyticsConsentGranted,
+                enabled = uiState.analyticsConsentLoaded,
                 onGrantedChange = viewModel::setAnalyticsConsentGranted,
             )
 
@@ -386,12 +387,15 @@ private fun SettingsRow(
 }
 
 /**
- * Opt-in consent toggle — always visible in Settings so the choice can be changed anytime, per
+ * Opt-out consent toggle — always visible in Settings so the choice can be changed anytime, per
  * docs/consent-decision.md. Copy adapted from REVIO_LAUNCH_COPY.md's "Help improve Revio" draft.
+ * [enabled] is false until the persisted choice has loaded, so the switch can't be toggled to a
+ * position that would then be overwritten by the real value once it arrives.
  */
 @Composable
 private fun AnalyticsConsentRow(
     granted: Boolean,
+    enabled: Boolean,
     onGrantedChange: (Boolean) -> Unit,
 ) {
     Row(
@@ -413,7 +417,9 @@ private fun AnalyticsConsentRow(
             Spacer(modifier = Modifier.height(4.dp.actScaled()))
             Text(
                 text = "Allow optional usage analytics and crash diagnostics to help us understand " +
-                    "performance and improve features. This data is not used for advertising.",
+                    "performance and improve features. This data is not used for advertising. " +
+                    "Turning this off takes effect for analytics right away; crash diagnostics " +
+                    "fully stop the next time you open the app.",
                 color = SectionLabelColor,
                 fontFamily = FontFamily.Default,
                 fontWeight = FontWeight.Normal,
@@ -421,6 +427,6 @@ private fun AnalyticsConsentRow(
             )
         }
         Spacer(modifier = Modifier.width(12.dp.actScaled()))
-        Switch(checked = granted, onCheckedChange = onGrantedChange)
+        Switch(checked = granted, enabled = enabled, onCheckedChange = onGrantedChange)
     }
 }
