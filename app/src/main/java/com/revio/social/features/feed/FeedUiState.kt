@@ -82,7 +82,9 @@ data class FeedUiState(
     val feedPosts: List<FeedPost> = emptyList(),
     // Gated projection of feedPosts — a post appears here only once its image is prefetched or
     // verified cached. Rendered by FeedScreen; content/footer/isEmpty below key off this, not
-    // feedPosts, so nothing shows until its image is actually ready.
+    // feedPosts, so nothing shows until its image is actually ready. Which posts are present is
+    // append-only within a session, but each post's own content (like/comment counts, etc.) is
+    // kept in sync with feedPosts — see FeedImageGate.syncCandidates.
     val visiblePosts: List<FeedPost> = emptyList(),
     val nextCursor: FeedCursor? = null,
     val hasMore: Boolean = true,

@@ -412,8 +412,8 @@ private fun AnalyticsConsentRow(
             )
             Spacer(modifier = Modifier.height(4.dp.actScaled()))
             Text(
-                text = "Allow anonymous app-usage analytics to help us understand performance " +
-                    "and improve features. Analytics are not used for advertising.",
+                text = "Allow optional usage analytics and crash diagnostics to help us understand " +
+                    "performance and improve features. This data is not used for advertising.",
                 color = SectionLabelColor,
                 fontFamily = FontFamily.Default,
                 fontWeight = FontWeight.Normal,

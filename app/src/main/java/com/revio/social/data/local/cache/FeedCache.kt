@@ -35,6 +35,9 @@ interface FeedCache {
     /** Writes a new comment count into the cached post. */
     suspend fun setCommentCount(postId: UUID, count: Long)
 
+    /** Removes a single post — call after an admin removes it server-side, so it never revives from cache. */
+    suspend fun deletePost(postId: UUID)
+
     /** Keeps only the earliest [maxPosts] cached posts; intended for cold-start hydration only. */
     suspend fun trimTo(maxPosts: Int)
 

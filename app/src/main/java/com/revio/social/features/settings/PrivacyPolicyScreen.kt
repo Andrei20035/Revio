@@ -39,7 +39,6 @@ import com.revio.social.core.ui.theme.Poppins
 private val PolicyCardBackground = Color(0x292B3156)
 private val PolicyBodyColor = Color(0xFFD2D3DD)
 private val PolicyMutedColor = Color(0xFF9FA1B1)
-private val PolicyWarningColor = Color(0xFFFFC766)
 
 @Composable
 fun PrivacyPolicyScreen(navController: NavController) {
@@ -77,8 +76,8 @@ fun PrivacyPolicyScreen(navController: NavController) {
 
                 Spacer(Modifier.height(18.dp.actScaled()))
                 Text(
-                    text = "Effective date: [REQUIRED BEFORE LAUNCH: DD Month YYYY]",
-                    color = PolicyWarningColor,
+                    text = "Effective date: 21 August 2026",
+                    color = PolicyMutedColor,
                     fontFamily = Poppins,
                     fontSize = 12.sp.actScaledText(),
                     lineHeight = 19.sp.actScaledText(),
@@ -108,12 +107,12 @@ private fun PolicyIntroCard() {
     ) {
         Text("Privacy Policy for Revio", color = Color.White, fontFamily = Poppins, fontWeight = FontWeight.SemiBold, fontSize = 19.sp.actScaledText())
         Spacer(Modifier.height(10.dp.actScaled()))
-        PolicyBody("Revio is a car-spotting community where users can create profiles, share car photos and posts, discover public posts, and interact through comments and likes. This Privacy Policy explains how Revio Team (\"Revio\", \"we\", \"us\", or \"our\") collects, uses, shares, stores, and protects personal data when you use the Revio mobile application and related services (collectively, the \"Services\").")
+        PolicyBody("Revio is a car-spotting community where users can create profiles, share car photos and posts, discover public posts, and interact through comments and likes. This Privacy Policy explains how Andrei R., the developer of Revio (\"Revio\", \"we\", \"us\", or \"our\"), collects, uses, shares, stores, and protects personal data when you use the Revio mobile application and related services (collectively, the \"Services\").")
         Spacer(Modifier.height(14.dp.actScaled()))
-        Text("Data controller: [REQUIRED BEFORE LAUNCH: legal entity/individual name, registered or business address, country].", color = PolicyWarningColor, fontFamily = Poppins, fontSize = 12.sp.actScaledText(), lineHeight = 19.sp.actScaledText())
+        Text("Developer and data controller: Andrei R.", color = PolicyBodyColor, fontFamily = Poppins, fontSize = 13.sp.actScaledText(), lineHeight = 19.sp.actScaledText())
         Text("Contact: threvioapp@gmail.com", color = PolicyBodyColor, fontFamily = Poppins, fontSize = 13.sp.actScaledText())
         Spacer(Modifier.height(14.dp.actScaled()))
-        PolicyBody("By creating an account or using the Services, you acknowledge the practices described in this Privacy Policy. If you do not agree, please do not use the Services.")
+        PolicyBody("This Policy applies to the Revio Android app, its backend, and the related waitlist and support services operated by Andrei R.")
     }
 }
 
@@ -134,7 +133,7 @@ private fun PolicySection(section: PolicySectionContent) {
                     PolicyBody(paragraph.removePrefix("• "), Modifier.weight(1f))
                 }
             } else {
-                PolicyBody(paragraph, color = if (paragraph.contains("[REQUIRED BEFORE LAUNCH:")) PolicyWarningColor else PolicyBodyColor)
+                PolicyBody(paragraph)
             }
             if (index != section.paragraphs.lastIndex) Spacer(Modifier.height(9.dp.actScaled()))
         }
@@ -149,16 +148,44 @@ private fun PolicyBody(text: String, modifier: Modifier = Modifier, color: Color
 private data class PolicySectionContent(val title: String, val subtitle: String? = null, val paragraphs: List<String>)
 
 private val privacyPolicySections = listOf(
-    PolicySectionContent("1. Who may use Revio", paragraphs = listOf("Revio is intended for users aged 16 or older. We do not knowingly allow people under 16 to create an account. If you believe that a person under 16 has provided us with personal data, please contact us at threvioapp@gmail.com so we can investigate and delete the account where appropriate.")),
-    PolicySectionContent("2. Data we collect", "A. Account and profile data", listOf("When you create or use an account, we may collect:", "• email address;", "• account identifier and authentication information;", "• full name, username, date of birth, country, and profile photograph;", "• account statistics, including SpotScore and streak information; and", "• account and security information, such as login sessions, device identifier, device name, IP address, user-agent information, and timestamps.", "Your date of birth is used to apply the age requirement. It is not displayed publicly.", "B. Content and social activity", "We collect the content you choose to provide, including car photographs, post captions, car information, comments, likes, reports, and related timestamps. Posts, comments, likes, account statistics, and profile information are part of the social functionality of Revio and may be visible to other users as described below.", "C. Location data", "Revio requests location permission only when you choose to create a post. Location is optional: you can publish a post without granting location permission.", "If you grant permission and choose to use the feature, we may collect and store the latitude and longitude connected with that post, and derive or store the associated town and country. Other users are shown no more than the town and country; Revio does not display your precise coordinates to other users. Revio does not collect location in the background.", "Uploaded photographs are reprocessed on-device before upload: the image is re-encoded from pixel data, so EXIF metadata — including GPS location, timestamp, and device model — is not transmitted and never reaches storage. Correct visual orientation is preserved by applying rotation directly to the pixels.", "D. Analytics and technical data", "We use Firebase Analytics to understand how the Services are used, measure feature performance, and improve reliability and user experience. This may involve usage data, app interactions, device and app information, identifiers, and diagnostic information collected by Firebase/Google according to its applicable terms and privacy practices.", "We do not use analytics data for targeted advertising and do not sell personal data.")),
-    PolicySectionContent("3. How we use data", paragraphs = listOf("We use personal data to:", "• create and secure accounts, authenticate users, and prevent abuse or fraud;", "• operate profiles, posts, comments, likes, scores, streaks, and related social features;", "• show the town and country associated with a post when location is provided;", "• store, deliver, and display user-uploaded images;", "• investigate reports, enforce our Terms of Use and Community Guidelines, and protect users and the Services;", "• maintain, troubleshoot, analyse, and improve the Services; and", "• comply with legal obligations and respond to lawful requests.", "Where required by applicable law, we rely on your consent for optional data processing, such as permission-based location access and analytics where consent is required. We otherwise process data as necessary to provide the Services, protect the Services and users, or meet legal obligations.")),
-    PolicySectionContent("4. What is public", paragraphs = listOf("The following information may be visible to other Revio users: your full name, username, profile photograph, country, SpotScore, streak, posts, comments, and likes. A post may show its town and country if you provided location permission for that post.", "Do not include personal, confidential, or sensitive information in public posts or comments. Content you make public can be viewed, copied, or shared by other users.")),
-    PolicySectionContent("5. How we share data", paragraphs = listOf("We share data only as needed to operate the Services, including with:", "• Cloudflare R2, which stores user-uploaded images;", "• Google, for Google Sign-In authentication and Firebase Analytics;", "• Hetzner Online GmbH, which hosts and processes the Revio backend and database;", "• service providers that help us operate, secure, or support the Services, under appropriate contractual or legal safeguards; and", "• authorities or other parties when required by law, necessary to protect rights and safety, investigate abuse, or enforce our policies.", "We do not sell personal data and do not share personal data for cross-context behavioural advertising.")),
-    PolicySectionContent("6. International transfers", paragraphs = listOf("Revio is available globally. Your data may be processed in countries other than the country where you live, including countries where our providers operate. We use appropriate safeguards required by applicable law for international data transfers.")),
-    PolicySectionContent("7. Retention and account deletion", paragraphs = listOf("We retain personal data while your account remains active and only for as long as needed to provide the Services, resolve disputes, enforce our agreements, protect users, or meet legal obligations.", "You can initiate account deletion in the app through Settings → Account → Delete account. You can also submit a deletion request at [REQUIRED BEFORE LAUNCH: public account-deletion webpage URL].", "When an account-deletion request is completed, we delete or irreversibly de-identify personal data associated with the account, including profile data, posts, comments, likes, reports, sessions, and Revio-controlled image objects, unless we must retain limited information to comply with law, resolve a dispute, or protect the security and integrity of the Services. De-identified, aggregated analytics that cannot reasonably identify you may be retained.", "Deletion is permanent and cannot be undone. We will state the deletion timeline in the app and on the deletion webpage before launch.")),
-    PolicySectionContent("8. Your privacy rights", paragraphs = listOf("Depending on where you live, you may have rights to request access to, correction of, deletion of, restriction of, or portability of your personal data, and to object to certain processing. You may also withdraw consent where we rely on consent.", "To make a request, email threvioapp@gmail.com from the email address associated with your account. We may need to verify your identity before completing a request. You may also have the right to complain to your local data-protection authority.")),
-    PolicySectionContent("9. Security", paragraphs = listOf("We use reasonable technical and organisational measures designed to protect data. No method of transmission or storage is completely secure, so we cannot guarantee absolute security.")),
-    PolicySectionContent("10. Third-party services", paragraphs = listOf("Google and Firebase services are governed by their own privacy terms and policies. Cloudflare R2 processes stored images as a service provider for Revio. We are not responsible for the independent privacy practices of third parties outside the Services.")),
-    PolicySectionContent("11. Changes to this Privacy Policy", paragraphs = listOf("We may update this Privacy Policy when our Services or legal obligations change. If we make material changes, we will provide notice in the app or by another appropriate method. The “Effective date” above shows when this Policy was last updated.")),
-    PolicySectionContent("12. Contact", paragraphs = listOf("Questions, privacy requests, and safety concerns can be sent to:", "Revio Team", "Email: threvioapp@gmail.com")),
+    PolicySectionContent("1. Eligibility", paragraphs = listOf("Revio is intended for people aged 13 or older. We collect the date of birth entered during profile setup, but it is not displayed publicly. If you believe a child under 13 has provided personal data, contact threvioapp@gmail.com so we can investigate and delete it where appropriate.")),
+    PolicySectionContent("2. Data we collect", "Account and profile", listOf(
+        "We collect the information needed to create and operate your account: email address, sign-in method, account identifiers, full name, username, date of birth, country, optional phone number, profile photo, and optional details and photo of your own car. For password sign-in, the server stores a one-way password hash, not your plain-text password.",
+        "We also process account status and activity statistics such as SpotScore, streaks, challenge progress, leaderboard position, badges, post count, Early Spotter status, and moderation status.",
+        "Security and session records can include device identifier and name, IP address, user-agent, sign-in provider, session and hashed refresh-token records, and timestamps.",
+        "Waitlist data you previously submitted — such as email, username, platform, country, and signup timestamps — may be matched by email to prefill your profile and assign Early Spotter status.",
+        "Content and activity",
+        "We collect content and actions you provide: car photos, captions, car make and model, posts, comments, likes, challenge participation, reports, notifications, and related timestamps. We also process moderation and safety records needed to investigate reports and enforce our rules.",
+        "Location and photos",
+        "Location is optional and requested only when you create a post. If permitted, we may collect and store the precise latitude and longitude attached to that post and derive its town and country. Revio does not collect location in the background. Uploaded photos are re-encoded before upload, so EXIF metadata such as GPS tags is not copied to the stored image.",
+        "Feedback and support",
+        "If you send feedback or request support, we collect your messages, category, ratings, and related context. If you choose to include diagnostics, we may also receive app version, Android version, device model, connection type, and recent technical error information. An optional account-deletion reason may be retained without your user ID for product analysis.",
+        "Optional analytics and crash diagnostics",
+        "Firebase Analytics and Firebase Crashlytics collection are disabled by default. If you enable “Help improve Revio” in Settings, Google may process app interactions, feature-performance events, app and device information, identifiers, crash reports, non-fatal errors, and technical breadcrumbs. We design Revio's own analytics event parameters to avoid names, email, phone number, birth date, captions, comments, exact location, image URLs, passwords, tokens, and internal user or post IDs. You can turn collection off at any time to stop future collection. We do not use this data for advertising.",
+        "On-device data",
+        "The app stores sign-in tokens in protected device storage and may cache feed data, images, settings, and consent choices locally so it can work reliably. You can remove local app data through Android settings or by uninstalling the app.",
+    )),
+    PolicySectionContent("3. How we use data", paragraphs = listOf(
+        "We use data to provide and secure accounts; operate profiles and social features; upload and display images; calculate scores, streaks, challenges and rankings; provide optional post location; send in-app activity updates; handle feedback; investigate abuse; maintain and improve the Services; and comply with legal obligations.",
+        "We process optional location and Firebase analytics/crash data based on your choices. Other processing is necessary to provide the Services, keep them secure, or comply with law.",
+    )),
+    PolicySectionContent("4. Visibility and sharing", paragraphs = listOf(
+        "Other Revio users may see your full name, username, country, profile photo, optional car details/photo, SpotScore, streak, rankings, badges, posts, comments, and likes. Public content can be viewed, copied, or shared by others, so do not post confidential or sensitive information.",
+        "A location-enabled post shows town and country in the standard app interface. At present, the stored coordinates attached to that post can also be included in post data delivered to authenticated Revio clients. Do not attach location if you do not want precise coordinates associated with a post.",
+        "We use Cloudflare R2 for uploaded images; Hetzner Online GmbH for backend and database hosting; Google for Google Sign-In, Firebase Analytics, and Firebase Crashlytics; and Supabase for waitlist data. These providers process data only to supply their services to Revio and under their applicable terms.",
+        "We may disclose data when required by law, to protect users or the Services, or as part of a business transfer subject to appropriate safeguards. We do not sell personal data or share it for behavioural advertising.",
+    )),
+    PolicySectionContent("5. International processing", paragraphs = listOf("Our providers may process data in countries other than your own. Where required, we use appropriate contractual or legal safeguards for international transfers.")),
+    PolicySectionContent("6. Retention and deletion", paragraphs = listOf(
+        "We keep account data while your account is active and only as long as needed for the purposes described above. Security records, legal records, and backups may be retained for a limited period when necessary to prevent abuse, meet legal obligations, or resolve disputes.",
+        "Delete your account in Settings → Account → Delete account, or follow the instructions at https://www.joinrevio.app/delete-account. Confirmed deletion removes the account and associated profile, posts, comments, likes, reports, sessions, and other database records. Revio then deletes associated image objects; failed image removals are queued for retry.",
+        "Limited de-identified deletion feedback, aggregated statistics, and security/audit records may remain where they no longer directly identify you or retention is required for security or law. Data previously sent to Firebase is subject to Google's retention and deletion controls. Account deletion is permanent.",
+    )),
+    PolicySectionContent("7. Your choices and rights", paragraphs = listOf(
+        "You can edit profile information, deny or revoke Android location permission, turn optional Firebase collection on or off in Settings, omit optional feedback diagnostics, and delete your account.",
+        "Depending on where you live, you may request access, correction, deletion, restriction, objection, or portability, and withdraw consent where processing relies on consent. Email threvioapp@gmail.com from the address associated with your account. We may verify your identity. You may also complain to your local data-protection authority.",
+    )),
+    PolicySectionContent("8. Security", paragraphs = listOf("We use measures designed to protect data, including HTTPS for production network traffic, one-way password hashing, protected token storage on Android, access controls, and limited provider access. No system is completely secure, so absolute security cannot be guaranteed.")),
+    PolicySectionContent("9. Policy changes", paragraphs = listOf("We may update this Policy when the Services or legal requirements change. We will update the effective date and provide additional notice in the app when a change is material.")),
+    PolicySectionContent("10. Contact", paragraphs = listOf("Developer and data controller: Andrei R.", "Privacy, deletion, and safety requests: threvioapp@gmail.com")),
 )

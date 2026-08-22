@@ -75,6 +75,10 @@ interface FeedDao {
     @Query("DELETE FROM feed_posts WHERE id NOT IN (SELECT id FROM feed_posts ORDER BY position ASC LIMIT :maxPosts)")
     suspend fun trimTo(maxPosts: Int)
 
+    /** Removes a single post — used when an admin removes it server-side, independent of any page replace/append. */
+    @Query("DELETE FROM feed_posts WHERE id = :id")
+    suspend fun deletePost(id: String)
+
     @Query("DELETE FROM feed_posts")
     suspend fun deleteAllPosts()
 

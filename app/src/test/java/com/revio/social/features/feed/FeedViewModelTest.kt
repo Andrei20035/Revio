@@ -360,6 +360,41 @@ class FeedViewModelTest {
         assertEquals(listOf(originalPost), vm.uiState.value.feedPosts)
     }
 
+    // ---- 7a2. refresh(force = true) anuleaza un load in zbor in loc sa renunte (pas 6) ----
+
+    @Test
+    fun `refresh force = true anuleaza un loadNextPage in zbor si tot executa un fetch`() = runTest {
+        val cursor = FeedCursor(lastCreatedAt = Instant.now(), lastPostId = UUID.randomUUID())
+        feedCache.replaceWithFirstPage(
+            page = feedResult(posts = listOf(post()), nextCursor = cursor, hasMore = true),
+            ownerUserId = ownerUserId,
+            syncedAt = Instant.now(),
+        )
+        networkAvailable.value = true
+        internetValidated.value = true
+
+        val hangingLoadMore = CompletableDeferred<ApiResult<FeedResult>>()
+        coEvery { postRepository.getFeedPosts(limit = 15, cursor = cursor) } coAnswers { hangingLoadMore.await() }
+        coEvery { postRepository.getFeedPosts(limit = 15, cursor = null) } returns
+            ApiResult.Success(feedResult(posts = listOf(post()), hasMore = false))
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        vm.loadNextPage()
+        advanceUntilIdle()
+        assertTrue("load-ul de paginare trebuie sa fie in zbor", vm.uiState.value.isLoadingMore)
+
+        vm.refresh(force = true)
+        advanceUntilIdle()
+
+        // Fara force, acest refresh ar fi fost un no-op (Job guard). Cu force = true, load-ul
+        // in zbor este anulat si refresh-ul isi executa propriul apel de retea.
+        coVerify(exactly = 1) { postRepository.getFeedPosts(limit = 15, cursor = null) }
+        assertFalse(vm.uiState.value.isRefreshing)
+        assertFalse(vm.uiState.value.isLoadingMore)
+    }
+
     // ---- 7b. refresh() esuat (eroare server) afiseaza mesaj si poate fi consumat ----
 
     @Test
@@ -721,6 +756,9 @@ class FeedViewModelTest {
         assertTrue(updated.likedByCurrentUser)
         assertEquals(6L, updated.likeCount)
         assertTrue(vm.uiState.value.likeInFlight.isEmpty())
+        val rendered = vm.uiState.value.visiblePosts.first { it.id == target.id }
+        assertTrue(rendered.likedByCurrentUser)
+        assertEquals(6L, rendered.likeCount)
         // pas 5.7
         verify(exactly = 1) {
             analyticsClient.log(match { it.name == "feed_like_result" && it.params["outcome"] == AnalyticsParamValue.StringValue("success") })
@@ -749,6 +787,9 @@ class FeedViewModelTest {
         assertFalse(reverted.likedByCurrentUser)
         assertEquals(5L, reverted.likeCount)
         assertEquals("Couldn't update your like. Please try again.", vm.uiState.value.userMessage)
+        val renderedReverted = vm.uiState.value.visiblePosts.first { it.id == target.id }
+        assertFalse(renderedReverted.likedByCurrentUser)
+        assertEquals(5L, renderedReverted.likeCount)
         // pas 5.7
         verify(exactly = 1) {
             analyticsClient.log(match { it.name == "feed_like_result" && it.params["outcome"] == AnalyticsParamValue.StringValue("failure") })
@@ -765,6 +806,8 @@ class FeedViewModelTest {
             ownerUserId = ownerUserId,
             syncedAt = Instant.now(),
         )
+        // Cached so the image gate can publish it to visiblePosts despite networkAvailable staying false.
+        feedImagePrefetcher.cachedUrls += target.imageUrl
         // networkAvailable stays false.
         val vm = createViewModel()
         advanceUntilIdle()
@@ -777,6 +820,9 @@ class FeedViewModelTest {
         assertEquals(5L, unchanged.likeCount)
         assertEquals("You're offline — likes will work once you're back online.", vm.uiState.value.userMessage)
         coVerify(exactly = 0) { likeRepository.toggleLike(any()) }
+        val renderedUnchanged = vm.uiState.value.visiblePosts.first { it.id == target.id }
+        assertFalse(renderedUnchanged.likedByCurrentUser)
+        assertEquals(5L, renderedUnchanged.likeCount)
     }
 
     // ---- 16. comentariu offline: draft pastrat, fara apel ----
@@ -834,6 +880,42 @@ class FeedViewModelTest {
         verify(exactly = 1) {
             analyticsClient.log(match { it.name == "feed_comment_result" && it.params["outcome"] == AnalyticsParamValue.StringValue("success") })
         }
+    }
+
+    @Test
+    fun `submitComment success actualizeaza commentCount in visiblePosts`() = runTest {
+        val target = post(commentCount = 2)
+        feedCache.replaceWithFirstPage(
+            page = feedResult(posts = listOf(target), hasMore = false),
+            ownerUserId = ownerUserId,
+            syncedAt = Instant.now(),
+        )
+        networkAvailable.value = true
+        internetValidated.value = true
+        // openComments -> loadComments sets commentCount from the authoritative list size, so it
+        // must match the post's starting commentCount (2) for the post-submit assertion (3) below.
+        val existingComments = listOf(
+            Comment(id = UUID.randomUUID(), userId = UUID.randomUUID(), postId = target.id, username = "a", profilePictureUrl = null, text = "first", createdAt = Instant.now()),
+            Comment(id = UUID.randomUUID(), userId = UUID.randomUUID(), postId = target.id, username = "b", profilePictureUrl = null, text = "second", createdAt = Instant.now()),
+        )
+        coEvery { commentRepository.getCommentsForPost(target.id) } returns ApiResult.Success(existingComments)
+        coEvery { commentRepository.addComment(target.id, "hello there") } returns ApiResult.Success(
+            Comment(id = UUID.randomUUID(), userId = ownerUserId, postId = target.id, username = "me", profilePictureUrl = null, text = "hello there", createdAt = Instant.now())
+        )
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+        vm.openComments(target.id)
+        advanceUntilIdle()
+        vm.onCommentDraftChange("hello there")
+
+        vm.submitComment()
+        advanceUntilIdle()
+
+        val updated = vm.uiState.value.feedPosts.first { it.id == target.id }
+        assertEquals(3L, updated.commentCount)
+        val rendered = vm.uiState.value.visiblePosts.first { it.id == target.id }
+        assertEquals(3L, rendered.commentCount)
     }
 
     // ---- 17. report offline: dialog inchis, fara apel ----
@@ -1590,5 +1672,53 @@ class FeedViewModelTest {
                 )
             )
         }
+    }
+
+    // ----------------------------------------------------------------------
+    // pas 5 — onPostRemovedByAdmin: elimină postarea din feedPosts/visiblePosts fără rețea
+    // ----------------------------------------------------------------------
+
+    @Test
+    fun `onPostRemovedByAdmin scoate postarea din feedPosts si visiblePosts fara retea`() = runTest {
+        val removed = post()
+        val other = post()
+        feedImagePrefetcher.cachedUrls += removed.imageUrl
+        feedImagePrefetcher.cachedUrls += other.imageUrl
+        feedCache.replaceWithFirstPage(
+            page = feedResult(posts = listOf(removed, other), hasMore = false),
+            ownerUserId = ownerUserId,
+            syncedAt = Instant.now(),
+        )
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+        assertEquals(setOf(removed.id, other.id), vm.uiState.value.visiblePosts.map { it.id }.toSet())
+
+        vm.onPostRemovedByAdmin(removed.id)
+        advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.feedPosts.none { it.id == removed.id })
+        assertTrue(vm.uiState.value.visiblePosts.none { it.id == removed.id })
+        assertTrue(vm.uiState.value.visiblePosts.any { it.id == other.id })
+    }
+
+    @Test
+    fun `onPostRemovedByAdmin sterge postarea din cache-ul persistent`() = runTest {
+        val removed = post()
+        feedImagePrefetcher.cachedUrls += removed.imageUrl
+        feedCache.replaceWithFirstPage(
+            page = feedResult(posts = listOf(removed), hasMore = false),
+            ownerUserId = ownerUserId,
+            syncedAt = Instant.now(),
+        )
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        vm.onPostRemovedByAdmin(removed.id)
+        advanceUntilIdle()
+
+        // Simulates a restart reading straight from the cache — the post must not revive.
+        assertTrue(feedCache.observePosts().first().none { it.id == removed.id })
     }
 }

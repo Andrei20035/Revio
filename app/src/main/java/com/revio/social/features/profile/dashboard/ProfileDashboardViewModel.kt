@@ -374,6 +374,22 @@ class ProfileDashboardViewModel @Inject constructor(
         _uiState.update { it.copy(userMessage = null) }
     }
 
+    /**
+     * Called after an admin successfully removes a post (see AdminViewModel.removePost). Evicts
+     * it from the locally held post list immediately — this ViewModel has no persistent cache of
+     * its own, so there is nothing else to invalidate — then reloads from the top.
+     */
+    fun onPostRemovedByAdmin(postId: UUID) {
+        _uiState.update { state ->
+            state.copy(
+                posts = state.posts.filterNot { it.id == postId },
+                postDetailInFlight = state.postDetailInFlight - postId,
+                postDetailFetchedAt = state.postDetailFetchedAt - postId,
+            )
+        }
+        refresh()
+    }
+
     fun showEarlySpotterInfo() {
         _uiState.update { it.copy(showEarlySpotterInfo = true) }
     }

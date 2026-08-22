@@ -12,7 +12,4 @@ sealed class AuthAction {
 
     object ForgotPassword : AuthAction()
     object ToggleMode : AuthAction()
-
-    // For test only
-    object ResetOnboarding : AuthAction()
 }

@@ -61,12 +61,7 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Persists the user's choice and applies it immediately for the rest of this session.
-     * Note: `RevioApp.onCreate()` still hardcodes collection off at cold start (pas 1.5b) — it
-     * hasn't been updated yet to read this persisted value, so a granted choice must be
-     * re-applied here every session until that's wired up in a later step.
-     */
+    /** Persists the user's choice and applies it immediately; RevioApp restores it at cold start. */
     fun setAnalyticsConsentGranted(granted: Boolean) {
         viewModelScope.launch {
             userPreferences.setAnalyticsConsentGranted(granted)

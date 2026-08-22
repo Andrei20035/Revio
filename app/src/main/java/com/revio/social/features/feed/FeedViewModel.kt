@@ -300,8 +300,28 @@ class FeedViewModel @Inject constructor(
     /** Initial load into an empty feed. */
     private fun loadFirstPage() = load(reset = true, isRefresh = false, trigger = "initial")
 
-    /** Pull-to-refresh: reload from the top, keeping current content visible until it returns. */
-    fun refresh() = load(reset = true, isRefresh = true, trigger = "refresh")
+    /**
+     * Pull-to-refresh: reload from the top, keeping current content visible until it returns.
+     * [force] cancels a load already in flight instead of the usual no-op guard — needed by
+     * [onPostRemovedByAdmin], where a silently dropped refresh would leave a removed post's
+     * absence unconfirmed by the server.
+     */
+    fun refresh(force: Boolean = false) = load(reset = true, isRefresh = true, trigger = "refresh", force = force)
+
+    /**
+     * Called after an admin successfully removes a post (see AdminViewModel.removePost).
+     * Deletes it from the persistent cache so it can't revive on restart, evicts it from the
+     * image gate's visible set immediately (waiting for [refresh] alone isn't enough — a
+     * removed post that's already published would otherwise linger via
+     * [FeedImageGate]'s append-only publication set), then reloads from the top.
+     */
+    fun onPostRemovedByAdmin(postId: UUID) {
+        viewModelScope.launch {
+            feedCache.deletePost(postId)
+            imageGate.removePost(postId)
+            refresh(force = true)
+        }
+    }
 
     /** Infinite scroll: append the next page if there is one and nothing is already in flight. */
     fun loadNextPage(trigger: String = "load_more") {
@@ -317,10 +337,10 @@ class FeedViewModel @Inject constructor(
     /** Retry from the full-screen error state (the [LoadError.Generic] case — NoInternet auto-retries on its own). */
     fun onInitialRetry() = load(reset = true, isRefresh = false, trigger = "initial")
 
-    private fun load(reset: Boolean, isRefresh: Boolean, isSilent: Boolean = false, trigger: String) {
+    private fun load(reset: Boolean, isRefresh: Boolean, isSilent: Boolean = false, trigger: String, force: Boolean = false) {
         val isInitial = reset && !isRefresh && !isSilent
         val previousJob = feedLoadJob
-        if (previousJob?.isActive == true && !isInitial) return
+        if (previousJob?.isActive == true && !isInitial && !force) return
 
         _uiState.update { state ->
             val base = state.copy(
@@ -363,7 +383,7 @@ class FeedViewModel @Inject constructor(
         }
 
         feedLoadJob = viewModelScope.launch {
-            if (isInitial) previousJob?.cancelAndJoin()
+            if (isInitial || force) previousJob?.cancelAndJoin()
 
             val cursor = if (reset) null else _uiState.value.nextCursor
 

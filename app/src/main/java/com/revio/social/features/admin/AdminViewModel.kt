@@ -2,6 +2,9 @@ package com.revio.social.features.admin
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.revio.social.core.analytics.AnalyticsClient
+import com.revio.social.core.analytics.AnalyticsEvent
+import com.revio.social.core.analytics.AnalyticsParamValue
 import com.revio.social.core.network.ApiResult
 import com.revio.social.core.network.isNetworkError
 import com.revio.social.data.model.ModerationReason
@@ -26,7 +29,12 @@ import javax.inject.Inject
 @HiltViewModel
 class AdminViewModel @Inject constructor(
     private val adminRepository: AdminRepository,
+    private val analyticsClient: AnalyticsClient? = null,
 ) : ViewModel() {
+
+    companion object {
+        private const val EVENT_ADMIN_REMOVE_POST_RESULT = "admin_remove_post_result"
+    }
 
     // ---------- Reports queue ----------
 
@@ -206,16 +214,25 @@ class AdminViewModel @Inject constructor(
     val removePostState: StateFlow<AdminRemovePostUiState> = _removePostState.asStateFlow()
 
     fun removePost(postId: UUID, reason: ModerationReason, reasonDetails: String?, onSuccess: () -> Unit) {
-        if (_removePostState.value.isSubmitting) return
+        val current = _removePostState.value
+        if (current.isSubmitting) return
+        // Sets isSubmitting synchronously, before launching — a second call arriving between this
+        // check and the coroutine's first suspension point must see isSubmitting already true, not
+        // race it. compareAndSet also means a concurrent state change (e.g. this exact race) makes
+        // this call a no-op instead of overwriting whatever won.
+        if (!_removePostState.compareAndSet(current, current.copy(isSubmitting = true, errorMessage = null))) return
         viewModelScope.launch {
-            _removePostState.update { it.copy(isSubmitting = true, errorMessage = null) }
             when (val result = adminRepository.removePost(postId, reason, reasonDetails)) {
                 is ApiResult.Success -> {
                     _removePostState.update { AdminRemovePostUiState() }
+                    logRemovePostResult(success = true)
                     onSuccess()
                 }
-                is ApiResult.Error -> _removePostState.update {
-                    it.copy(isSubmitting = false, errorMessage = result.message)
+                is ApiResult.Error -> {
+                    _removePostState.update {
+                        it.copy(isSubmitting = false, errorMessage = result.message)
+                    }
+                    logRemovePostResult(success = false, result = result)
                 }
             }
         }
@@ -223,5 +240,15 @@ class AdminViewModel @Inject constructor(
 
     fun consumeRemovePostError() {
         _removePostState.update { it.copy(errorMessage = null) }
+    }
+
+    /** Correlates a remove-post outcome with the matching server-side log line via [ApiResult.Error.requestId]. */
+    private fun logRemovePostResult(success: Boolean, result: ApiResult.Error? = null) {
+        val params = buildMap<String, AnalyticsParamValue> {
+            put("outcome", AnalyticsParamValue.StringValue(if (success) "success" else "failure"))
+            result?.code?.let { put("failure_code", AnalyticsParamValue.StringValue(it)) }
+            result?.requestId?.let { put("request_id", AnalyticsParamValue.StringValue(it)) }
+        }
+        analyticsClient?.log(AnalyticsEvent(name = EVENT_ADMIN_REMOVE_POST_RESULT, params = params))
     }
 }

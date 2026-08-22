@@ -63,9 +63,13 @@ private const val MAX_REFILL_PAGES = 2
  * Gates feed posts behind their main image's availability: a post only reaches [visiblePosts]
  * once its image is verified cached or freshly prefetched. Publication preserves the original
  * candidate order — a post whose fetch reaches a terminal failure is skipped, never blocking the
- * posts behind it — and is strictly append-only within a session (a `resetToken` bump in
- * [onCandidates] is the only thing that clears it). No Android dependency, so this is directly
- * unit-testable on the JVM against a fake [FeedImagePrefetcher].
+ * posts behind it — and the *set* of published posts is strictly append-only within a session (a
+ * `resetToken` bump in [onCandidates] is the only thing that clears it, plus the one deliberate
+ * exception in [removePost] for a post an admin has just taken down). A published post's own
+ * *content* (e.g. like/comment counts), however, is kept in sync with the latest candidate list
+ * on every [onCandidates] call, so a like toggled after a post has crossed the frontier still
+ * shows up. No Android dependency, so this is directly unit-testable on the JVM against a fake
+ * [FeedImagePrefetcher].
  *
  * Covers the feed image-loading plan's §8.1-§8.7: ordering/skip/concurrency/buffer (§8.1-§8.4),
  * a single retry for transient failures under a per-attempt timeout, a first-paint deadline that
@@ -109,8 +113,10 @@ class FeedImageGate(
      * one seen on the previous call means a first-page replace happened (refresh / initial load /
      * owner mismatch) — all gate state and [visiblePosts] are wiped before the new list is
      * applied. Otherwise per-post state is preserved by id: already-tracked posts keep their
-     * progress (an appended page doesn't restart fetches already in flight or already resolved).
-     * [hasMore] mirrors the feed cache's pagination metadata and gates the refill signal.
+     * progress (an appended page doesn't restart fetches already in flight or already resolved),
+     * and any post already in [visiblePosts] has its content refreshed in place from
+     * [newCandidates] (see [syncCandidates]). [hasMore] mirrors the feed cache's pagination
+     * metadata and gates the refill signal.
      */
     fun onCandidates(newCandidates: List<FeedPost>, resetToken: Int, hasMore: Boolean = true) {
         scope.launch {
@@ -118,6 +124,32 @@ class FeedImageGate(
                 syncCandidates(newCandidates, resetToken, hasMore)
                 pumpFetches()
                 advanceFrontier()
+            }
+        }
+    }
+
+    /**
+     * Evicts [postId] from every piece of gate state, including [visiblePosts] — the one
+     * deliberate exception to this class's append-only publication contract (see class doc),
+     * for a post an admin has just removed server-side rather than one that simply hasn't
+     * resolved yet. Safe to call whether or not the post has been published, is mid-fetch, or is
+     * unknown to the gate.
+     */
+    fun removePost(postId: UUID) {
+        scope.launch {
+            mutex.withLock {
+                val index = candidates.indexOfFirst { it.id == postId }
+                if (index != -1) {
+                    candidates = candidates.filterNot { it.id == postId }
+                    if (index < publishFrontier) publishFrontier--
+                }
+                states.remove(postId)
+                inFlight.remove(postId)?.cancel()
+                if (_visiblePosts.value.any { it.id == postId }) {
+                    _visiblePosts.value = _visiblePosts.value.filterNot { it.id == postId }
+                }
+                advanceFrontier()
+                pumpFetches()
             }
         }
     }
@@ -177,6 +209,13 @@ class FeedImageGate(
         for (post in newCandidates) {
             states.putIfAbsent(post.id, ImageState.Pending)
         }
+
+        // Already-published posts keep their slot and order (append-only as a *set*), but their
+        // content is refreshed from the new candidates — otherwise a like/comment update that
+        // lands after a post has crossed the frontier would never reach visiblePosts. A post
+        // absent from the new candidates (e.g. trimmed) keeps its last known content via `?: it`.
+        val byId = newCandidates.associateBy { it.id }
+        _visiblePosts.value = _visiblePosts.value.map { byId[it.id] ?: it }
     }
 
     /**

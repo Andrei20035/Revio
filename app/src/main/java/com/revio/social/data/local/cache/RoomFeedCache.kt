@@ -65,6 +65,8 @@ class RoomFeedCache @Inject constructor(
         feedDao.setCommentCount(postId.toString(), count)
     }
 
+    override suspend fun deletePost(postId: UUID) = feedDao.deletePost(postId.toString())
+
     override suspend fun trimTo(maxPosts: Int) = feedDao.trimTo(maxPosts)
 
     override suspend fun clear() = feedDao.clearAll()

@@ -25,7 +25,12 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class FeedImageGateTest {
 
-    private fun post(label: String) = FeedPost(
+    private fun post(
+        label: String,
+        likeCount: Long = 0,
+        commentCount: Long = 0,
+        likedByCurrentUser: Boolean = false,
+    ) = FeedPost(
         id = UUID.randomUUID(),
         userId = UUID.randomUUID(),
         username = "user-$label",
@@ -36,9 +41,9 @@ class FeedImageGateTest {
         latitude = null,
         longitude = null,
         createdAt = Instant.now(),
-        likeCount = 0,
-        commentCount = 0,
-        likedByCurrentUser = false,
+        likeCount = likeCount,
+        commentCount = commentCount,
+        likedByCurrentUser = likedByCurrentUser,
     )
 
     @Test
@@ -159,6 +164,79 @@ class FeedImageGateTest {
         runCurrent()
 
         assertEquals(refreshedBatch.map { it.id }, gate.visiblePosts.value.map { it.id })
+    }
+
+    @Test
+    fun `aceeasi lista de candidati cu likeCount schimbat improspateaza visiblePosts`() = runTest {
+        val fake = FakeFeedImagePrefetcher()
+        val gate = FeedImageGate(fake, backgroundScope)
+
+        val a = post("A", likeCount = 5, likedByCurrentUser = false)
+        gate.onCandidates(listOf(a), resetToken = 0)
+        runCurrent()
+        assertEquals(5L, gate.visiblePosts.value.first().likeCount)
+        assertEquals(false, gate.visiblePosts.value.first().likedByCurrentUser)
+
+        val updated = a.copy(likeCount = 6, likedByCurrentUser = true)
+        gate.onCandidates(listOf(updated), resetToken = 0) // same resetToken == in-place refresh
+        runCurrent()
+
+        assertEquals(6L, gate.visiblePosts.value.first().likeCount)
+        assertEquals(true, gate.visiblePosts.value.first().likedByCurrentUser)
+    }
+
+    @Test
+    fun `commentCount schimbat se reflecta in visiblePosts`() = runTest {
+        val fake = FakeFeedImagePrefetcher()
+        val gate = FeedImageGate(fake, backgroundScope)
+
+        val a = post("A", commentCount = 2)
+        gate.onCandidates(listOf(a), resetToken = 0)
+        runCurrent()
+        assertEquals(2L, gate.visiblePosts.value.first().commentCount)
+
+        val updated = a.copy(commentCount = 3)
+        gate.onCandidates(listOf(updated), resetToken = 0)
+        runCurrent()
+
+        assertEquals(3L, gate.visiblePosts.value.first().commentCount)
+    }
+
+    @Test
+    fun `o postare disparuta din candidati ramane in visiblePosts`() = runTest {
+        val fake = FakeFeedImagePrefetcher()
+        val gate = FeedImageGate(fake, backgroundScope)
+
+        val a = post("A")
+        val b = post("B")
+        gate.onCandidates(listOf(a, b), resetToken = 0)
+        runCurrent()
+        assertEquals(listOf(a.id, b.id), gate.visiblePosts.value.map { it.id })
+
+        gate.onCandidates(listOf(b), resetToken = 0) // A trimmed from candidates, same resetToken
+        runCurrent()
+
+        assertEquals(listOf(a.id, b.id), gate.visiblePosts.value.map { it.id })
+    }
+
+    @Test
+    fun `ordinea si frontiera nu se schimba la remapare`() = runTest {
+        val fake = FakeFeedImagePrefetcher()
+        val gate = FeedImageGate(fake, backgroundScope)
+
+        val a = post("A")
+        val b = post("B", likeCount = 1)
+        val c = post("C")
+        gate.onCandidates(listOf(a, b, c), resetToken = 0)
+        runCurrent()
+        assertEquals(listOf(a.id, b.id, c.id), gate.visiblePosts.value.map { it.id })
+
+        val updatedB = b.copy(likeCount = 2)
+        gate.onCandidates(listOf(a, updatedB, c), resetToken = 0)
+        runCurrent()
+
+        assertEquals(listOf(a.id, b.id, c.id), gate.visiblePosts.value.map { it.id })
+        assertEquals(2L, gate.visiblePosts.value[1].likeCount)
     }
 
     @Test
@@ -522,5 +600,86 @@ class FeedImageGateTest {
         runCurrent()
 
         verify(exactly = 0) { analyticsClient.log(match { it.name == "feed_image_gate" }) }
+    }
+
+    // ----------------------------------------------------------------------
+    // pas 5 — removePost: the one deliberate exception to append-only publication
+    // ----------------------------------------------------------------------
+
+    @Test
+    fun `removePost scoate din visiblePosts o postare deja publicata`() = runTest {
+        val fake = FakeFeedImagePrefetcher()
+        val gate = FeedImageGate(fake, backgroundScope)
+
+        val a = post("A")
+        val b = post("B")
+        val c = post("C")
+        gate.onCandidates(listOf(a, b, c), resetToken = 0)
+        runCurrent()
+        assertEquals(listOf(a.id, b.id, c.id), gate.visiblePosts.value.map { it.id })
+
+        gate.removePost(b.id)
+        runCurrent()
+
+        assertEquals(listOf(a.id, c.id), gate.visiblePosts.value.map { it.id })
+    }
+
+    @Test
+    fun `removePost pe o postare inca nepublicata nu blocheaza frontiera pentru restul`() = runTest {
+        val fake = FakeFeedImagePrefetcher()
+        val gate = FeedImageGate(fake, backgroundScope)
+
+        val a = post("A")
+        val b = post("B")
+        val c = post("C")
+        fake.hold(a.imageUrl) // A never resolves on its own — still head-of-line.
+
+        gate.onCandidates(listOf(a, b, c), resetToken = 0)
+        runCurrent()
+        assertTrue(gate.visiblePosts.value.isEmpty())
+
+        gate.removePost(a.id)
+        runCurrent()
+
+        assertEquals(listOf(b.id, c.id), gate.visiblePosts.value.map { it.id })
+    }
+
+    @Test
+    fun `dupa removePost, un candidat ulterior identic ramane exclus`() = runTest {
+        val fake = FakeFeedImagePrefetcher()
+        val gate = FeedImageGate(fake, backgroundScope)
+
+        val a = post("A")
+        val b = post("B")
+        gate.onCandidates(listOf(a, b), resetToken = 0)
+        runCurrent()
+        assertEquals(listOf(a.id, b.id), gate.visiblePosts.value.map { it.id })
+
+        gate.removePost(a.id)
+        runCurrent()
+        assertEquals(listOf(b.id), gate.visiblePosts.value.map { it.id })
+
+        // Same resetToken == append semantics; the cache's next emission (post gone from Room)
+        // no longer includes A among the candidates either.
+        gate.onCandidates(listOf(b), resetToken = 0)
+        runCurrent()
+
+        assertEquals(listOf(b.id), gate.visiblePosts.value.map { it.id })
+    }
+
+    @Test
+    fun `removePost pentru un id necunoscut nu modifica visiblePosts`() = runTest {
+        val fake = FakeFeedImagePrefetcher()
+        val gate = FeedImageGate(fake, backgroundScope)
+
+        val a = post("A")
+        gate.onCandidates(listOf(a), resetToken = 0)
+        runCurrent()
+        assertEquals(listOf(a.id), gate.visiblePosts.value.map { it.id })
+
+        gate.removePost(UUID.randomUUID())
+        runCurrent()
+
+        assertEquals(listOf(a.id), gate.visiblePosts.value.map { it.id })
     }
 }

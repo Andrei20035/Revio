@@ -1,7 +1,8 @@
 package com.revio.social.core.ui.components
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -22,11 +23,19 @@ import androidx.compose.ui.unit.dp
 import com.revio.social.R
 import java.util.Locale
 
+// Like-pop tuning. Liking is the emphatic gesture — deeper dip, bigger overshoot; unliking is
+// deliberately quieter. See [LikeIcon].
+private const val LIKE_DIP_SCALE = 0.80f
+private const val LIKE_OVERSHOOT_SCALE = 1.20f
+private const val UNLIKE_DIP_SCALE = 0.88f
+private const val UNLIKE_OVERSHOOT_SCALE = 1.08f
+
 /**
- * Like icon. Shows `like_selected` when liked, `like` otherwise. On a like (false→true) it plays a
- * subtle pop — a quick scale-up that springs back — for premium tactile feedback. Unliking does not
- * animate, and the initial liked state on first composition is not animated. The tap is handled by
- * the caller.
+ * Like icon. Shows `like_selected` when liked, `like` otherwise. Both liking and unliking play an
+ * Instagram-style pop: the heart dips briefly (as if pressed), overshoots past its resting size,
+ * then springs back to rest. Unliking uses a shallower dip and a smaller overshoot so removing a
+ * like reads as less emphatic than giving one. The initial liked state on first composition is not
+ * animated. The tap is handled by the caller.
  */
 @Composable
 fun LikeIcon(
@@ -42,10 +51,13 @@ fun LikeIcon(
             initialized = true
             return@LaunchedEffect
         }
-        if (liked) {
-            scale.animateTo(1.22f, animationSpec = tween(durationMillis = 110, easing = FastOutSlowInEasing))
-            scale.animateTo(1f, animationSpec = spring(dampingRatio = 0.42f, stiffness = Spring.StiffnessMedium))
-        }
+        // Dip → overshoot → spring settle. The dip is what gives the tap its "pressed" feel; going
+        // straight to the overshoot (the previous behaviour) reads as a bounce rather than a press.
+        val dip = if (liked) LIKE_DIP_SCALE else UNLIKE_DIP_SCALE
+        val overshoot = if (liked) LIKE_OVERSHOOT_SCALE else UNLIKE_OVERSHOOT_SCALE
+        scale.animateTo(dip, animationSpec = tween(durationMillis = 90, easing = FastOutLinearInEasing))
+        scale.animateTo(overshoot, animationSpec = tween(durationMillis = 130, easing = LinearOutSlowInEasing))
+        scale.animateTo(1f, animationSpec = spring(dampingRatio = 0.45f, stiffness = Spring.StiffnessLow))
     }
 
     Image(

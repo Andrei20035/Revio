@@ -1,10 +1,10 @@
 # Revio — Privacy, Safety & Store-Submission Copy
 
-**Status:** pre-launch draft.  
+**Status:** archived planning document — implementation notes below may be stale.
 **Owner:** Revio Team  
 **Support:** threvioapp@gmail.com
 
-This document is the source copy for Revio's MVP. Replace every item marked `[REQUIRED BEFORE LAUNCH]` before publishing the policy or submitting the app. It reflects the current MVP: public car-spotting posts, comments, likes, optional post-time location, Google/Firebase sign-in, Firebase Analytics, and image storage in Cloudflare R2. Friends are not part of the MVP.
+Do not use the policy drafts in this file for Google Play. The reviewed sources are [`PRIVACY_POLICY.md`](PRIVACY_POLICY.md) and [`TERMS_OF_USE.md`](TERMS_OF_USE.md); the public privacy page is served from `revio-server/server/src/main/resources/static/privacy-policy.html`. The checklist and older copy below are kept only as historical product-planning context.
 
 ---
 
@@ -35,7 +35,9 @@ This document is the source copy for Revio's MVP. Replace every item marked `[RE
 
 ---
 
-## 2. Privacy Policy
+## 2. Archived privacy-policy draft — do not publish
+
+> Superseded on 21 August 2026 by [`PRIVACY_POLICY.md`](PRIVACY_POLICY.md). This archived draft intentionally remains for traceability and contains obsolete placeholders and implementation notes.
 
 **Effective date:** [REQUIRED BEFORE LAUNCH: DD Month YYYY]
 

@@ -295,11 +295,4 @@ class AuthViewModel @Inject constructor(
         }.getOrNull()
     }
 
-    // For testing — scoate înainte de release
-    fun resetOnboardingStatus(onComplete: () -> Unit) {
-        viewModelScope.launch {
-            userPreferences.resetOnboardingStatus()
-            onComplete()
-        }
-    }
 }

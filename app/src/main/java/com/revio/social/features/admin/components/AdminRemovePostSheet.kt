@@ -2,6 +2,9 @@ package com.revio.social.features.admin.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,9 +16,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -36,8 +37,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.revio.social.data.model.ModerationReason
@@ -52,6 +59,9 @@ private val AccentYellow = Color(0xFFF0AB25)
 
 private enum class RemovePostStep { REASON, CONFIRM }
 
+/** Client-side cap on OTHER's free-text reason — mirrored server-side in ModerationAdminRoutes.kt. */
+private const val MAX_OTHER_DETAILS_LENGTH = 500
+
 /**
  * Admin-only "remove post" flow: pick one of the 13 moderation reasons (a free-text field is
  * required, non-blank, for OTHER), then confirm before the removal actually fires. Stateless
@@ -62,6 +72,7 @@ private enum class RemovePostStep { REASON, CONFIRM }
 @Composable
 fun AdminRemovePostSheet(
     isSubmitting: Boolean,
+    errorMessage: String? = null,
     onConfirm: (ModerationReason, String?) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -69,9 +80,10 @@ fun AdminRemovePostSheet(
     var step by remember { mutableStateOf(RemovePostStep.REASON) }
     var selectedReason by remember { mutableStateOf<ModerationReason?>(null) }
     var otherDetails by remember { mutableStateOf("") }
+    val trimmedOtherDetails = otherDetails.trim()
 
     val canContinue = selectedReason != null &&
-        (selectedReason != ModerationReason.OTHER || otherDetails.isNotBlank())
+        (selectedReason != ModerationReason.OTHER || trimmedOtherDetails.isNotBlank())
 
     ModalBottomSheet(
         onDismissRequest = { if (!isSubmitting) onDismiss() },
@@ -80,30 +92,44 @@ fun AdminRemovePostSheet(
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
         dragHandle = { BottomSheetDefaults.DragHandle(color = TextTertiary) },
     ) {
-        when (step) {
-            RemovePostStep.REASON -> ReasonStep(
-                selectedReason = selectedReason,
-                otherDetails = otherDetails,
-                onReasonSelected = { selectedReason = it },
-                onOtherDetailsChanged = { otherDetails = it },
-                canContinue = canContinue,
-                onContinue = { step = RemovePostStep.CONFIRM },
-                onCancel = onDismiss,
-            )
+        // Fixed height for both steps — REASON and CONFIRM used to size independently (REASON at
+        // 0.9f, CONFIRM auto-measuring its own short content), so the sheet re-animated its height
+        // on every step change. imePadding() also lives here now, once, instead of only on
+        // REASON's footer row — the whole sheet resizes together on an IME inset change instead of
+        // just that one row re-measuring every animation frame.
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.9f)
+                .imePadding(),
+        ) {
+            when (step) {
+                RemovePostStep.REASON -> ReasonStep(
+                    selectedReason = selectedReason,
+                    otherDetails = otherDetails,
+                    onReasonSelected = { selectedReason = it },
+                    onOtherDetailsChanged = { otherDetails = it.take(MAX_OTHER_DETAILS_LENGTH) },
+                    canContinue = canContinue,
+                    onContinue = { step = RemovePostStep.CONFIRM },
+                    onCancel = onDismiss,
+                )
 
-            RemovePostStep.CONFIRM -> {
-                val reason = selectedReason
-                if (reason == null) {
-                    step = RemovePostStep.REASON
-                } else {
-                    ConfirmStep(
-                        reason = reason,
-                        isSubmitting = isSubmitting,
-                        onConfirm = {
-                            onConfirm(reason, otherDetails.takeIf { reason == ModerationReason.OTHER })
-                        },
-                        onBack = { if (!isSubmitting) step = RemovePostStep.REASON },
-                    )
+                RemovePostStep.CONFIRM -> {
+                    val reason = selectedReason
+                    if (reason == null) {
+                        step = RemovePostStep.REASON
+                    } else {
+                        ConfirmStep(
+                            reason = reason,
+                            otherDetails = trimmedOtherDetails,
+                            isSubmitting = isSubmitting,
+                            errorMessage = errorMessage,
+                            onConfirm = {
+                                onConfirm(reason, trimmedOtherDetails.takeIf { reason == ModerationReason.OTHER })
+                            },
+                            onBack = { if (!isSubmitting) step = RemovePostStep.REASON },
+                        )
+                    }
                 }
             }
         }
@@ -120,12 +146,25 @@ private fun ReasonStep(
     onContinue: () -> Unit,
     onCancel: () -> Unit,
 ) {
-    val scrollState = rememberScrollState()
+    val listState = rememberLazyListState()
+    // Swallows whatever the list itself couldn't consume at a scroll boundary (top/bottom of the
+    // reason list, or a fling that overshoots it), so the ModalBottomSheet's own drag-to-dismiss
+    // connection — an ancestor of this one — never sees a leftover delta/velocity to act on. That
+    // leftover reaching the sheet while the list is already fully scrolled is what produced the
+    // OnePlus 8T glitch: a rapid drag-up-drag-down oscillation once the list hit its end.
+    val consumeOverscroll = remember {
+        object : NestedScrollConnection {
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset =
+                available
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity = available
+        }
+    }
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .fillMaxHeight(0.9f),
+            .fillMaxHeight(),
     ) {
         Column(modifier = Modifier.padding(horizontal = 20.dp)) {
             Text(
@@ -142,15 +181,17 @@ private fun ReasonStep(
             )
         }
 
-        Column(
+        LazyColumn(
+            state = listState,
             modifier = Modifier
                 .weight(1f)
-                .verticalScroll(scrollState)
-                .padding(horizontal = 20.dp),
+                .nestedScroll(consumeOverscroll)
+                .padding(horizontal = 20.dp)
+                .testTag("admin_remove_post_reason_list"),
         ) {
-            Spacer(modifier = Modifier.height(12.dp))
+            item { Spacer(modifier = Modifier.height(12.dp)) }
 
-            ModerationReason.entries.forEach { reason ->
+            items(ModerationReason.entries) { reason ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -169,18 +210,20 @@ private fun ReasonStep(
             }
 
             if (selectedReason == ModerationReason.OTHER) {
-                Spacer(modifier = Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = otherDetails,
-                    onValueChange = onOtherDetailsChanged,
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("Describe the reason") },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        focusedBorderColor = AccentYellow,
-                    ),
-                )
+                item {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = otherDetails,
+                        onValueChange = onOtherDetailsChanged,
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("Describe the reason") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedBorderColor = AccentYellow,
+                        ),
+                    )
+                }
             }
         }
 
@@ -189,7 +232,6 @@ private fun ReasonStep(
                 .fillMaxWidth()
                 .background(SheetSurface)
                 .navigationBarsPadding()
-                .imePadding()
                 .padding(horizontal = 20.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.End,
         ) {
@@ -214,13 +256,16 @@ private fun ReasonStep(
 @Composable
 private fun ConfirmStep(
     reason: ModerationReason,
+    otherDetails: String,
     isSubmitting: Boolean,
+    errorMessage: String?,
     onConfirm: () -> Unit,
     onBack: () -> Unit,
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .fillMaxHeight()
             .padding(horizontal = 20.dp)
             .navigationBarsPadding()
             .padding(bottom = 24.dp),
@@ -237,6 +282,22 @@ private fun ConfirmStep(
             color = TextSecondary,
             fontSize = 13.sp,
         )
+        if (reason == ModerationReason.OTHER && otherDetails.isNotBlank()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = otherDetails,
+                color = TextPrimary,
+                fontSize = 13.sp,
+            )
+        }
+        if (errorMessage != null) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = errorMessage,
+                color = DangerAccent,
+                fontSize = 13.sp,
+            )
+        }
         Spacer(modifier = Modifier.height(20.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             TextButton(onClick = onBack, enabled = !isSubmitting) {

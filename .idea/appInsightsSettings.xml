@@ -36,10 +36,10 @@
             <InsightsFilterSettings>
               <option name="connection">
                 <ConnectionSetting>
-                  <option name="appId" value="com.revio.social.debug" />
-                  <option name="mobileSdkAppId" value="1:807894033900:android:c87f4013b8f2f98015ccc9" />
-                  <option name="projectId" value="revio-debug-47037" />
-                  <option name="projectNumber" value="807894033900" />
+                  <option name="appId" value="com.revio.social" />
+                  <option name="mobileSdkAppId" value="1:711742765995:android:4bf914aa0fef66773bb0ee" />
+                  <option name="projectId" value="carspotter-f2b68" />
+                  <option name="projectNumber" value="711742765995" />
                 </ConnectionSetting>
               </option>
               <option name="signal" value="SIGNAL_UNSPECIFIED" />

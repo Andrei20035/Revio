@@ -8,16 +8,21 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.requestFocus
+import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.revio.social.data.model.ModerationReason
 import com.revio.social.data.model.label
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -110,6 +115,46 @@ class AdminRemovePostSheetTest {
         composeTestRule.onNodeWithText("Describe the reason").performScrollTo().performTextInput("   ")
 
         composeTestRule.onNodeWithText("Continue").assertIsNotEnabled()
+    }
+
+    @Test
+    fun `OTHER_details_with_surrounding_whitespace_are_trimmed_before_confirming`() {
+        var confirmed: Pair<ModerationReason, String?>? = null
+
+        composeTestRule.setContent {
+            AdminRemovePostSheet(
+                isSubmitting = false,
+                onConfirm = { reason, details -> confirmed = reason to details },
+                onDismiss = {},
+            )
+        }
+
+        composeTestRule.onNodeWithText(ModerationReason.OTHER.label).performScrollTo().performClick()
+        composeTestRule.onNodeWithText("Describe the reason").performScrollTo()
+            .performTextInput("  Doesn't fit any category  ")
+        composeTestRule.onNodeWithText("Continue").assertIsEnabled().performClick()
+        composeTestRule.onNodeWithText("Remove post").performClick()
+
+        assertEquals(ModerationReason.OTHER to "Doesn't fit any category", confirmed)
+    }
+
+    @Test
+    fun `confirm_step_shows_the_typed_OTHER_details_under_the_reason_label`() {
+        composeTestRule.setContent {
+            AdminRemovePostSheet(
+                isSubmitting = false,
+                onConfirm = { _, _ -> },
+                onDismiss = {},
+            )
+        }
+
+        composeTestRule.onNodeWithText(ModerationReason.OTHER.label).performScrollTo().performClick()
+        composeTestRule.onNodeWithText("Describe the reason").performScrollTo()
+            .performTextInput("Doesn't fit any category")
+        composeTestRule.onNodeWithText("Continue").performClick()
+
+        composeTestRule.onNodeWithText("Confirm removal").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Doesn't fit any category").assertIsDisplayed()
     }
 
     @Test
@@ -273,5 +318,65 @@ class AdminRemovePostSheetTest {
         composeTestRule.onNodeWithText("Continue").performClick()
 
         composeTestRule.onNodeWithText("Back").assertIsNotEnabled()
+    }
+
+    @Test
+    fun `error_message_is_shown_on_the_confirm_step_and_Remove_post_stays_enabled`() {
+        composeTestRule.setContent {
+            AdminRemovePostSheet(
+                isSubmitting = false,
+                errorMessage = "Post not found",
+                onConfirm = { _, _ -> },
+                onDismiss = {},
+            )
+        }
+
+        composeTestRule.onNodeWithText(ModerationReason.NO_CAR_CONTENT.label).performClick()
+        composeTestRule.onNodeWithText("Continue").performClick()
+
+        composeTestRule.onNodeWithText("Post not found").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Remove post").assertIsEnabled()
+    }
+
+    @Test
+    fun `scrolling to the last reason and flinging past it keeps the sheet open and footer visible`() {
+        var dismissed = false
+        composeTestRule.setContent {
+            AdminRemovePostSheet(
+                isSubmitting = false,
+                onConfirm = { _, _ -> },
+                onDismiss = { dismissed = true },
+            )
+        }
+
+        composeTestRule.onNodeWithText(ModerationReason.OTHER.label).performScrollTo()
+        // A fling past the list's own end must be swallowed at the list boundary, not bleed into
+        // the ModalBottomSheet's drag-to-dismiss — this is the OnePlus 8T oscillation glitch.
+        composeTestRule.onNodeWithTag("admin_remove_post_reason_list").performTouchInput { swipeUp() }
+        composeTestRule.waitForIdle()
+
+        assertFalse(
+            "An overscroll past the last reason must not dismiss the sheet",
+            dismissed,
+        )
+        composeTestRule.onNodeWithText("Cancel").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Continue").assertIsDisplayed()
+    }
+
+    @Test
+    fun `footer stays visible and reachable with the OTHER field focused`() {
+        composeTestRule.setContent {
+            AdminRemovePostSheet(
+                isSubmitting = false,
+                onConfirm = { _, _ -> },
+                onDismiss = {},
+            )
+        }
+
+        composeTestRule.onNodeWithText(ModerationReason.OTHER.label).performScrollTo().performClick()
+        composeTestRule.onNodeWithText("Describe the reason").performScrollTo().requestFocus()
+
+        composeTestRule.onNodeWithText("Cancel").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Continue").assertIsDisplayed().assertIsNotEnabled()
     }
 }

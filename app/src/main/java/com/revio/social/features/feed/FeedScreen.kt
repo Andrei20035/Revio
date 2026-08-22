@@ -261,13 +261,17 @@ fun FeedScreen(
     postPendingAdminRemoval?.let { postId ->
         AdminRemovePostSheet(
             isSubmitting = adminRemovePostState.isSubmitting,
+            errorMessage = adminRemovePostState.errorMessage,
             onConfirm = { reason, reasonDetails ->
                 adminViewModel.removePost(postId, reason, reasonDetails) {
                     postPendingAdminRemoval = null
-                    viewModel.refresh()
+                    viewModel.onPostRemovedByAdmin(postId)
                 }
             },
-            onDismiss = { postPendingAdminRemoval = null },
+            onDismiss = {
+                postPendingAdminRemoval = null
+                adminViewModel.consumeRemovePostError()
+            },
         )
     }
 

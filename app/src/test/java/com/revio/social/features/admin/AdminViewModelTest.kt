@@ -1,6 +1,9 @@
 package com.revio.social.features.admin
 
 import com.revio.social.MainDispatcherRule
+import com.revio.social.core.analytics.AnalyticsClient
+import com.revio.social.core.analytics.AnalyticsEvent
+import com.revio.social.core.analytics.AnalyticsParamValue
 import com.revio.social.core.network.ApiResult
 import com.revio.social.data.model.ModerationReason
 import com.revio.social.data.remote.dto.admin.AdminUserSummaryDto
@@ -15,6 +18,8 @@ import com.revio.social.data.repository.AdminRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import io.mockk.verify
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -290,5 +295,74 @@ class AdminViewModelTest {
         assertFalse(onSuccessCalled)
         assertEquals("Post not found", vm.removePostState.value.errorMessage)
         assertFalse(vm.removePostState.value.isSubmitting)
+    }
+
+    @Test
+    fun `two consecutive removePost calls while submitting produce a single repository call`() = runTest {
+        val postId = UUID.randomUUID()
+        val deferred = CompletableDeferred<ApiResult<RemovePostResponseDto>>()
+        coEvery {
+            repository.removePost(postId, ModerationReason.SPAM_OR_MISLEADING, null)
+        } coAnswers { deferred.await() }
+
+        val vm = AdminViewModel(repository)
+        vm.removePost(postId, ModerationReason.SPAM_OR_MISLEADING, null) {}
+        assertTrue("isSubmitting must already be true synchronously, before the coroutine runs", vm.removePostState.value.isSubmitting)
+
+        vm.removePost(postId, ModerationReason.SPAM_OR_MISLEADING, null) {}
+        advanceUntilIdle()
+
+        deferred.complete(ApiResult.Success(RemovePostResponseDto(violationId = UUID.randomUUID(), postId = postId)))
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { repository.removePost(postId, ModerationReason.SPAM_OR_MISLEADING, null) }
+    }
+
+    @Test
+    fun `removePost failure logs admin_remove_post_result with the failure code`() = runTest {
+        val postId = UUID.randomUUID()
+        val error = ApiResult.Error("Post not found", code = "post_not_found")
+        coEvery {
+            repository.removePost(postId, ModerationReason.SPAM_OR_MISLEADING, null)
+        } returns error
+
+        val analyticsClient: AnalyticsClient = mockk(relaxed = true)
+        val vm = AdminViewModel(repository, analyticsClient)
+        vm.removePost(postId, ModerationReason.SPAM_OR_MISLEADING, null) {}
+        advanceUntilIdle()
+
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "admin_remove_post_result",
+                    params = mapOf(
+                        "outcome" to AnalyticsParamValue.StringValue("failure"),
+                        "failure_code" to AnalyticsParamValue.StringValue("post_not_found"),
+                    ),
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `removePost success logs admin_remove_post_result with outcome success`() = runTest {
+        val postId = UUID.randomUUID()
+        coEvery {
+            repository.removePost(postId, ModerationReason.SPAM_OR_MISLEADING, null)
+        } returns ApiResult.Success(RemovePostResponseDto(violationId = UUID.randomUUID(), postId = postId))
+
+        val analyticsClient: AnalyticsClient = mockk(relaxed = true)
+        val vm = AdminViewModel(repository, analyticsClient)
+        vm.removePost(postId, ModerationReason.SPAM_OR_MISLEADING, null) {}
+        advanceUntilIdle()
+
+        verify(exactly = 1) {
+            analyticsClient.log(
+                AnalyticsEvent(
+                    name = "admin_remove_post_result",
+                    params = mapOf("outcome" to AnalyticsParamValue.StringValue("success")),
+                )
+            )
+        }
     }
 }

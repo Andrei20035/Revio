@@ -120,6 +120,10 @@ class FakeFeedCache(
         postsFlow.value = postsFlow.value.take(maxPosts)
     }
 
+    override suspend fun deletePost(postId: UUID) {
+        publishPosts(postsFlow.value.filterNot { it.id == postId })
+    }
+
     override suspend fun clear() {
         clearCount++
         postsFlow.value = emptyList()

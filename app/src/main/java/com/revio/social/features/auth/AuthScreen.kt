@@ -117,7 +117,6 @@ fun AuthScreen(
                                 is AuthAction.GoogleSignInResult -> viewModel.loginWithGoogle(action.idToken)
                                 is AuthAction.ToggleMode -> viewModel.toggleLoginMode()
                                 is AuthAction.ForgotPassword -> viewModel.forgotPassword()
-                                is AuthAction.ResetOnboarding -> { /* test-only */ }
                             }
                         }
                     )
@@ -410,21 +409,10 @@ private fun LoginFooter(
     uiState: AuthUiState,
     onAction: (AuthAction) -> Unit
 ) {
-    Row {
-        // For testing: Reset onboarding
-        Text(
-            text = "Reset ",
-            color = Color.Red,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.clickable { onAction(AuthAction.ResetOnboarding) }
-        )
-
-        AuthModeSwitchText(
-            isLoginMode = uiState.isLoginMode,
-            onToggleMode = { onAction(AuthAction.ToggleMode) }
-        )
-    }
+    AuthModeSwitchText(
+        isLoginMode = uiState.isLoginMode,
+        onToggleMode = { onAction(AuthAction.ToggleMode) }
+    )
 }
 
 @Composable
