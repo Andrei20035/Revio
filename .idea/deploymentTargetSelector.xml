@@ -48,10 +48,10 @@
       </SelectionState>
       <SelectionState runConfigName="Revio Debug">
         <option name="selectionMode" value="DROPDOWN" />
-        <DropdownSelection timestamp="2026-08-21T14:35:51.773848Z">
+        <DropdownSelection timestamp="2026-08-25T11:19:01.337529Z">
           <Target type="DEFAULT_BOOT">
             <handle>
-              <DeviceId pluginId="LocalEmulator" identifier="path=/Users/andrei/.android/avd/Pixel_9_Pro.avd" />
+              <DeviceId pluginId="PhysicalDevice" identifier="serial=d4204341" />
             </handle>
           </Target>
         </DropdownSelection>

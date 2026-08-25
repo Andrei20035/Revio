@@ -198,6 +198,18 @@ object NetworkModule {
 
     @Provides
     @Singleton
+    fun provideDeviceApi(retrofit: Retrofit): DeviceApi {
+        return retrofit.create(DeviceApi::class.java)
+    }
+
+    @Provides
+    @Singleton
+    fun provideNotificationPrefsApi(retrofit: Retrofit): NotificationPrefsApi {
+        return retrofit.create(NotificationPrefsApi::class.java)
+    }
+
+    @Provides
+    @Singleton
     fun provideAnnouncementApi(retrofit: Retrofit): AnnouncementApi {
         return retrofit.create(AnnouncementApi::class.java)
     }

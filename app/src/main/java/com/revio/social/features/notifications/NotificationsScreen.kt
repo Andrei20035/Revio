@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.revio.social.core.navigation.Screen
 import com.revio.social.core.ui.components.AppScreenBackground
 import com.revio.social.core.ui.components.OfflineStateMessage
 import com.revio.social.core.ui.components.StateMessage
@@ -73,6 +74,13 @@ fun NotificationsScreen(
         if (uiState.actionErrorMessage != null) {
             delay(3000)
             viewModel.clearActionError()
+        }
+    }
+
+    LaunchedEffect(uiState.navigateToProfile) {
+        if (uiState.navigateToProfile) {
+            navController.navigate(Screen.Profile.route)
+            viewModel.consumeNavigateToProfile()
         }
     }
 
@@ -131,7 +139,7 @@ fun NotificationsScreen(
                                 items(uiState.items, key = { it.id }) { notification ->
                                     NotificationRow(
                                         notification = notification,
-                                        onClick = { viewModel.markRead(notification.id) },
+                                        onClick = { viewModel.onNotificationClicked(notification) },
                                     )
                                     Spacer(modifier = Modifier.height(12.dp.actScaled()))
                                 }

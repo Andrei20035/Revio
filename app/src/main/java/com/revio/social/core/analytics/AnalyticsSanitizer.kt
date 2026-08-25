@@ -32,8 +32,8 @@ private val BUCKET_KEY_ALLOWED_VALUES: Map<String, Set<String>> = mapOf(
 
 /**
  * Enforces the naming, length, forbidden-key, and bucket rules frozen in
- * `docs/telemetry-naming-and-forbidden-data.md`. Not wired to any sender yet — a later step
- * decides which caller invokes this and with what [strict] value.
+ * `docs/telemetry-naming-and-forbidden-data.md`. Called by [FirebaseAnalyticsClient] before every
+ * event reaches Firebase.
  */
 object AnalyticsSanitizer {
 

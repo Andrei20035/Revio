@@ -8,6 +8,7 @@ import com.revio.social.core.analytics.AnalyticsEvent
 import com.revio.social.core.analytics.AnalyticsParamValue
 import com.revio.social.core.navigation.Screen
 import com.revio.social.core.network.ApiResult
+import com.revio.social.core.notifications.PendingDeepLink
 import com.revio.social.data.local.preferences.UserPreferences
 import com.revio.social.data.model.FeedPost
 import com.revio.social.data.model.User
@@ -42,6 +43,7 @@ class ProfileDashboardViewModel @Inject constructor(
     private val commentRepository: CommentRepository,
     private val userPreferences: UserPreferences,
     private val analyticsClient: AnalyticsClient? = null,
+    private val pendingDeepLink: PendingDeepLink? = null,
 ) : ViewModel() {
 
     /** Mirrors FeedViewModel.logInteractionResult's shape (pas 5.7). */
@@ -75,8 +77,16 @@ class ProfileDashboardViewModel @Inject constructor(
         when {
             rawUserId != null && targetUserId == null ->
                 _uiState.update { it.copy(errorMessage = "Invalid profile ID") }
-            targetUserId == null ->
+            targetUserId == null -> {
                 loadCurrentUser()
+                // A push/inbox deep link always targets the recipient's own spot (D3) — consume
+                // it only on the own-profile path.
+                viewModelScope.launch {
+                    val target = pendingDeepLink?.consume() ?: return@launch
+                    val postId = target.postId ?: return@launch
+                    openPostFromDeepLink(postId, target.openComments, category = target.destination.value)
+                }
+            }
             else -> {
                 _uiState.update { it.copy(isOwnProfile = false) }
                 loadForeignProfile(targetUserId)
@@ -282,6 +292,56 @@ class ProfileDashboardViewModel @Inject constructor(
     }
 
     /**
+     * Opens the see-post overlay for a post that may not be in [ProfileDashboardUiState.posts] —
+     * the destination of a "like"/"comment" push deep link (D3), which can point at any spot on
+     * the profile, not just one from the currently loaded page ([PAGE_SIZE]).
+     * Falls back to [PostRepository.getPostDetail] and holds the result in
+     * [ProfileDashboardUiState.deepLinkedPost] rather than inserting it into [ProfileDashboardUiState.posts],
+     * so grid order and cursor pagination are never disturbed.
+     *
+     * A "comment" deep link also opens [ProfileDashboardUiState.commentsSheet] on top of the
+     * overlay ([openComments] = true) — both are independently dismissible, so back closes the
+     * sheet first and the overlay second, same as when a user opens comments manually. If the
+     * commented-on comment itself was since deleted, the sheet just loads without it — no error.
+     */
+    fun openPostFromDeepLink(postId: UUID, openComments: Boolean = false, category: String? = null) {
+        if (_uiState.value.posts.any { it.id == postId }) {
+            onPostClick(postId)
+            if (openComments) openCommentsSheet(postId)
+            logDestinationReached(category, outcome = "ok")
+            return
+        }
+
+        viewModelScope.launch {
+            when (val result = postRepository.getPostDetail(postId)) {
+                is ApiResult.Success -> {
+                    _uiState.update { it.copy(selectedPostId = postId, deepLinkedPost = result.data) }
+                    if (openComments) openCommentsSheet(postId)
+                    logDestinationReached(category, outcome = "ok")
+                }
+                is ApiResult.Error -> {
+                    _uiState.update { it.copy(userMessage = "This spot isn't available anymore") }
+                    logDestinationReached(category, outcome = if (result.code == "not_found") "not_found" else "error")
+                }
+            }
+        }
+    }
+
+    /** Ev. push_destination_reached (§16, pas 7.2) — [category] is null when this open wasn't triggered by a deep link. */
+    private fun logDestinationReached(category: String?, outcome: String) {
+        if (category == null) return
+        analyticsClient?.log(
+            AnalyticsEvent(
+                name = "push_destination_reached",
+                params = mapOf(
+                    "category" to AnalyticsParamValue.StringValue(category),
+                    "outcome" to AnalyticsParamValue.StringValue(outcome),
+                ),
+            )
+        )
+    }
+
+    /**
      * Refreshes engagement fields (like/comment counts, liked-by-current-user) for [postId] in the
      * background so the see-post overlay corrects stale counts without blocking on a request.
      * Deduped per post via [ProfileDashboardUiState.postDetailInFlight] and rate-limited via
@@ -325,7 +385,7 @@ class ProfileDashboardViewModel @Inject constructor(
     }
 
     fun clearSelectedPost() {
-        _uiState.update { it.copy(selectedPostId = null, commentsSheet = null) }
+        _uiState.update { it.copy(selectedPostId = null, commentsSheet = null, deepLinkedPost = null) }
     }
 
     fun requestDeletePost() {
@@ -453,6 +513,10 @@ class ProfileDashboardViewModel @Inject constructor(
     // ---- Comments ----
 
     fun openComments(postId: UUID) {
+        openCommentsSheet(postId)
+    }
+
+    private fun openCommentsSheet(postId: UUID) {
         _uiState.update { it.copy(commentsSheet = CommentsSheetState(postId = postId, isLoading = true)) }
         loadComments(postId)
     }

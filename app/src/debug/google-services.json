@@ -12,7 +12,20 @@
           "package_name": "com.revio.social.debug"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "807894033900-ce6o0v5kho1pude9cosa7giirag0fkdg.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.revio.social.debug",
+            "certificate_hash": "88c3fe96e2ccff2426ba42cad90d3fc62599f827"
+          }
+        },
+        {
+          "client_id": "807894033900-r0qknf3a423gpackdr0qbnssepml2k2u.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyC8vvk9EWwKMWXnD7qeTF6YCSHbGxSdaOQ"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "807894033900-r0qknf3a423gpackdr0qbnssepml2k2u.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

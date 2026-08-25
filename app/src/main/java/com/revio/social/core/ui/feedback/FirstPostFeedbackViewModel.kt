@@ -56,7 +56,13 @@ class FirstPostFeedbackCardCoordinator @Inject constructor(
                         _cardState.value = FirstPostFeedbackCardState(step = FirstPostFeedbackStep.Rating)
                     }
                     is FirstPostPromptState.Hidden -> {
-                        _cardState.value = null
+                        // onSubmitted() (below) transitions the controller to Hidden right after
+                        // a successful send — but the card itself should keep showing the
+                        // notifications prompt (step 2.10) at that point, not disappear with it.
+                        // That step's own accept/dismiss handlers null the card explicitly.
+                        if (_cardState.value?.step !is FirstPostFeedbackStep.NotificationsPrompt) {
+                            _cardState.value = null
+                        }
                         _confirmationMessage.value = null
                         lastSurface = FeedbackSurface.FEED
                     }
@@ -120,7 +126,10 @@ class FirstPostFeedbackCardCoordinator @Inject constructor(
 
             when (feedbackRepository.submit(payload)) {
                 is ApiResult.Success -> {
-                    _cardState.value = null
+                    // Feedback is saved as of this point — Variant E's final step (D11) replaces
+                    // the card's content in place instead of dismissing it, so abandoning this
+                    // step never loses the feedback that was already sent.
+                    _cardState.value = FirstPostFeedbackCardState(step = FirstPostFeedbackStep.NotificationsPrompt)
                     _confirmationMessage.value = CONFIRMATION_MESSAGE
                     controller.onSubmitted()
                 }
@@ -138,7 +147,9 @@ class FirstPostFeedbackCardCoordinator @Inject constructor(
      */
     private fun partialPayloadOrNull(): FirstPostFeedbackPayload? {
         return when (val step = _cardState.value?.step) {
-            null, is FirstPostFeedbackStep.Rating -> null
+            // NotificationsPrompt is reached only after a full submit already went through —
+            // nothing partial left to send.
+            null, is FirstPostFeedbackStep.Rating, is FirstPostFeedbackStep.NotificationsPrompt -> null
             is FirstPostFeedbackStep.Reason ->
                 buildPayload(rating = step.rating, quickReason = null, comment = null)
             is FirstPostFeedbackStep.Comment ->
@@ -168,6 +179,16 @@ class FirstPostFeedbackCardCoordinator @Inject constructor(
     fun consumeConfirmation() {
         _confirmationMessage.value = null
     }
+
+    /** "Yes, notify me" — dismisses the card. Actually requesting the OS permission is out of scope here (step 2.10). */
+    fun onNotificationsPromptAccepted() {
+        _cardState.value = null
+    }
+
+    /** "Maybe later", or back — same as [onNotificationsPromptAccepted] minus the acceptance. */
+    fun onNotificationsPromptDismissed() {
+        _cardState.value = null
+    }
 }
 
 /** Thin per-screen proxy over the singleton [FirstPostFeedbackCardCoordinator]. */
@@ -192,4 +213,6 @@ class FirstPostFeedbackViewModel @Inject constructor(
     fun onNotNow() = coordinator.onNotNow()
     fun onCloseX() = coordinator.onCloseX()
     fun consumeConfirmation() = coordinator.consumeConfirmation()
+    fun onNotificationsPromptAccepted() = coordinator.onNotificationsPromptAccepted()
+    fun onNotificationsPromptDismissed() = coordinator.onNotificationsPromptDismissed()
 }

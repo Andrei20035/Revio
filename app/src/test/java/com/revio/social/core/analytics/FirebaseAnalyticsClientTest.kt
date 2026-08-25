@@ -10,6 +10,7 @@ import io.mockk.mockkConstructor
 import io.mockk.unmockkConstructor
 import io.mockk.verify
 import org.junit.After
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class FirebaseAnalyticsClientTest {
@@ -44,15 +45,31 @@ class FirebaseAnalyticsClientTest {
                 name = "post_upload_result",
                 params = mapOf(
                     "outcome" to AnalyticsParamValue.StringValue("success"),
-                    "retry_bucket" to AnalyticsParamValue.LongValue(0L),
+                    "attempt_count" to AnalyticsParamValue.LongValue(0L),
                     "duration_seconds" to AnalyticsParamValue.DoubleValue(1.5),
                 ),
             ),
         )
 
         verify { bundle.putString("outcome", "success") }
-        verify { bundle.putLong("retry_bucket", 0L) }
+        verify { bundle.putLong("attempt_count", 0L) }
         verify { bundle.putDouble("duration_seconds", 1.5) }
         verify { firebaseAnalytics.logEvent("post_upload_result", any()) }
+    }
+
+    @Test
+    fun `event with a forbidden key like post_id never reaches FirebaseAnalytics`() {
+        // BuildConfig.DEBUG is true for unit tests, so AnalyticsSanitizer runs in strict mode here
+        // and throws rather than silently dropping the key — see AnalyticsSanitizer's KDoc.
+        assertThrows(AnalyticsValidationException::class.java) {
+            client.log(
+                AnalyticsEvent(
+                    name = "post_upload_result",
+                    params = mapOf("post_id" to AnalyticsParamValue.StringValue("abc-123")),
+                ),
+            )
+        }
+
+        verify(exactly = 0) { firebaseAnalytics.logEvent(any(), any()) }
     }
 }

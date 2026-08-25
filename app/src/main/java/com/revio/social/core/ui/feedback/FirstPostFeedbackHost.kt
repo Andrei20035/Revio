@@ -53,7 +53,13 @@ fun BoxScope.FirstPostFeedbackHost(
     }
 
     if (!isTourActive) cardState?.let { state ->
-        BackHandler(enabled = true) { }
+        // Every step but the notifications prompt swallows back (unchanged behavior). The
+        // prompt (step 2.10, D11) is dismissible by design — back = "Maybe later".
+        BackHandler(enabled = true) {
+            if (state.step is FirstPostFeedbackStep.NotificationsPrompt) {
+                viewModel.onNotificationsPromptDismissed()
+            }
+        }
 
         Box(
             modifier = Modifier
@@ -78,6 +84,8 @@ fun BoxScope.FirstPostFeedbackHost(
                 onSkip = viewModel::onSkip,
                 onNotNow = viewModel::onNotNow,
                 onCloseX = viewModel::onCloseX,
+                onNotificationsPromptAccepted = viewModel::onNotificationsPromptAccepted,
+                onNotificationsPromptDismissed = viewModel::onNotificationsPromptDismissed,
             )
         }
     }

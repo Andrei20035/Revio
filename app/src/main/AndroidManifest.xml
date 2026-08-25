@@ -6,6 +6,7 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:name=".RevioApp"
@@ -33,10 +34,24 @@
             android:name="firebase_analytics_collection_enabled"
             android:value="true" />
 
+        <!-- FCM defaults used when a data-only/background message doesn't specify its own
+             icon/color/channel. The channel id below doesn't exist yet — created in a later
+             step — this only declares the fallback identifier. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_notification" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/notification_accent" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="account" />
+
         <activity
             android:name=".MainActivity"
             android:screenOrientation="portrait"
             android:exported="true"
+            android:launchMode="singleTop"
             android:theme="@style/Theme.Revio">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -44,6 +59,14 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".core.notifications.RevioMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
 
         <!-- Shares camera-capture temp files with the system camera app. -->
         <provider

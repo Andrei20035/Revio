@@ -3,9 +3,11 @@ package com.revio.social.core.auth
 import com.revio.social.core.analytics.AnalyticsClient
 import com.revio.social.core.analytics.AnalyticsEvent
 import com.revio.social.core.analytics.AnalyticsParamValue
+import com.revio.social.core.notifications.PushTokenRegistrar
 import com.revio.social.data.local.auth.TokenStore
 import com.revio.social.data.local.cache.FeedCache
 import com.revio.social.data.local.preferences.UserPreferences
+import dagger.Lazy
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import javax.inject.Inject
@@ -23,6 +25,9 @@ class SessionManager @Inject constructor(
     private val userPreferences: UserPreferences,
     private val feedCache: FeedCache,
     private val analyticsClient: AnalyticsClient? = null,
+    // Lazy: PushTokenRegistrar depends on DeviceApi -> Retrofit -> OkHttpClient ->
+    // TokenAuthenticator -> SessionManager, so a direct dependency here would be a Dagger cycle.
+    private val pushTokenRegistrar: Lazy<PushTokenRegistrar>? = null,
 ) {
     private val _expired = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val expired = _expired.asSharedFlow()
@@ -35,6 +40,9 @@ class SessionManager @Inject constructor(
         tokenStore.clear()
         userPreferences.clearAuthData()
         feedCache.clear()
+        // Local-only: auth is already broken here, so an authenticated DELETE would just fail.
+        // The next successful login re-registers from scratch (registerCurrentToken).
+        pushTokenRegistrar?.get()?.forgetPendingRegistration()
         analyticsClient?.log(
             AnalyticsEvent(
                 name = EVENT_SESSION_EXPIRED,

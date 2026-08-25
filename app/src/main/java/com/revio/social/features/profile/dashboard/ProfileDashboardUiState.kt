@@ -44,6 +44,13 @@ data class ProfileDashboardUiState(
     val postDetailInFlight: Set<UUID> = emptySet(),
     /** Wall-clock time (ms) of the last successful post-detail refresh per post, for TTL-based dedup. */
     val postDetailFetchedAt: Map<UUID, Long> = emptyMap(),
+    /**
+     * A post fetched via [ProfileDashboardViewModel.openPostFromDeepLink] because [selectedPostId]
+     * wasn't in [posts] (e.g. a push deep link to a spot outside the loaded page, D3). Kept
+     * separate from [posts] rather than inserted into it, so it never disturbs grid order or
+     * cursor pagination.
+     */
+    val deepLinkedPost: FeedPost? = null,
 ) {
     val isAnyLoading: Boolean
         get() = isLoadingInitial || isLoadingMore || isRefreshing
@@ -58,6 +65,8 @@ data class ProfileDashboardUiState(
         get() = user?.streakDays ?: 0
 
     val selectedPost: FeedPost?
-        get() = selectedPostId?.let { id -> posts.firstOrNull { it.id == id } }
+        get() = selectedPostId?.let { id ->
+            posts.firstOrNull { it.id == id } ?: deepLinkedPost?.takeIf { it.id == id }
+        }
 
 }

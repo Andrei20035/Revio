@@ -7,4 +7,7 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <!-- Matches ProfileAccentGold in core/ui/theme/Color.kt — used as the FCM default
+         notification accent color (com.google.firebase.messaging.default_notification_color). -->
+    <color name="notification_accent">#FFF0AB25</color>
 </resources>

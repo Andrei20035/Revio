@@ -15,6 +15,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.platform.LocalContext
 import android.widget.Toast
 import com.revio.social.core.auth.SessionManager
+import com.revio.social.core.notifications.DeepLinkDestination
+import com.revio.social.core.notifications.PendingDeepLink
+import com.revio.social.core.notifications.PushTokenRegistrar
 import com.revio.social.core.navigation.Screen
 import com.revio.social.core.tour.TourHostViewModel
 import com.revio.social.core.tour.TourStep
@@ -22,9 +25,13 @@ import javax.inject.Inject
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.revio.social.core.navigation.RevioNavigation
 import com.revio.social.core.navigation.StartDestinationViewModel
+import com.revio.social.core.notifications.createNotificationChannels
 import com.revio.social.features.notifications.ModerationNoticeHost
 import com.google.firebase.analytics.FirebaseAnalytics
 import com.google.firebase.crashlytics.FirebaseCrashlytics
@@ -54,6 +61,9 @@ class RevioApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+
+        createNotificationChannels(this)
+
         // Opt-out consent (docs/consent-decision.md). A fresh install collects immediately: the
         // manifest's firebase_*_collection_enabled=true meta-data applies before this runs.
         //
@@ -87,6 +97,47 @@ fun RevioAppUI(
     val start by startVm.startDestination.collectAsState()
     val tourHostViewModel: TourHostViewModel = hiltViewModel()
     val tourStep by tourHostViewModel.tourController.step.collectAsState()
+    val pushTokenRegistrar = hiltViewModel<PushTokenHostViewModel>().pushTokenRegistrar
+    val pendingDeepLink = hiltViewModel<PendingDeepLinkHostViewModel>().pendingDeepLink
+
+    // Re-sends the FCM token on every foreground so timezone/locale/appVersion stay current on
+    // the server row (push-notifications plan, step 2.4) — an upsert, so this never duplicates
+    // the device row created at login.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        pushTokenRegistrar.registerCurrentToken()
+    }
+
+    // Consumes a push tap buffered before the graph existed (cold start) or before login
+    // completed (delogat). Nothing to navigate here — a deep link that resolved straight to
+    // Feed is already the start destination or is where the post-login flow lands anyway; this
+    // only clears the buffer once that destination is actually reached (push-notifications
+    // plan, step 2.5).
+    val currentBackStackEntry by navController.currentBackStackEntryAsState()
+    LaunchedEffect(start, currentBackStackEntry, pendingDeepLink) {
+        if (start == null) return@LaunchedEffect
+        if (currentBackStackEntry?.destination?.route == Screen.Feed.route) {
+            pendingDeepLink.consume()
+        }
+    }
+
+    // A push tapped while the app is already running elsewhere (singleTop -> onNewIntent):
+    // the graph already exists, so navigate explicitly. Guarded against firing before the graph
+    // exists (`start == null`) and against jumping to Feed while unauthenticated.
+    LaunchedEffect(pendingDeepLink, navController) {
+        pendingDeepLink.signal.collect {
+            if (start == null) return@collect
+            val currentRoute = navController.currentDestination?.route
+            if (currentRoute == Screen.Auth.route || currentRoute == Screen.Onboarding.route) return@collect
+            if (currentRoute == Screen.Feed.route) return@collect
+            if (pendingDeepLink.consume()?.destination == DeepLinkDestination.FEED) {
+                navController.navigate(Screen.Feed.route) {
+                    popUpTo(Screen.Feed.route) { saveState = true }
+                    launchSingleTop = true
+                    restoreState = true
+                }
+            }
+        }
+    }
 
     LaunchedEffect(sessionManager, navController) {
         sessionManager.expired.collect { message ->
@@ -147,4 +198,14 @@ fun RevioAppUI(
 @dagger.hilt.android.lifecycle.HiltViewModel
 class SessionHostViewModel @Inject constructor(
     val sessionManager: SessionManager,
+) : androidx.lifecycle.ViewModel()
+
+@dagger.hilt.android.lifecycle.HiltViewModel
+class PushTokenHostViewModel @Inject constructor(
+    val pushTokenRegistrar: PushTokenRegistrar,
+) : androidx.lifecycle.ViewModel()
+
+@dagger.hilt.android.lifecycle.HiltViewModel
+class PendingDeepLinkHostViewModel @Inject constructor(
+    val pendingDeepLink: PendingDeepLink,
 ) : androidx.lifecycle.ViewModel()

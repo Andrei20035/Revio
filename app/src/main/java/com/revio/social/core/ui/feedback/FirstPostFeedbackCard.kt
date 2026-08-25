@@ -1,6 +1,8 @@
 package com.revio.social.core.ui.feedback
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -29,11 +32,13 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -42,6 +47,7 @@ import com.revio.social.core.ui.overlay.OverlayAccent
 import com.revio.social.core.ui.overlay.OverlayBorder
 import com.revio.social.core.ui.overlay.OverlaySurface
 import com.revio.social.core.ui.theme.Poppins
+import com.revio.social.core.ui.tour.rememberReducedMotion
 import com.revio.social.data.model.QuickReason
 
 // Card palette — shared with TourOverlay so the two "app needs your attention" moments match.
@@ -53,11 +59,21 @@ private val ErrorColor = Color(0xFFFF5A5F)
 private val CardCornerRadius = 20.dp
 private val EmojiFontSize = 28.sp
 
-/** One step of the first-post feedback card's rating → reason → comment flow. */
+// Notifications pre-prompt palette (step 2.10, §10) — the same golden accent as the bell badge
+// in NotificationsBellButton/NotificationsScreen, deliberately distinct from OverlayAccent (teal).
+private val NotificationAccent = Color(0xFFF0AB25)
+private val NotificationSecondaryText = Color(0xFF8D8D8D)
+
+/**
+ * One step of [FirstPostFeedbackCard]'s flow: rating → reason → comment → (Variant E, D11)
+ * notifications pre-prompt. [NotificationsPrompt] is reached only after a successful submit —
+ * feedback is already saved by the time it shows, so dismissing it never loses it.
+ */
 sealed interface FirstPostFeedbackStep {
     data object Rating : FirstPostFeedbackStep
     data class Reason(val rating: Int) : FirstPostFeedbackStep
     data class Comment(val rating: Int, val reason: QuickReason) : FirstPostFeedbackStep
+    data object NotificationsPrompt : FirstPostFeedbackStep
 }
 
 /** Everything [FirstPostFeedbackCard] needs to render — fully hoisted, no internal state. */
@@ -124,6 +140,8 @@ fun FirstPostFeedbackCard(
     onSkip: () -> Unit,
     onNotNow: () -> Unit,
     onCloseX: () -> Unit,
+    onNotificationsPromptAccepted: () -> Unit,
+    onNotificationsPromptDismissed: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -137,16 +155,20 @@ fun FirstPostFeedbackCard(
             .animateContentSize()
             .padding(20.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
-        ) {
-            IconButton(onClick = onCloseX, modifier = Modifier.size(24.dp)) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "Dismiss feedback prompt",
-                    tint = TextTertiary,
-                )
+        // The notifications prompt (§10 spec) has no X — its own primary/secondary CTAs are the
+        // only exits, and back is wired to dismiss instead of being swallowed (unlike this X).
+        if (state.step !is FirstPostFeedbackStep.NotificationsPrompt) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                IconButton(onClick = onCloseX, modifier = Modifier.size(24.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Dismiss feedback prompt",
+                        tint = TextTertiary,
+                    )
+                }
             }
         }
 
@@ -160,6 +182,10 @@ fun FirstPostFeedbackCard(
                 onCommentChanged = onCommentChanged,
                 onSend = onSend,
                 onSkip = onSkip,
+            )
+            is FirstPostFeedbackStep.NotificationsPrompt -> NotificationsPromptStep(
+                onNotifyMe = onNotificationsPromptAccepted,
+                onMaybeLater = onNotificationsPromptDismissed,
             )
         }
     }
@@ -314,6 +340,65 @@ private fun CommentStep(
     }
 }
 
+/**
+ * Variant E's final step (D11/D12, §10): bell → title → supporting text → primary CTA →
+ * secondary CTA, in that order, with no bullet points or benefits list. Copy is Variant 2 —
+ * "Caldă" (D12). The bell does a one-shot ±12° decaying wobble on entry, skipped entirely under
+ * [rememberReducedMotion] per the accessibility requirement in §10.
+ */
+@Composable
+private fun NotificationsPromptStep(
+    onNotifyMe: () -> Unit,
+    onMaybeLater: () -> Unit,
+) {
+    val reducedMotion = rememberReducedMotion()
+    val bellRotation = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        if (reducedMotion) return@LaunchedEffect
+        bellRotation.animateTo(12f, animationSpec = tween(120))
+        bellRotation.animateTo(-10f, animationSpec = tween(130))
+        bellRotation.animateTo(6f, animationSpec = tween(110))
+        bellRotation.animateTo(-3f, animationSpec = tween(100))
+        bellRotation.animateTo(0f, animationSpec = tween(100))
+    }
+
+    Icon(
+        imageVector = Icons.Default.Notifications,
+        contentDescription = "Notifications",
+        tint = NotificationAccent,
+        modifier = Modifier
+            .size(32.dp)
+            .graphicsLayer { rotationZ = bellRotation.value },
+    )
+    Spacer(modifier = Modifier.height(12.dp))
+    Text(
+        text = "Want to know when people react to your spots?",
+        color = TextPrimary,
+        fontFamily = Poppins,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 16.sp,
+    )
+    Spacer(modifier = Modifier.height(8.dp))
+    Text(
+        text = "We'll tell you when someone likes or comments. Nothing else.",
+        color = TextSecondary,
+        fontFamily = Poppins,
+        fontSize = 13.sp,
+    )
+    Spacer(modifier = Modifier.height(16.dp))
+    Button(
+        onClick = onNotifyMe,
+        modifier = Modifier.fillMaxWidth(),
+        colors = ButtonDefaults.buttonColors(containerColor = NotificationAccent),
+    ) {
+        Text("Yes, notify me", fontFamily = Poppins, fontSize = 14.sp)
+    }
+    Spacer(modifier = Modifier.height(4.dp))
+    TextButton(onClick = onMaybeLater, modifier = Modifier.fillMaxWidth()) {
+        Text("Maybe later", color = NotificationSecondaryText, fontFamily = Poppins, fontSize = 13.sp)
+    }
+}
+
 // ---- Previews ----
 
 @Preview(showBackground = true, backgroundColor = 0xFF0A0A0C)
@@ -328,6 +413,8 @@ private fun FirstPostFeedbackCardRatingPreview() {
         onSkip = {},
         onNotNow = {},
         onCloseX = {},
+        onNotificationsPromptAccepted = {},
+        onNotificationsPromptDismissed = {},
     )
 }
 
@@ -343,6 +430,8 @@ private fun FirstPostFeedbackCardReasonPreview() {
         onSkip = {},
         onNotNow = {},
         onCloseX = {},
+        onNotificationsPromptAccepted = {},
+        onNotificationsPromptDismissed = {},
     )
 }
 
@@ -361,6 +450,8 @@ private fun FirstPostFeedbackCardCommentPreview() {
         onSkip = {},
         onNotNow = {},
         onCloseX = {},
+        onNotificationsPromptAccepted = {},
+        onNotificationsPromptDismissed = {},
     )
 }
 
@@ -380,5 +471,7 @@ private fun FirstPostFeedbackCardErrorPreview() {
         onSkip = {},
         onNotNow = {},
         onCloseX = {},
+        onNotificationsPromptAccepted = {},
+        onNotificationsPromptDismissed = {},
     )
 }

@@ -53,6 +53,7 @@ import com.revio.social.core.ui.scaling.actScaled
 import com.revio.social.core.ui.scaling.actScaledText
 import com.revio.social.core.ui.scaling.rememberActivityScale
 import com.revio.social.core.ui.theme.Poppins
+import com.revio.social.features.settings.notifications.NotificationSettingsSection
 
 private val CardBg = Color(0x3DD9D9D9)          // rgba(217,217,217,0.24)
 private val SectionLabelColor = Color(0xFF8D8D8D)
@@ -203,6 +204,12 @@ fun SettingsScreen(
                 bottomRound = true,
                 onClick = { navController.navigate(Screen.ChangePassword.route) },
             )
+
+            // ── Notifications section ────────────────────────────────────────
+            Spacer(modifier = Modifier.height(24.dp.actScaled()))
+            SectionLabel("Notifications")
+            Spacer(modifier = Modifier.height(8.dp.actScaled()))
+            NotificationSettingsSection()
 
             // ── Help us improve section ─────────────────────────────────────
             Spacer(modifier = Modifier.height(24.dp.actScaled()))

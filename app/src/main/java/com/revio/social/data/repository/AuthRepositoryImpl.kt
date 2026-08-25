@@ -5,6 +5,7 @@ import com.revio.social.data.local.auth.AuthTokens
 import com.revio.social.data.local.auth.DeviceIdentity
 import com.revio.social.data.local.auth.TokenStore
 import com.revio.social.data.local.cache.FeedCache
+import com.revio.social.core.notifications.PushTokenRegistrar
 import com.revio.social.data.remote.api.AuthApi
 import com.revio.social.data.remote.dto.auth.AuthResponse
 import com.revio.social.data.remote.dto.auth.DeleteAccountRequest
@@ -36,6 +37,7 @@ class AuthRepositoryImpl @Inject constructor(
     private val tokenStore: TokenStore? = null,
     private val deviceIdentity: DeviceIdentity? = null,
     private val feedCache: FeedCache? = null,
+    private val pushTokenRegistrar: PushTokenRegistrar? = null,
 ) : AuthRepository {
 
     override suspend fun login(email: String?, password: String?, googleIdToken: String?, provider: AuthProvider): ApiResult<AuthResponse> {
@@ -79,6 +81,7 @@ class AuthRepositoryImpl @Inject constructor(
     }
 
     override suspend fun logout(): ApiResult<Unit> {
+        pushTokenRegistrar?.unregisterCurrentDevice()
         val result = safeApiCallNoContent(policy = ErrorPolicy.SILENT) { authApi.logout() }
         tokenStore?.clear()
         userPreferences.clearAuthData()

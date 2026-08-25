@@ -3,10 +3,13 @@ package com.revio.social.data.local.preferences
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.revio.social.data.model.PromptStatus
+import com.revio.social.data.remote.dto.device.RegisterDeviceRequest
 import com.revio.social.data.remote.dto.feedback.SubmitFirstPostFeedbackRequest
 import com.revio.social.data.remote.dto.feedback.SubmitUserFeedbackRequest
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -62,10 +65,28 @@ class UserPreferences @Inject constructor(
 
         /** Opt-in consent (docs/consent-decision.md) — device-wide, not per-user, mirroring [ONBOARDING_KEY]. */
         val ANALYTICS_CONSENT_KEY = booleanPreferencesKey("analytics_consent_granted")
+
+        /**
+         * Whether the `POST_NOTIFICATIONS` runtime permission dialog has ever been shown —
+         * device-wide, like [ONBOARDING_KEY]. Android's own APIs can't distinguish "never asked"
+         * from "denied": `shouldShowRequestPermissionRationale` returns false in both cases
+         * (before any request, and after a permanent denial), so the Notifications Settings
+         * section (step 2.9) needs this local flag to tell them apart.
+         */
+        val NOTIFICATION_PERMISSION_REQUESTED_KEY = booleanPreferencesKey("notification_permission_requested")
         val JWT_TOKEN_KEY = stringPreferencesKey("jwt_token")
         val USER_ID_KEY = stringPreferencesKey("user_id")
         val USERNAME_KEY = stringPreferencesKey("username")
         val EMAIL_KEY = stringPreferencesKey("email")
+
+        /**
+         * Device registration request that failed to reach the server (offline) and still needs
+         * retrying — see [PushTokenRegistrar][com.revio.social.core.notifications.PushTokenRegistrar].
+         * Device-wide, not per-user: only one account can be logged in on a device at a time
+         * (single-active-session constraint), and a registration always targets the JWT's current
+         * user, so there's never more than one pending upload to track.
+         */
+        val PENDING_DEVICE_REGISTRATION_KEY = stringPreferencesKey("pending_device_registration")
 
         /** Legacy device-wide key, superseded by [tourStatusKey] — read only for one-time migration. */
         private val LEGACY_TOUR_STATUS_KEY = stringPreferencesKey("guided_tour_status")
@@ -105,10 +126,21 @@ class UserPreferences @Inject constructor(
          */
         private fun earlySpotterDismissedKey(userId: UUID) =
             stringSetPreferencesKey("early_spotter_dismissed_$userId")
+
+        /** Times the notifications pre-prompt fallback (D, step 2.11) has been shown to [userId] — capped at 3. */
+        private fun notificationPrepromptShownCountKey(userId: UUID) =
+            intPreferencesKey("notification_preprompt_shown_count_$userId")
+
+        /** Epoch millis of the last time the fallback D prompt was shown to [userId] — enforces the ≥7-day reshow gap. */
+        private fun notificationPrepromptLastShownAtKey(userId: UUID) =
+            longPreferencesKey("notification_preprompt_last_shown_at_$userId")
     }
 
     val onboardingCompleted: Flow<Boolean> = context.dataStore.data
         .map { it[ONBOARDING_KEY] ?: false }
+
+    val notificationPermissionRequested: Flow<Boolean> = context.dataStore.data
+        .map { it[NOTIFICATION_PERMISSION_REQUESTED_KEY] ?: false }
 
     /** On by default (opt-out) until the user explicitly revokes it — see docs/consent-decision.md. */
     val analyticsConsentGranted: Flow<Boolean> = context.dataStore.data
@@ -162,6 +194,14 @@ class UserPreferences @Inject constructor(
     val email: Flow<String?> = context.dataStore.data
         .map { it[EMAIL_KEY] }
 
+    /** Device registration awaiting resubmission (queued while offline). `null` if none pending. */
+    val pendingDeviceRegistration: Flow<RegisterDeviceRequest?> = context.dataStore.data
+        .map { preferences ->
+            preferences[PENDING_DEVICE_REGISTRATION_KEY]?.let {
+                runCatching { json.decodeFromString(RegisterDeviceRequest.serializer(), it) }.getOrNull()
+            }
+        }
+
     /** Locally cached first-post feedback prompt state for [userId]. `null` if never cached. */
     fun firstPostFeedbackState(userId: UUID): Flow<CachedPromptState?> = context.dataStore.data
         .map { preferences -> preferences[firstPostFeedbackStateKey(userId)]?.toCachedPromptState() }
@@ -212,6 +252,23 @@ class UserPreferences @Inject constructor(
     fun earlySpotterDismissed(userId: UUID): Flow<Set<String>> = context.dataStore.data
         .map { preferences -> preferences[earlySpotterDismissedKey(userId)] ?: emptySet() }
 
+    /** How many times the fallback D notifications prompt (step 2.11) has been shown to [userId]. `0` if never. */
+    fun notificationPrepromptShownCount(userId: UUID): Flow<Int> = context.dataStore.data
+        .map { preferences -> preferences[notificationPrepromptShownCountKey(userId)] ?: 0 }
+
+    /** When the fallback D prompt was last shown to [userId]. `null` if never. */
+    fun notificationPrepromptLastShownAt(userId: UUID): Flow<Instant?> = context.dataStore.data
+        .map { preferences -> preferences[notificationPrepromptLastShownAtKey(userId)]?.let { Instant.ofEpochMilli(it) } }
+
+    /** Records a fallback D reveal for [userId] — increments the shown count and stamps `now` as the last-shown time. */
+    suspend fun recordNotificationPrepromptShown(userId: UUID) {
+        context.dataStore.edit { preferences ->
+            val countKey = notificationPrepromptShownCountKey(userId)
+            preferences[countKey] = (preferences[countKey] ?: 0) + 1
+            preferences[notificationPrepromptLastShownAtKey(userId)] = System.currentTimeMillis()
+        }
+    }
+
     suspend fun addEarlySpotterDismissed(userId: UUID, announcementKey: String) {
         context.dataStore.edit { preferences ->
             val key = earlySpotterDismissedKey(userId)
@@ -225,6 +282,10 @@ class UserPreferences @Inject constructor(
 
     suspend fun setAnalyticsConsentGranted(granted: Boolean) {
         context.dataStore.edit { it[ANALYTICS_CONSENT_KEY] = granted }
+    }
+
+    suspend fun setNotificationPermissionRequested() {
+        context.dataStore.edit { it[NOTIFICATION_PERMISSION_REQUESTED_KEY] = true }
     }
 
     suspend fun setTourStatus(userId: UUID, status: TourStatus) {
@@ -268,6 +329,17 @@ class UserPreferences @Inject constructor(
 
     suspend fun setFirstPostFeedbackArmed(userId: UUID, armed: Boolean) {
         context.dataStore.edit { it[firstPostFeedbackArmedKey(userId)] = armed }
+    }
+
+    suspend fun setPendingDeviceRegistration(request: RegisterDeviceRequest?) {
+        context.dataStore.edit { preferences ->
+            if (request == null) {
+                preferences.remove(PENDING_DEVICE_REGISTRATION_KEY)
+            } else {
+                preferences[PENDING_DEVICE_REGISTRATION_KEY] =
+                    json.encodeToString(RegisterDeviceRequest.serializer(), request)
+            }
+        }
     }
 
     suspend fun setPendingUserFeedback(userId: UUID, request: SubmitUserFeedbackRequest?) {

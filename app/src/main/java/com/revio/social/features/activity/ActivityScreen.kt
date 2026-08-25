@@ -44,6 +44,7 @@ import androidx.navigation.NavController
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import com.revio.social.core.navigation.Screen
+import com.revio.social.core.notifications.NotificationPrepromptHost
 import com.revio.social.core.tour.TourHostViewModel
 import com.revio.social.core.tour.TourStep
 import com.revio.social.core.ui.components.AppScreenBackground
@@ -248,6 +249,8 @@ fun ActivityScreen(
         if (uiState.showTodayInteractionsInfo) {
             TodayInteractionsInfoOverlay(onDismiss = { viewModel.dismissTodayInteractionsInfo() })
         }
+
+        NotificationPrepromptHost()
     }
 }
 

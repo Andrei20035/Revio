@@ -24,7 +24,7 @@ android {
         applicationId = "com.revio.social"
         minSdk = 26
         targetSdk = 36
-        versionCode = 11
+        versionCode = 12
         versionName = "1.0"
 
         testInstrumentationRunner = "com.revio.social.HiltTestRunner"
@@ -122,6 +122,7 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.analytics)
     implementation(libs.firebase.crashlytics)
+    implementation(libs.firebase.messaging)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.coil.compose)
     // Coil 3 needs an explicit network engine to load remote (http) images.

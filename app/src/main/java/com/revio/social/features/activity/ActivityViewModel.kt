@@ -6,8 +6,10 @@ import com.revio.social.core.network.ApiResult
 import com.revio.social.core.network.NetworkConnectivityManager
 import com.revio.social.core.network.isNetworkError
 import com.revio.social.core.network.onReconnected
+import com.revio.social.core.notifications.NotificationPrepromptController
 import com.revio.social.data.repository.ActivityRepository
 import com.revio.social.data.repository.UserRepository
+import com.revio.social.features.activity.model.ActivityItem
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -22,6 +24,7 @@ class ActivityViewModel @Inject constructor(
     private val activityRepository: ActivityRepository,
     private val userRepository: UserRepository,
     private val connectivity: NetworkConnectivityManager,
+    private val notificationPrepromptController: NotificationPrepromptController? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ActivityUiState())
@@ -93,6 +96,10 @@ class ActivityViewModel @Inject constructor(
                         errorMessage = null,
                         isOffline = false,
                     )
+                }
+                // Fallback D (step 2.11) — the first real like/comment visible in Activity.
+                if (data.items.any { it is ActivityItem.LikeItem || it is ActivityItem.CommentItem }) {
+                    notificationPrepromptController?.onEngagementObserved()
                 }
             }
             is ApiResult.Error -> _uiState.update {

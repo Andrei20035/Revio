@@ -15,6 +15,8 @@ data class NotificationsUiState(
      * state. This is shown as a dismissible banner over the still-visible list instead.
      */
     val actionErrorMessage: String? = null,
+    /** One-shot: true right after tapping a social row, so the screen navigates to Profile once. */
+    val navigateToProfile: Boolean = false,
 ) {
     val isEmpty: Boolean get() = items.isEmpty()
 }

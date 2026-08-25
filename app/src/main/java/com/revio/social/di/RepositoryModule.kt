@@ -22,6 +22,8 @@ import com.revio.social.data.repository.FeedbackRepository
 import com.revio.social.data.repository.FeedbackRepositoryImpl
 import com.revio.social.data.repository.LikeRepository
 import com.revio.social.data.repository.LikeRepositoryImpl
+import com.revio.social.data.repository.NotificationPrefsRepository
+import com.revio.social.data.repository.NotificationPrefsRepositoryImpl
 import com.revio.social.data.repository.AdminCarFamilyRepository
 import com.revio.social.data.repository.AdminCarFamilyRepositoryImpl
 import com.revio.social.data.repository.AdminChallengeRepository
@@ -138,6 +140,12 @@ abstract class RepositoryModule {
     abstract fun bindNotificationRepository(
         impl: NotificationRepositoryImpl
     ): NotificationRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindNotificationPrefsRepository(
+        impl: NotificationPrefsRepositoryImpl
+    ): NotificationPrefsRepository
 
     @Binds
     @Singleton
