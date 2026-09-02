@@ -5,6 +5,7 @@ import com.revio.social.core.feedback.FirstPostFeedbackController
 import com.revio.social.core.feedback.FirstPostPromptState
 import com.revio.social.core.feedback.PostCreatedEvent
 import com.revio.social.core.network.ApiResult
+import com.revio.social.core.notifications.NotificationPrepromptController
 import com.revio.social.data.model.FeedbackSurface
 import com.revio.social.data.model.FirstPostFeedbackPayload
 import com.revio.social.data.model.QuickReason
@@ -32,6 +33,7 @@ class FirstPostFeedbackCardCoordinatorTest {
     private val controllerState = MutableStateFlow<FirstPostPromptState>(FirstPostPromptState.Hidden)
     private val controller: FirstPostFeedbackController = mockk(relaxed = true)
     private val feedbackRepository: FeedbackRepository = mockk(relaxed = true)
+    private val notificationPrepromptController: NotificationPrepromptController = mockk(relaxed = true)
 
     @Before
     fun setUp() {
@@ -42,9 +44,10 @@ class FirstPostFeedbackCardCoordinatorTest {
         // that don't care about pas 2.5c's post metrics keep asserting a bare payload.
         every { controller.lastPostCreatedEvent } returns null
         coEvery { feedbackRepository.submit(any()) } returns ApiResult.Success(Unit)
+        coEvery { notificationPrepromptController.hasPermissionBeenRequestedBefore() } returns false
     }
 
-    private fun coordinator() = FirstPostFeedbackCardCoordinator(controller, feedbackRepository)
+    private fun coordinator() = FirstPostFeedbackCardCoordinator(controller, feedbackRepository, notificationPrepromptController)
 
     private fun showCard(coordinator: FirstPostFeedbackCardCoordinator) {
         controllerState.value = FirstPostPromptState.Rating
@@ -199,6 +202,73 @@ class FirstPostFeedbackCardCoordinatorTest {
                 ),
             )
         }
+    }
+
+    // ----------------------------------------------------------------------
+    // pas 0.4 — "Yes, notify me" acționează efectiv permisiunea/Settings, prin controllerul comun
+    // ----------------------------------------------------------------------
+
+    @Test
+    fun `un submit reusit ajunge la NotificationsPrompt cu flagul precalculat din controllerul comun, fara sa piarda payload-ul`() {
+        coEvery { notificationPrepromptController.hasPermissionBeenRequestedBefore() } returns true
+        val coordinator = coordinator()
+        showCard(coordinator)
+        coordinator.onRatingSelected(5)
+        coordinator.onReasonSelected(QuickReason.EASY_TO_USE)
+
+        coordinator.onSkip()
+
+        coVerify(timeout = 2000) {
+            feedbackRepository.submit(
+                FirstPostFeedbackPayload(
+                    rating = 5,
+                    quickReason = QuickReason.EASY_TO_USE,
+                    comment = null,
+                    surface = FeedbackSurface.FEED,
+                ),
+            )
+        }
+        Thread.sleep(50) // let the same coroutine's subsequent _cardState assignment land
+        assertEquals(
+            FirstPostFeedbackStep.NotificationsPrompt(permissionPreviouslyRequested = true),
+            coordinator.cardState.value?.step,
+        )
+    }
+
+    @Test
+    fun `un submit reusit cu permisiunea niciodata ceruta duce la NotificationsPrompt cu flagul false`() {
+        coEvery { notificationPrepromptController.hasPermissionBeenRequestedBefore() } returns false
+        val coordinator = coordinator()
+        showCard(coordinator)
+        coordinator.onRatingSelected(4)
+        coordinator.onReasonSelected(QuickReason.EASY_TO_USE)
+
+        coordinator.onSkip()
+
+        coVerify(timeout = 2000) { feedbackRepository.submit(any()) }
+        Thread.sleep(50)
+        assertEquals(
+            FirstPostFeedbackStep.NotificationsPrompt(permissionPreviouslyRequested = false),
+            coordinator.cardState.value?.step,
+        )
+    }
+
+    @Test
+    fun `onNotificationsPermissionResult delegheaza la bookkeeping-ul comun al NotificationPrepromptController`() {
+        val coordinator = coordinator()
+
+        coordinator.onNotificationsPermissionResult(true)
+
+        verify(exactly = 1) { notificationPrepromptController.onPermissionRequested(true) }
+    }
+
+    @Test
+    fun `logNotificationsSettingsOpened delegheaza la bookkeeping-ul comun al NotificationPrepromptController`() {
+        val coordinator = coordinator()
+
+        coordinator.logNotificationsSettingsOpened()
+
+        verify(exactly = 1) { notificationPrepromptController.logSettingsOpened() }
     }
 
     @Test

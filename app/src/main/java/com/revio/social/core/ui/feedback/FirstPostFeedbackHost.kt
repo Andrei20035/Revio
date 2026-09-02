@@ -1,6 +1,12 @@
 package com.revio.social.core.ui.feedback
 
+import android.Manifest
+import android.content.Intent
+import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -15,9 +21,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.revio.social.core.notifications.NotificationPrepromptCtaAction
+import com.revio.social.core.notifications.resolveNotifyMeAction
 import com.revio.social.core.ui.components.CustomSnackbar
 import com.revio.social.core.ui.components.SnackbarSuccessColor
 import com.revio.social.core.ui.overlay.OverlayScrim
@@ -61,6 +70,17 @@ fun BoxScope.FirstPostFeedbackHost(
             }
         }
 
+        // "Yes, notify me" (step 0.4) — same request-vs-Settings routing as the fallback D card
+        // ([com.revio.social.core.notifications.NotificationPrepromptHost]), driven by the flag
+        // precomputed onto the step when it was entered.
+        val context = LocalContext.current
+        val notificationsPermissionLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.RequestPermission(),
+        ) { granted ->
+            viewModel.onNotificationsPermissionResult(granted)
+            viewModel.onNotificationsPromptAccepted()
+        }
+
         Box(
             modifier = Modifier
                 .matchParentSize()
@@ -84,7 +104,21 @@ fun BoxScope.FirstPostFeedbackHost(
                 onSkip = viewModel::onSkip,
                 onNotNow = viewModel::onNotNow,
                 onCloseX = viewModel::onCloseX,
-                onNotificationsPromptAccepted = viewModel::onNotificationsPromptAccepted,
+                onNotificationsPromptAccepted = {
+                    val step = state.step as? FirstPostFeedbackStep.NotificationsPrompt
+                    when (resolveNotifyMeAction(Build.VERSION.SDK_INT, step?.permissionPreviouslyRequested ?: false)) {
+                        NotificationPrepromptCtaAction.OPEN_SETTINGS -> {
+                            viewModel.logNotificationsSettingsOpened()
+                            context.startActivity(
+                                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                    .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                            )
+                            viewModel.onNotificationsPromptAccepted()
+                        }
+                        NotificationPrepromptCtaAction.REQUEST_PERMISSION ->
+                            notificationsPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                },
                 onNotificationsPromptDismissed = viewModel::onNotificationsPromptDismissed,
             )
         }

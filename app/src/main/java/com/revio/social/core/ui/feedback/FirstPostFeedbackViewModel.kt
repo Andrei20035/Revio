@@ -5,6 +5,7 @@ import com.revio.social.core.feedback.FeedbackEventName
 import com.revio.social.core.feedback.FirstPostFeedbackController
 import com.revio.social.core.feedback.FirstPostPromptState
 import com.revio.social.core.network.ApiResult
+import com.revio.social.core.notifications.NotificationPrepromptController
 import com.revio.social.data.model.FeedbackSurface
 import com.revio.social.data.model.FirstPostFeedbackPayload
 import com.revio.social.data.model.QuickReason
@@ -35,6 +36,7 @@ private const val SUBMIT_ERROR_MESSAGE = "Couldn't send feedback. Try again."
 class FirstPostFeedbackCardCoordinator @Inject constructor(
     private val controller: FirstPostFeedbackController,
     private val feedbackRepository: FeedbackRepository,
+    private val notificationPrepromptController: NotificationPrepromptController,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -129,7 +131,14 @@ class FirstPostFeedbackCardCoordinator @Inject constructor(
                     // Feedback is saved as of this point — Variant E's final step (D11) replaces
                     // the card's content in place instead of dismissing it, so abandoning this
                     // step never loses the feedback that was already sent.
-                    _cardState.value = FirstPostFeedbackCardState(step = FirstPostFeedbackStep.NotificationsPrompt)
+                    //
+                    // permissionPreviouslyRequested is precomputed here (step 0.4), through the
+                    // same controller the fallback D card uses, so the host can route "Notify me"
+                    // to the OS dialog or Settings without a suspend read at tap time.
+                    val permissionPreviouslyRequested = notificationPrepromptController.hasPermissionBeenRequestedBefore()
+                    _cardState.value = FirstPostFeedbackCardState(
+                        step = FirstPostFeedbackStep.NotificationsPrompt(permissionPreviouslyRequested),
+                    )
                     _confirmationMessage.value = CONFIRMATION_MESSAGE
                     controller.onSubmitted()
                 }
@@ -180,7 +189,14 @@ class FirstPostFeedbackCardCoordinator @Inject constructor(
         _confirmationMessage.value = null
     }
 
-    /** "Yes, notify me" — dismisses the card. Actually requesting the OS permission is out of scope here (step 2.10). */
+    /**
+     * "Yes, notify me" — closes the card. The actual OS-level action (permission dialog or
+     * Settings, per [FirstPostFeedbackStep.NotificationsPrompt.permissionPreviouslyRequested]) is
+     * started by [com.revio.social.core.ui.feedback.FirstPostFeedbackHost] before calling this,
+     * since only the host composable can launch it (step 0.4); this only ever tears the card
+     * down, either right away (Settings branch) or once that action's result is known (permission
+     * dialog branch).
+     */
     fun onNotificationsPromptAccepted() {
         _cardState.value = null
     }
@@ -188,6 +204,16 @@ class FirstPostFeedbackCardCoordinator @Inject constructor(
     /** "Maybe later", or back — same as [onNotificationsPromptAccepted] minus the acceptance. */
     fun onNotificationsPromptDismissed() {
         _cardState.value = null
+    }
+
+    /** Forwards the OS permission dialog's result to the shared bookkeeping in [NotificationPrepromptController.onPermissionRequested]. */
+    fun onNotificationsPermissionResult(granted: Boolean) {
+        notificationPrepromptController.onPermissionRequested(granted)
+    }
+
+    /** Forwards "sent to Settings instead" to the shared bookkeeping in [NotificationPrepromptController.logSettingsOpened]. */
+    fun logNotificationsSettingsOpened() {
+        notificationPrepromptController.logSettingsOpened()
     }
 }
 
@@ -215,4 +241,6 @@ class FirstPostFeedbackViewModel @Inject constructor(
     fun consumeConfirmation() = coordinator.consumeConfirmation()
     fun onNotificationsPromptAccepted() = coordinator.onNotificationsPromptAccepted()
     fun onNotificationsPromptDismissed() = coordinator.onNotificationsPromptDismissed()
+    fun onNotificationsPermissionResult(granted: Boolean) = coordinator.onNotificationsPermissionResult(granted)
+    fun logNotificationsSettingsOpened() = coordinator.logNotificationsSettingsOpened()
 }

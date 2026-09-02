@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.revio.social.core.analytics.AnalyticsClient
 import com.revio.social.core.analytics.AnalyticsEvent
 import com.revio.social.core.analytics.AnalyticsParamValue
+import com.revio.social.core.notifications.NotificationPrepromptController
 import com.revio.social.core.notifications.PushTokenRegistrar
 import com.revio.social.data.local.preferences.UserPreferences
 import com.revio.social.data.local.auth.AuthTokens
@@ -50,6 +51,7 @@ class AuthViewModel @Inject constructor(
     private val tokenStore: TokenStore? = null,
     private val analyticsClient: AnalyticsClient? = null,
     private val pushTokenRegistrar: PushTokenRegistrar? = null,
+    private val notificationPrepromptController: NotificationPrepromptController? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AuthUiState())
@@ -190,6 +192,7 @@ class AuthViewModel @Inject constructor(
                 tokenStore?.save(AuthTokens(result.data.accessToken, result.data.refreshToken))
                     ?: userPreferences.saveJwtToken(result.data.accessToken)
                 pushTokenRegistrar?.registerCurrentToken()
+                notificationPrepromptController?.onLoginObserved()
                 val jwtUserId = result.data.accessToken.extractUserIdFromJwt()
                 val navTarget = when (result.data.onboardingStep) {
                     OnboardingStep.PROFILE_REQUIRED -> {

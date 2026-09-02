@@ -6,6 +6,8 @@ import com.revio.social.core.analytics.AnalyticsClient
 import com.revio.social.core.analytics.AnalyticsEvent
 import com.revio.social.core.analytics.AnalyticsParamValue
 import com.revio.social.core.network.ApiResult
+import com.revio.social.core.overlay.ActiveOverlay
+import com.revio.social.core.overlay.AppOverlayCoordinator
 import com.revio.social.data.remote.dto.notification.NotificationDto
 import com.revio.social.data.repository.NotificationRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -28,6 +30,7 @@ private const val EVENT_NOTIFICATION_ACTION_RESULT = "notification_action_result
 @HiltViewModel
 class ModerationNoticeViewModel @Inject constructor(
     private val notificationRepository: NotificationRepository,
+    private val overlayCoordinator: AppOverlayCoordinator,
     private val analyticsClient: AnalyticsClient? = null,
 ) : ViewModel() {
 
@@ -38,11 +41,17 @@ class ModerationNoticeViewModel @Inject constructor(
         .map { it.firstOrNull() }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
+    /** Updates [_pending] and reports the dialog's active/inactive state to [overlayCoordinator] (step 2.2) — mirrors [com.revio.social.core.feedback.FirstPostFeedbackController.setState]. */
+    private fun updatePending(value: List<NotificationDto>) {
+        _pending.value = value
+        overlayCoordinator.setActive(ActiveOverlay.Moderation, value.isNotEmpty())
+    }
+
     fun checkForNotices() {
         viewModelScope.launch {
             when (val result = notificationRepository.getNotifications()) {
                 is ApiResult.Success -> {
-                    _pending.value = result.data.items.filter { it.blocking && it.readAt == null }
+                    updatePending(result.data.items.filter { it.blocking && it.readAt == null })
                 }
                 is ApiResult.Error -> logActionResult("check_notices", result)
             }
@@ -60,7 +69,7 @@ class ModerationNoticeViewModel @Inject constructor(
             // reappear on the next checkForNotices — acceptable for a best-effort bookkeeping call
             // (see ErrorPolicy.SILENT on NotificationRepositoryImpl.markRead), not worth retrying
             // or blocking the user from continuing past the dialog.
-            _pending.value = _pending.value.drop(1)
+            updatePending(_pending.value.drop(1))
         }
     }
 

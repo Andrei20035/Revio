@@ -32,6 +32,8 @@ import androidx.navigation.compose.rememberNavController
 import com.revio.social.core.navigation.RevioNavigation
 import com.revio.social.core.navigation.StartDestinationViewModel
 import com.revio.social.core.notifications.createNotificationChannels
+import com.revio.social.core.notifications.NotificationPrepromptHost
+import com.revio.social.core.notifications.NotificationPrepromptViewModel
 import com.revio.social.features.notifications.ModerationNoticeHost
 import com.google.firebase.analytics.FirebaseAnalytics
 import com.google.firebase.crashlytics.FirebaseCrashlytics
@@ -99,12 +101,21 @@ fun RevioAppUI(
     val tourStep by tourHostViewModel.tourController.step.collectAsState()
     val pushTokenRegistrar = hiltViewModel<PushTokenHostViewModel>().pushTokenRegistrar
     val pendingDeepLink = hiltViewModel<PendingDeepLinkHostViewModel>().pendingDeepLink
+    val notificationPrepromptViewModel: NotificationPrepromptViewModel = hiltViewModel()
 
     // Re-sends the FCM token on every foreground so timezone/locale/appVersion stay current on
     // the server row (push-notifications plan, step 2.4) — an upsert, so this never duplicates
     // the device row created at login.
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         pushTokenRegistrar.registerCurrentToken()
+    }
+
+    // A trip to Android Settings can grant the notifications permission out-of-band — without
+    // this, a visible pre-prompt card would sit there until the user notices and dismisses it
+    // themselves (step 3.4). Kept as its own effect, separate from the one above, so it doesn't
+    // interfere with the FCM token resend.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        notificationPrepromptViewModel.onResumed()
     }
 
     // Consumes a push tap buffered before the graph existed (cold start) or before login
@@ -191,6 +202,8 @@ fun RevioAppUI(
                 }
                 else -> RevioNavigation(navController, s)
             }
+
+            NotificationPrepromptHost(viewModel = notificationPrepromptViewModel)
         }
     }
 }

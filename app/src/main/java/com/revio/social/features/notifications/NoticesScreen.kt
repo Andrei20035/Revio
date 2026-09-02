@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -32,7 +33,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,7 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
-import com.revio.social.core.navigation.Screen
+import com.revio.social.core.notices.NoticesUnreadViewModel
 import com.revio.social.core.ui.components.AppScreenBackground
 import com.revio.social.core.ui.components.OfflineStateMessage
 import com.revio.social.core.ui.components.StateMessage
@@ -64,23 +67,24 @@ private val UnreadDotColor = Color(0xFFF0AB25)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NotificationsScreen(
+fun NoticesScreen(
     navController: NavController,
-    viewModel: NotificationsViewModel = hiltViewModel(),
+    viewModel: NoticesViewModel = hiltViewModel(),
+    noticesUnreadViewModel: NoticesUnreadViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
+
+    // Entering Notices marks every unread ACCOUNT notice read server-side (excluding blocking
+    // notices, which are only acknowledged through ModerationNoticeHost's dialog) and zeroes the
+    // bell badge optimistically.
+    LaunchedEffect(Unit) {
+        noticesUnreadViewModel.onNoticesOpened()
+    }
 
     LaunchedEffect(uiState.actionErrorMessage) {
         if (uiState.actionErrorMessage != null) {
             delay(3000)
             viewModel.clearActionError()
-        }
-    }
-
-    LaunchedEffect(uiState.navigateToProfile) {
-        if (uiState.navigateToProfile) {
-            navController.navigate(Screen.Profile.route)
-            viewModel.consumeNavigateToProfile()
         }
     }
 
@@ -92,11 +96,7 @@ fun NotificationsScreen(
                     .statusBarsPadding()
                     .padding(horizontal = 10.dp.actScaled()),
             ) {
-                NotificationsTopBar(
-                    unreadCount = uiState.unreadCount,
-                    onBack = { navController.popBackStack() },
-                    onMarkAllRead = { viewModel.markAllRead() },
-                )
+                NoticesTopBar(onBack = { navController.popBackStack() })
 
                 uiState.actionErrorMessage?.let { message ->
                     ActionErrorBanner(message = message)
@@ -113,35 +113,64 @@ fun NotificationsScreen(
                             modifier = Modifier.align(Alignment.Center),
                         )
                         uiState.errorMessage != null -> StateMessage(
-                            title = "Couldn't load your notifications",
+                            title = "Couldn't load your notices",
                             subtitle = uiState.errorMessage,
                             actionLabel = "Retry",
                             onAction = { viewModel.retry() },
                             modifier = Modifier.align(Alignment.Center),
                         )
                         uiState.isEmpty -> StateMessage(
-                            title = "No notifications yet",
+                            title = "No notices yet",
                             subtitle = "We'll let you know when something needs your attention.",
                             modifier = Modifier.align(Alignment.Center),
                         )
-                        else -> PullToRefreshBox(
-                            isRefreshing = uiState.isRefreshing,
-                            onRefresh = { viewModel.refresh() },
-                            modifier = Modifier.fillMaxSize(),
-                        ) {
-                            LazyColumn(
+                        else -> {
+                            val listState = rememberLazyListState()
+                            // Prefetch the next page once the last few items become visible.
+                            val shouldLoadMore by remember {
+                                derivedStateOf {
+                                    val layoutInfo = listState.layoutInfo
+                                    val total = layoutInfo.totalItemsCount
+                                    val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+                                    total > 0 && lastVisible >= total - 3
+                                }
+                            }
+                            LaunchedEffect(shouldLoadMore) {
+                                if (shouldLoadMore) viewModel.loadMore()
+                            }
+
+                            PullToRefreshBox(
+                                isRefreshing = uiState.isRefreshing,
+                                onRefresh = { viewModel.refresh() },
                                 modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(
-                                    top = 13.dp.actScaled(),
-                                    bottom = 40.dp.actScaled(),
-                                ),
                             ) {
-                                items(uiState.items, key = { it.id }) { notification ->
-                                    NotificationRow(
-                                        notification = notification,
-                                        onClick = { viewModel.onNotificationClicked(notification) },
-                                    )
-                                    Spacer(modifier = Modifier.height(12.dp.actScaled()))
+                                LazyColumn(
+                                    state = listState,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentPadding = PaddingValues(
+                                        top = 13.dp.actScaled(),
+                                        bottom = 40.dp.actScaled(),
+                                    ),
+                                ) {
+                                    items(uiState.items, key = { it.id }) { notification ->
+                                        NotificationRow(
+                                            notification = notification,
+                                            onClick = { viewModel.onNotificationClicked(notification) },
+                                        )
+                                        Spacer(modifier = Modifier.height(12.dp.actScaled()))
+                                    }
+                                    if (uiState.isLoadingMore) {
+                                        item {
+                                            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp.actScaled())) {
+                                                CircularProgressIndicator(
+                                                    color = Color.White,
+                                                    modifier = Modifier
+                                                        .align(Alignment.Center)
+                                                        .size(20.dp.actScaled()),
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -152,7 +181,7 @@ fun NotificationsScreen(
     }
 }
 
-/** Dismissible failure banner for [NotificationsViewModel.markRead]/[NotificationsViewModel.markAllRead] (pas 5.1) — the list underneath stays visible. */
+/** Dismissible failure banner for [NoticesViewModel.markRead] (pas 5.1) — the list underneath stays visible. */
 @Composable
 private fun ActionErrorBanner(message: String) {
     Box(
@@ -173,11 +202,7 @@ private fun ActionErrorBanner(message: String) {
 }
 
 @Composable
-private fun NotificationsTopBar(
-    unreadCount: Long,
-    onBack: () -> Unit,
-    onMarkAllRead: () -> Unit,
-) {
+private fun NoticesTopBar(onBack: () -> Unit) {
     Spacer(modifier = Modifier.height(8.dp.actScaled()))
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -193,22 +218,13 @@ private fun NotificationsTopBar(
         }
         Spacer(modifier = Modifier.width(4.dp.actScaled()))
         Text(
-            text = "Notifications",
+            text = "Notices",
             color = Color.White,
             fontFamily = Poppins,
             fontWeight = FontWeight.Medium,
             fontSize = 25.sp.actScaledText(),
             modifier = Modifier.weight(1f),
         )
-        if (unreadCount > 0) {
-            Text(
-                text = "Mark all read",
-                color = UnreadDotColor,
-                fontSize = 13.sp.actScaledText(),
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.clickable(onClick = onMarkAllRead),
-            )
-        }
     }
 }
 

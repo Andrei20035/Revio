@@ -74,6 +74,7 @@ import coil3.ImageLoader
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import com.revio.social.R
+import com.revio.social.core.activitydot.ActivityDotViewModel
 import com.revio.social.core.navigation.Screen
 import com.revio.social.core.tour.TourHostViewModel
 import com.revio.social.core.ui.earlyspotter.EarlySpotterHost
@@ -216,6 +217,8 @@ fun FeedScreen(
     val tourHostViewModel: TourHostViewModel = hiltViewModel()
     val tourStep by tourHostViewModel.tourController.step.collectAsState()
     var slotBounds by remember { mutableStateOf(emptyMap<NavSlot, Rect>()) }
+    val activityDotViewModel: ActivityDotViewModel = hiltViewModel()
+    val activityHasDot by activityDotViewModel.hasUnseenActivity.collectAsStateWithLifecycle()
 
     // Admin-only "Remove post" action, reachable from each post's options menu.
     val adminViewModel: AdminViewModel = hiltViewModel()
@@ -354,6 +357,7 @@ fun FeedScreen(
                 },
                 hazeState = hazeState,
                 onSlotBounds = { slot, rect -> slotBounds = slotBounds + (slot to rect) },
+                activityHasDot = activityHasDot,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()

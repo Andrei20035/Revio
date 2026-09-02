@@ -24,7 +24,7 @@ import com.revio.social.features.challenge.ChallengeDetailScreen
 import com.revio.social.features.challenge.MyChallengesScreen
 import com.revio.social.features.dev.DevToolsScreen
 import com.revio.social.features.feed.FeedScreen
-import com.revio.social.features.notifications.NotificationsScreen
+import com.revio.social.features.notifications.NoticesScreen
 import com.revio.social.features.upload.ImageUploadScreen
 import com.revio.social.features.auth.AuthScreen
 import com.revio.social.features.onboarding.OnboardingScreen
@@ -39,6 +39,7 @@ import com.revio.social.features.settings.personalinfo.PersonalInfoScreen
 import com.revio.social.features.settings.changepassword.ChangePasswordScreen
 import com.revio.social.features.settings.deleteaccount.DeleteAccountScreen
 import com.revio.social.features.settings.feedback.FeedbackScreen
+import com.revio.social.features.settings.notifications.NotificationSettingsScreen
 
 @Composable
 fun RevioNavigation(
@@ -202,6 +203,10 @@ fun RevioNavigation(
             )
         }
 
+        composable(Screen.NotificationSettings.route) {
+            NotificationSettingsScreen(navController = navController)
+        }
+
         composable(Screen.Leaderboard.route) {
             LeaderboardScreen(navController = navController)
         }
@@ -210,8 +215,8 @@ fun RevioNavigation(
             ActivityScreen(navController = navController)
         }
 
-        composable(Screen.Notifications.route) {
-            NotificationsScreen(navController = navController)
+        composable(Screen.Notices.route) {
+            NoticesScreen(navController = navController)
         }
 
         composable(Screen.AdminHome.route) {

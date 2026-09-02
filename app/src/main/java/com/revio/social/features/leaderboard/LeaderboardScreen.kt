@@ -23,7 +23,9 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import com.revio.social.core.activitydot.ActivityDotViewModel
 import com.revio.social.core.navigation.Screen
 import com.revio.social.core.tour.TourHostViewModel
 import com.revio.social.core.tour.TourStep
@@ -51,6 +53,8 @@ fun LeaderboardScreen(
     val tourHostViewModel: TourHostViewModel = hiltViewModel()
     val tourStep by tourHostViewModel.tourController.step.collectAsState()
     var slotBounds by remember { mutableStateOf(emptyMap<NavSlot, Rect>()) }
+    val activityDotViewModel: ActivityDotViewModel = hiltViewModel()
+    val activityHasDot by activityDotViewModel.hasUnseenActivity.collectAsStateWithLifecycle()
 
     val onUserClick: (LeaderboardEntry) -> Unit = { entry ->
         if (entry.userId == uiState.currentUser?.entry?.userId) {
@@ -103,6 +107,7 @@ fun LeaderboardScreen(
                 },
                 hazeState = hazeState,
                 onSlotBounds = { slot, rect -> slotBounds = slotBounds + (slot to rect) },
+                activityHasDot = activityHasDot,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()

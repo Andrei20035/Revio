@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Switch
@@ -53,7 +54,6 @@ import com.revio.social.core.ui.scaling.actScaled
 import com.revio.social.core.ui.scaling.actScaledText
 import com.revio.social.core.ui.scaling.rememberActivityScale
 import com.revio.social.core.ui.theme.Poppins
-import com.revio.social.features.settings.notifications.NotificationSettingsSection
 
 private val CardBg = Color(0x3DD9D9D9)          // rgba(217,217,217,0.24)
 private val SectionLabelColor = Color(0xFF8D8D8D)
@@ -209,7 +209,13 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(24.dp.actScaled()))
             SectionLabel("Notifications")
             Spacer(modifier = Modifier.height(8.dp.actScaled()))
-            NotificationSettingsSection()
+            SettingsRow(
+                iconRes = R.drawable.notification_bell,
+                label = "Notifications",
+                topRound = true,
+                bottomRound = true,
+                onClick = { navController.navigate(Screen.NotificationSettings.route) },
+            )
 
             // ── Help us improve section ─────────────────────────────────────
             Spacer(modifier = Modifier.height(24.dp.actScaled()))
@@ -415,7 +421,7 @@ private fun AnalyticsConsentRow(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "Help improve Revio",
+                text = "Usage & crash analytics",
                 color = ItemTextColor,
                 fontFamily = FontFamily.Default,
                 fontWeight = FontWeight.Medium,
@@ -423,10 +429,7 @@ private fun AnalyticsConsentRow(
             )
             Spacer(modifier = Modifier.height(4.dp.actScaled()))
             Text(
-                text = "Allow optional usage analytics and crash diagnostics to help us understand " +
-                    "performance and improve features. This data is not used for advertising. " +
-                    "Turning this off takes effect for analytics right away; crash diagnostics " +
-                    "fully stop the next time you open the app.",
+                text = "Share optional diagnostics to help improve Revio. Never used for advertising.",
                 color = SectionLabelColor,
                 fontFamily = FontFamily.Default,
                 fontWeight = FontWeight.Normal,

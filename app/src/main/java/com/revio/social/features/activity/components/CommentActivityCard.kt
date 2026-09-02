@@ -70,10 +70,27 @@ fun CommentActivityCard(item: ActivityItem.CommentItem, modifier: Modifier = Mod
         ) {
             Text(
                 text = buildAnnotatedString {
-                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
-                        append(item.actorUsername)
+                    val spot = "${item.brand.orEmpty()} ${item.model.orEmpty()} spot"
+                    // Mirrors NotificationEventService.renderCommentCopy's 1 / 2-4 / 5+ thresholds
+                    // (plan Partea II, Pasul 5). Only the un-aggregated case (actorCount <= 1)
+                    // shows the actual comment text — ActivityService only keeps it for that case.
+                    when {
+                        item.actorCount <= 1 -> {
+                            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                                append(item.actorUsername)
+                            }
+                            append(" commented: \"${item.commentText}\"")
+                        }
+                        item.actorCount <= 4 -> {
+                            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                                append(item.actorUsername)
+                            }
+                            val others = item.actorCount - 1
+                            val othersWord = if (others == 1) "other" else "others"
+                            append(" and $others $othersWord joined the conversation on your $spot")
+                        }
+                        else -> append("${item.actorCount} people commented on your $spot")
                     }
-                    append(" commented: \"${item.commentText}\"")
                 },
                 color = Color.White,
                 fontSize = 14.sp.actScaledText(),

@@ -26,6 +26,7 @@ data class ActivityItemDto(
     val streakDays: Int? = null,
     @Serializable(with = InstantSerializer::class)
     val createdAt: Instant,
+    val actorCount: Int = 1,
 )
 
 @Serializable
@@ -50,6 +51,7 @@ fun ActivityItemDto.toDomain(): ActivityItem? = when (type) {
                 postThumbnailUrl = postThumbnailUrl,
                 brand = brand,
                 model = model,
+                actorCount = actorCount,
             )
         } else null
     }
@@ -69,6 +71,7 @@ fun ActivityItemDto.toDomain(): ActivityItem? = when (type) {
                 brand = brand,
                 model = model,
                 commentText = commentText.orEmpty(),
+                actorCount = actorCount,
             )
         } else null
     }

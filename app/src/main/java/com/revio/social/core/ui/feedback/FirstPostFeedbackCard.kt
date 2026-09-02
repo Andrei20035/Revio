@@ -73,7 +73,14 @@ sealed interface FirstPostFeedbackStep {
     data object Rating : FirstPostFeedbackStep
     data class Reason(val rating: Int) : FirstPostFeedbackStep
     data class Comment(val rating: Int, val reason: QuickReason) : FirstPostFeedbackStep
-    data object NotificationsPrompt : FirstPostFeedbackStep
+
+    /**
+     * [permissionPreviouslyRequested] is precomputed when this step is entered (step 0.4) — the
+     * same flag [com.revio.social.core.notifications.NotificationPrepromptController]'s own card
+     * reads, needed up front so the host can decide request-vs-Settings without a suspend read at
+     * tap time.
+     */
+    data class NotificationsPrompt(val permissionPreviouslyRequested: Boolean) : FirstPostFeedbackStep
 }
 
 /** Everything [FirstPostFeedbackCard] needs to render — fully hoisted, no internal state. */

@@ -67,13 +67,12 @@ class UserPreferences @Inject constructor(
         val ANALYTICS_CONSENT_KEY = booleanPreferencesKey("analytics_consent_granted")
 
         /**
-         * Whether the `POST_NOTIFICATIONS` runtime permission dialog has ever been shown —
-         * device-wide, like [ONBOARDING_KEY]. Android's own APIs can't distinguish "never asked"
-         * from "denied": `shouldShowRequestPermissionRationale` returns false in both cases
-         * (before any request, and after a permanent denial), so the Notifications Settings
-         * section (step 2.9) needs this local flag to tell them apart.
+         * Legacy device-wide key for "the `POST_NOTIFICATIONS` runtime permission dialog has
+         * ever been shown", superseded by [notificationPermissionRequestedKey] (step 3.1) — read
+         * only for one-time migration. Being device-wide let a second account on a shared device
+         * inherit the first account's "already asked" state.
          */
-        val NOTIFICATION_PERMISSION_REQUESTED_KEY = booleanPreferencesKey("notification_permission_requested")
+        private val LEGACY_NOTIFICATION_PERMISSION_REQUESTED_KEY = booleanPreferencesKey("notification_permission_requested")
         val JWT_TOKEN_KEY = stringPreferencesKey("jwt_token")
         val USER_ID_KEY = stringPreferencesKey("user_id")
         val USERNAME_KEY = stringPreferencesKey("username")
@@ -93,6 +92,10 @@ class UserPreferences @Inject constructor(
 
         private fun tourStatusKey(userId: UUID) =
             stringPreferencesKey("guided_tour_status_$userId")
+
+        /** Per-user replacement for [LEGACY_NOTIFICATION_PERMISSION_REQUESTED_KEY] (step 3.1). */
+        private fun notificationPermissionRequestedKey(userId: UUID) =
+            booleanPreferencesKey("notification_permission_requested_$userId")
 
         private fun firstPostFeedbackStateKey(userId: UUID) =
             stringPreferencesKey("first_post_feedback_state_$userId")
@@ -134,13 +137,29 @@ class UserPreferences @Inject constructor(
         /** Epoch millis of the last time the fallback D prompt was shown to [userId] — enforces the ≥7-day reshow gap. */
         private fun notificationPrepromptLastShownAtKey(userId: UUID) =
             longPreferencesKey("notification_preprompt_last_shown_at_$userId")
+
+        /**
+         * Whether the one-shot notifications upgrade campaign (step 1.1) has already been shown
+         * to [userId] — versioned (`v1`) so a future campaign can reset by moving to a new key
+         * without touching this one. Deliberately separate from
+         * [notificationPrepromptShownCountKey], which stays reserved for the ongoing
+         * engagement/login fallback (D) and its 3×/7-day cap.
+         */
+        private fun notificationCampaignV1DoneKey(userId: UUID) =
+            booleanPreferencesKey("notification_campaign_v1_done_$userId")
+
+        /**
+         * Epoch millis of the latest server-side notification `updatedAt` [userId] has seen by
+         * opening Activity — the high-watermark the red activity dot compares against. Per-user,
+         * like every other key here, so a second account on a shared device never inherits the
+         * first account's dot state.
+         */
+        private fun activityLastSeenAtKey(userId: UUID) =
+            longPreferencesKey("activity_last_seen_at_$userId")
     }
 
     val onboardingCompleted: Flow<Boolean> = context.dataStore.data
         .map { it[ONBOARDING_KEY] ?: false }
-
-    val notificationPermissionRequested: Flow<Boolean> = context.dataStore.data
-        .map { it[NOTIFICATION_PERMISSION_REQUESTED_KEY] ?: false }
 
     /** On by default (opt-out) until the user explicitly revokes it — see docs/consent-decision.md. */
     val analyticsConsentGranted: Flow<Boolean> = context.dataStore.data
@@ -174,6 +193,36 @@ class UserPreferences @Inject constructor(
                     resolved = runCatching { TourStatus.valueOf(legacyValue) }.getOrNull() ?: TourStatus.Unknown
                     preferences[perUserKey] = resolved.name
                     preferences.remove(LEGACY_TOUR_STATUS_KEY)
+                }
+            }
+        }
+        return resolved
+    }
+
+    /**
+     * Whether the OS `POST_NOTIFICATIONS` permission dialog has ever been shown to [userId] —
+     * per-user (step 3.1) so a second account on a shared device never inherits the first
+     * account's "already asked" state. On first read for [userId], if the per-user key is absent
+     * but the pre-migration device-wide [LEGACY_NOTIFICATION_PERMISSION_REQUESTED_KEY] holds a
+     * value, that value is adopted as this user's state and the legacy key is deleted — same
+     * migration shape as [tourStatus]. Android's own APIs can't distinguish "never asked" from
+     * "denied": `shouldShowRequestPermissionRationale` returns false in both cases (before any
+     * request, and after a permanent denial), so the Notifications Settings section (step 2.9)
+     * needs this local flag to tell them apart.
+     */
+    suspend fun notificationPermissionRequested(userId: UUID): Boolean {
+        var resolved = false
+        context.dataStore.edit { preferences ->
+            val perUserKey = notificationPermissionRequestedKey(userId)
+            val perUserValue = preferences[perUserKey]
+            if (perUserValue != null) {
+                resolved = perUserValue
+            } else {
+                val legacyValue = preferences[LEGACY_NOTIFICATION_PERMISSION_REQUESTED_KEY]
+                if (legacyValue != null) {
+                    resolved = legacyValue
+                    preferences[perUserKey] = resolved
+                    preferences.remove(LEGACY_NOTIFICATION_PERMISSION_REQUESTED_KEY)
                 }
             }
         }
@@ -260,12 +309,34 @@ class UserPreferences @Inject constructor(
     fun notificationPrepromptLastShownAt(userId: UUID): Flow<Instant?> = context.dataStore.data
         .map { preferences -> preferences[notificationPrepromptLastShownAtKey(userId)]?.let { Instant.ofEpochMilli(it) } }
 
+    /** Whether the one-shot notifications upgrade campaign (step 1.1) has already been shown to [userId]. `false` if never. */
+    fun notificationCampaignV1Done(userId: UUID): Flow<Boolean> = context.dataStore.data
+        .map { preferences -> preferences[notificationCampaignV1DoneKey(userId)] ?: false }
+
+    /** The latest server-side notification `updatedAt` [userId] has seen by opening Activity. `null` if never. */
+    fun activityLastSeenAt(userId: UUID): Flow<Instant?> = context.dataStore.data
+        .map { preferences -> preferences[activityLastSeenAtKey(userId)]?.let { Instant.ofEpochMilli(it) } }
+
+    /** Records the latest server-side notification `updatedAt` [userId] has seen by opening Activity. */
+    suspend fun setActivityLastSeenAt(userId: UUID, updatedAt: Instant) {
+        context.dataStore.edit { preferences ->
+            preferences[activityLastSeenAtKey(userId)] = updatedAt.toEpochMilli()
+        }
+    }
+
     /** Records a fallback D reveal for [userId] — increments the shown count and stamps `now` as the last-shown time. */
     suspend fun recordNotificationPrepromptShown(userId: UUID) {
         context.dataStore.edit { preferences ->
             val countKey = notificationPrepromptShownCountKey(userId)
             preferences[countKey] = (preferences[countKey] ?: 0) + 1
             preferences[notificationPrepromptLastShownAtKey(userId)] = System.currentTimeMillis()
+        }
+    }
+
+    /** Marks the one-shot notifications upgrade campaign (step 1.1) as shown for [userId] — never reset. */
+    suspend fun setNotificationCampaignV1Done(userId: UUID) {
+        context.dataStore.edit { preferences ->
+            preferences[notificationCampaignV1DoneKey(userId)] = true
         }
     }
 
@@ -284,8 +355,8 @@ class UserPreferences @Inject constructor(
         context.dataStore.edit { it[ANALYTICS_CONSENT_KEY] = granted }
     }
 
-    suspend fun setNotificationPermissionRequested() {
-        context.dataStore.edit { it[NOTIFICATION_PERMISSION_REQUESTED_KEY] = true }
+    suspend fun setNotificationPermissionRequested(userId: UUID) {
+        context.dataStore.edit { it[notificationPermissionRequestedKey(userId)] = true }
     }
 
     suspend fun setTourStatus(userId: UUID, status: TourStatus) {

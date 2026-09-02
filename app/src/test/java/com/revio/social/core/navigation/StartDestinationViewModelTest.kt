@@ -4,6 +4,7 @@ import com.revio.social.MainDispatcherRule
 import com.revio.social.core.analytics.AnalyticsClient
 import com.revio.social.core.analytics.AnalyticsEvent
 import com.revio.social.core.analytics.AnalyticsParamValue
+import com.revio.social.core.notifications.NotificationPrepromptController
 import com.revio.social.core.overlay.AppOverlayCoordinator
 import com.revio.social.core.tour.TourController
 import com.revio.social.data.local.auth.AuthTokens
@@ -231,5 +232,72 @@ class StartDestinationViewModelTest {
                 )
             )
         }
+    }
+
+    // ── pas 1.2 — NotificationPrepromptController.onSessionRestored, ramura sesiunii valide ──
+
+    @Test
+    fun `token + userId salvate - onSessionRestored este apelat exact o data`() = runTest {
+        val notificationPrepromptController = mockk<NotificationPrepromptController>(relaxed = true)
+
+        val vm = StartDestinationViewModel(
+            prefsMock(onboardingDone = true, token = "jwt", userId = UUID.randomUUID()),
+            notificationPrepromptController = notificationPrepromptController,
+        )
+
+        assertEquals(Screen.Feed.route, vm.startDestination.value)
+        verify(exactly = 1) { notificationPrepromptController.onSessionRestored() }
+    }
+
+    @Test
+    fun `onboarding nefacut - onSessionRestored nu este apelat`() = runTest {
+        val notificationPrepromptController = mockk<NotificationPrepromptController>(relaxed = true)
+
+        val vm = StartDestinationViewModel(
+            prefsMock(onboardingDone = false, token = "any", userId = UUID.randomUUID()),
+            notificationPrepromptController = notificationPrepromptController,
+        )
+
+        assertEquals(Screen.Onboarding.route, vm.startDestination.value)
+        verify(exactly = 0) { notificationPrepromptController.onSessionRestored() }
+    }
+
+    @Test
+    fun `fara token - onSessionRestored nu este apelat`() = runTest {
+        val notificationPrepromptController = mockk<NotificationPrepromptController>(relaxed = true)
+
+        val vm = StartDestinationViewModel(
+            prefsMock(onboardingDone = true, token = null, userId = null),
+            notificationPrepromptController = notificationPrepromptController,
+        )
+
+        assertEquals(Screen.Auth.route, vm.startDestination.value)
+        verify(exactly = 0) { notificationPrepromptController.onSessionRestored() }
+    }
+
+    @Test
+    fun `token dar userId null - onSessionRestored nu este apelat`() = runTest {
+        val notificationPrepromptController = mockk<NotificationPrepromptController>(relaxed = true)
+
+        val vm = StartDestinationViewModel(
+            prefsMock(onboardingDone = true, token = "jwt", userId = null),
+            notificationPrepromptController = notificationPrepromptController,
+        )
+
+        assertEquals(Screen.Auth.route, vm.startDestination.value)
+        verify(exactly = 0) { notificationPrepromptController.onSessionRestored() }
+    }
+
+    @Test
+    fun `o exceptie din onSessionRestored nu schimba destinatia rezolvata`() = runTest {
+        val notificationPrepromptController = mockk<NotificationPrepromptController>()
+        every { notificationPrepromptController.onSessionRestored() } throws RuntimeException("boom")
+
+        val vm = StartDestinationViewModel(
+            prefsMock(onboardingDone = true, token = "jwt", userId = UUID.randomUUID()),
+            notificationPrepromptController = notificationPrepromptController,
+        )
+
+        assertEquals(Screen.Feed.route, vm.startDestination.value)
     }
 }

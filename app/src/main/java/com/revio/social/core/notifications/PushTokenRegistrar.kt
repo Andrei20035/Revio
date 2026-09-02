@@ -121,8 +121,17 @@ class PushTokenRegistrar @Inject constructor(
         val result = safeApiCall(policy = ErrorPolicy.SILENT) { deviceApi.registerDevice(request) }
         logRegisterResult(result)
         when {
-            result is ApiResult.Success -> userPreferences.setPendingDeviceRegistration(null)
-            result is ApiResult.Error && result.isNetworkError -> userPreferences.setPendingDeviceRegistration(request)
+            result is ApiResult.Success -> {
+                Log.d(TAG, "Device registration succeeded")
+                userPreferences.setPendingDeviceRegistration(null)
+            }
+            result is ApiResult.Error && result.isNetworkError -> {
+                Log.d(TAG, "Device registration failed (network error), queued for retry")
+                userPreferences.setPendingDeviceRegistration(request)
+            }
+            result is ApiResult.Error -> {
+                Log.d(TAG, "Device registration failed (code=${result.code ?: "unknown"}), dropped")
+            }
             else -> Unit
         }
     }

@@ -57,6 +57,29 @@ import javax.inject.Inject
 import androidx.lifecycle.ViewModel
 import kotlinx.coroutines.flow.StateFlow
 
+/** What the card's "Notify me" CTA should do, resolved by [resolveNotifyMeAction]. */
+internal enum class NotificationPrepromptCtaAction {
+    /** Launch the OS `POST_NOTIFICATIONS` runtime-permission dialog (API 33+, never asked before). */
+    REQUEST_PERMISSION,
+
+    /** Send the user to Android's app-notification settings — the only real path to enabling
+     * notifications once the OS dialog has already been shown once, and, on API 26-32 (no
+     * `POST_NOTIFICATIONS` runtime permission to request), the only real path at all. */
+    OPEN_SETTINGS,
+}
+
+/**
+ * Pure decision for the "Notify me" CTA (step 0.3) — no Android permission dialog exists below
+ * API 33, so on those versions the CTA must fall through to Settings instead of merely closing
+ * the card without doing anything.
+ */
+internal fun resolveNotifyMeAction(sdkInt: Int, permissionPreviouslyRequested: Boolean): NotificationPrepromptCtaAction =
+    when {
+        permissionPreviouslyRequested -> NotificationPrepromptCtaAction.OPEN_SETTINGS
+        sdkInt >= Build.VERSION_CODES.TIRAMISU -> NotificationPrepromptCtaAction.REQUEST_PERMISSION
+        else -> NotificationPrepromptCtaAction.OPEN_SETTINGS
+    }
+
 private val CardCornerRadius = 20.dp
 private val NotificationAccent = Color(0xFFF0AB25)
 private val NotificationSecondaryText = Color(0xFF8D8D8D)
@@ -69,11 +92,13 @@ class NotificationPrepromptViewModel @Inject constructor(
     private val controller: NotificationPrepromptController,
 ) : ViewModel() {
     val uiState: StateFlow<NotificationPrepromptUiState> = controller.uiState
+    fun onShown() = controller.onShown()
     fun onAccepted() = controller.onAccepted()
     fun onPermissionRequested(granted: Boolean) = controller.onPermissionRequested(granted)
     fun close() = controller.close()
     fun logSettingsOpened() = controller.logSettingsOpened()
     fun dismiss(reason: String = "dismissed") = controller.dismiss(reason)
+    fun onResumed() = controller.onResumed()
 }
 
 /**
@@ -87,6 +112,12 @@ fun BoxScope.NotificationPrepromptHost(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     if (!uiState.visible) return
+
+    // Records the show — only now, since the card has actually entered composition, is it fair
+    // to count against the per-user cap/cooldown (step 0.2). Re-fires whenever the card re-enters
+    // composition after having left it (the early return above), which is exactly "shown again";
+    // [NotificationPrepromptController.onShown] is itself idempotent per pending show.
+    LaunchedEffect(Unit) { viewModel.onShown() }
 
     val context = LocalContext.current
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -115,8 +146,8 @@ fun BoxScope.NotificationPrepromptHost(
         NotificationPrepromptCard(
             onNotifyMe = {
                 viewModel.onAccepted()
-                when {
-                    uiState.permissionPreviouslyRequested -> {
+                when (resolveNotifyMeAction(Build.VERSION.SDK_INT, uiState.permissionPreviouslyRequested)) {
+                    NotificationPrepromptCtaAction.OPEN_SETTINGS -> {
                         viewModel.logSettingsOpened()
                         context.startActivity(
                             Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
@@ -124,9 +155,8 @@ fun BoxScope.NotificationPrepromptHost(
                         )
                         viewModel.close()
                     }
-                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU ->
+                    NotificationPrepromptCtaAction.REQUEST_PERMISSION ->
                         permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    else -> viewModel.close()
                 }
             },
             onNotNow = { viewModel.dismiss() },

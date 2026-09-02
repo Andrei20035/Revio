@@ -17,6 +17,7 @@ sealed class ActivityItem {
         val postThumbnailUrl: String?,
         val brand: String?,
         val model: String?,
+        val actorCount: Int = 1,
     ) : ActivityItem()
 
     data class CommentItem(
@@ -30,6 +31,7 @@ sealed class ActivityItem {
         val brand: String?,
         val model: String?,
         val commentText: String,
+        val actorCount: Int = 1,
     ) : ActivityItem()
 
     data class LeaderboardUpItem(

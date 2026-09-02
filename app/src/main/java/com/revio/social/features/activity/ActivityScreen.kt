@@ -26,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -40,11 +41,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
+import com.revio.social.core.activitydot.ActivityDotViewModel
 import com.revio.social.core.navigation.Screen
-import com.revio.social.core.notifications.NotificationPrepromptHost
+import com.revio.social.core.notices.NoticesUnreadViewModel
 import com.revio.social.core.tour.TourHostViewModel
 import com.revio.social.core.tour.TourStep
 import com.revio.social.core.ui.components.AppScreenBackground
@@ -67,7 +70,6 @@ import com.revio.social.features.activity.components.StreakCard
 import com.revio.social.features.activity.components.TodayInteractionsInfoOverlay
 import com.revio.social.features.activity.model.ActivityItem
 import com.revio.social.features.feed.components.rememberPostCreationLauncher
-import com.revio.social.features.notifications.NotificationsViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,13 +78,22 @@ fun ActivityScreen(
     viewModel: ActivityViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val notificationsViewModel: NotificationsViewModel = hiltViewModel()
-    val notificationsState by notificationsViewModel.uiState.collectAsState()
+    val noticesUnreadViewModel: NoticesUnreadViewModel = hiltViewModel()
+    val noticesUnreadCount by noticesUnreadViewModel.unreadCount.collectAsStateWithLifecycle()
     val openPostCreation = rememberPostCreationLauncher(navController)
     val hazeState = remember { HazeState() }
     val tourHostViewModel: TourHostViewModel = hiltViewModel()
     val tourStep by tourHostViewModel.tourController.step.collectAsState()
     var slotBounds by remember { mutableStateOf(emptyMap<NavSlot, Rect>()) }
+    val activityDotViewModel: ActivityDotViewModel = hiltViewModel()
+    val activityHasDot by activityDotViewModel.hasUnseenActivity.collectAsStateWithLifecycle()
+
+    // Primary trigger (plan §10, Pasul 6, Q4): fires on *any* entry into the Activity
+    // destination — tab, deep link, or navigation restoration alike — not only a tab tap.
+    LaunchedEffect(Unit) {
+        activityDotViewModel.onActivityOpened()
+    }
+
     val goToLeaderboard = {
         navController.navigate(Screen.Leaderboard.route) {
             popUpTo(Screen.Feed.route) {
@@ -110,7 +121,10 @@ fun ActivityScreen(
                 },
                 onLeaderboard = goToLeaderboard,
                 onPlus = openPostCreation.openChooser,
-                onActivity = { /* already here */ },
+                // Secondary trigger (plan §10, Pasul 6): tapping Activity while already on it
+                // doesn't recompose the destination, so LaunchedEffect(Unit) above won't re-fire.
+                // Idempotent, so this never conflicts with that primary trigger.
+                onActivity = { activityDotViewModel.onActivityOpened() },
                 onProfile = {
                     navController.navigate(Screen.Profile.route) {
                         popUpTo(Screen.Feed.route) {
@@ -122,6 +136,7 @@ fun ActivityScreen(
                 },
                 hazeState = hazeState,
                 onSlotBounds = { slot, rect -> slotBounds = slotBounds + (slot to rect) },
+                activityHasDot = activityHasDot,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
@@ -190,8 +205,8 @@ fun ActivityScreen(
                                         modifier = Modifier.weight(1f),
                                     )
                                     NotificationsBellButton(
-                                        unreadCount = notificationsState.unreadCount,
-                                        onClick = { navController.navigate(Screen.Notifications.route) },
+                                        unreadCount = noticesUnreadCount,
+                                        onClick = { navController.navigate(Screen.Notices.route) },
                                     )
                                 }
                                 Spacer(modifier = Modifier.height(16.dp.actScaled()))
@@ -249,12 +264,10 @@ fun ActivityScreen(
         if (uiState.showTodayInteractionsInfo) {
             TodayInteractionsInfoOverlay(onDismiss = { viewModel.dismissTodayInteractionsInfo() })
         }
-
-        NotificationPrepromptHost()
     }
 }
 
-/** Entry point into [com.revio.social.features.notifications.NotificationsScreen], with an unread-count badge. */
+/** Entry point into [com.revio.social.features.notifications.NoticesScreen], with an unread-count badge. */
 @Composable
 private fun NotificationsBellButton(
     unreadCount: Long,
@@ -264,7 +277,7 @@ private fun NotificationsBellButton(
         IconButton(onClick = onClick) {
             Icon(
                 imageVector = Icons.Outlined.Notifications,
-                contentDescription = "Notifications",
+                contentDescription = "Notices",
                 tint = Color.White,
                 modifier = Modifier.size(26.dp.actScaled()),
             )

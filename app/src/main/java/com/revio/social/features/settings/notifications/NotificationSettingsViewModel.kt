@@ -59,7 +59,8 @@ class NotificationSettingsViewModel @Inject constructor(
     /** Re-reads permission/channel/toggle state — call on `ON_RESUME` so a trip to Android Settings is reflected (states 5/6). */
     fun refreshSystemState() {
         viewModelScope.launch {
-            val everRequested = userPreferences.notificationPermissionRequested.first()
+            val userId = userPreferences.userId.first()
+            val everRequested = userId?.let { userPreferences.notificationPermissionRequested(it) } ?: false
             val status = when {
                 permissionState.areNotificationsEnabled() -> SystemNotificationsStatus.ENABLED
                 !permissionState.hasPostNotificationsPermission() && !everRequested -> SystemNotificationsStatus.NOT_ENABLED
@@ -119,7 +120,7 @@ class NotificationSettingsViewModel @Inject constructor(
             )
         )
         viewModelScope.launch {
-            userPreferences.setNotificationPermissionRequested()
+            userPreferences.userId.first()?.let { userId -> userPreferences.setNotificationPermissionRequested(userId) }
             refreshSystemState()
         }
     }

@@ -10,11 +10,16 @@ import java.util.UUID
 
 interface NotificationApi {
     @GET("notifications")
-    suspend fun getNotifications(@Query("limit") limit: Int = 50): Response<NotificationListResponseDto>
+    suspend fun getNotifications(
+        @Query("limit") limit: Int = 50,
+        @Query("cursorCreatedAt") cursorCreatedAt: String? = null,
+        @Query("cursorNotificationId") cursorNotificationId: String? = null,
+        @Query("category") category: String? = null,
+    ): Response<NotificationListResponseDto>
 
     @POST("notifications/{id}/read")
     suspend fun markRead(@Path("id") id: UUID): Response<Unit>
 
     @POST("notifications/read-all")
-    suspend fun markAllRead(): Response<Unit>
+    suspend fun markAllRead(@Query("category") category: String? = null): Response<Unit>
 }

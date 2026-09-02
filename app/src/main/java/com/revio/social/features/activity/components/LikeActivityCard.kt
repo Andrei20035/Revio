@@ -73,7 +73,20 @@ fun LikeActivityCard(item: ActivityItem.LikeItem, modifier: Modifier = Modifier)
                     withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
                         append(item.actorUsername)
                     }
-                    append(" liked your ${item.brand.orEmpty()} ${item.model.orEmpty()} spot")
+                    val spot = "${item.brand.orEmpty()} ${item.model.orEmpty()} spot"
+                    append(
+                        when {
+                            // Mirrors NotificationEventService.renderLikeCopy's 1 / 2-3 / 4+
+                            // thresholds (plan Partea II, Pasul 5), phrased for Activity's own
+                            // per-card copy that names the car.
+                            item.actorCount <= 1 -> " liked your $spot"
+                            else -> {
+                                val others = item.actorCount - 1
+                                val othersWord = if (others == 1) "other" else "others"
+                                " and $others $othersWord liked your $spot"
+                            }
+                        },
+                    )
                 },
                 color = Color.White,
                 fontSize = 14.sp.actScaledText(),

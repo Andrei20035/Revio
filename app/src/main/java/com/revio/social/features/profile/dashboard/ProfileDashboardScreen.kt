@@ -57,10 +57,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import com.revio.social.R
+import com.revio.social.core.activitydot.ActivityDotViewModel
 import com.revio.social.core.navigation.Screen
 import com.revio.social.core.tour.TourHostViewModel
 import com.revio.social.core.tour.TourStep
@@ -114,6 +116,8 @@ fun ProfileDashboardScreen(
     val tourHostViewModel: TourHostViewModel = hiltViewModel()
     val tourStep by tourHostViewModel.tourController.step.collectAsState()
     var slotBounds by remember { mutableStateOf(emptyMap<NavSlot, Rect>()) }
+    val activityDotViewModel: ActivityDotViewModel = hiltViewModel()
+    val activityHasDot by activityDotViewModel.hasUnseenActivity.collectAsStateWithLifecycle()
 
     // Admin-only "Remove post" action, reachable from the see-post overlay's options menu.
     val adminViewModel: AdminViewModel = hiltViewModel()
@@ -208,6 +212,7 @@ fun ProfileDashboardScreen(
                     },
                     onProfile = { /* already here */ },
                     onSlotBounds = { slot, rect -> slotBounds = slotBounds + (slot to rect) },
+                    activityHasDot = activityHasDot,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .navigationBarsPadding()

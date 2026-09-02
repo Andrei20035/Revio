@@ -9,9 +9,6 @@ import com.revio.social.core.network.ApiResult
 import com.revio.social.core.network.NetworkConnectivityManager
 import com.revio.social.core.network.isNetworkError
 import com.revio.social.core.network.onReconnected
-import com.revio.social.core.notifications.DeepLinkDestination
-import com.revio.social.core.notifications.DeepLinkTarget
-import com.revio.social.core.notifications.PendingDeepLink
 import com.revio.social.data.remote.dto.notification.NotificationCategory
 import com.revio.social.data.remote.dto.notification.NotificationDto
 import com.revio.social.data.repository.NotificationRepository
@@ -28,16 +25,23 @@ import javax.inject.Inject
 /** Ev. notification_action_result (pas 5.1) — best-effort actions (Categoria 3), aggregate rate only, never Crashlytics. */
 private const val EVENT_NOTIFICATION_ACTION_RESULT = "notification_action_result"
 
+/**
+ * Notices is the ACCOUNT-only moderation inbox (post removed, account suspended/reactivated,
+ * violation revoked) — social/broadcast notifications (LIKES, COMMENTS, DISCOVERY, REMINDERS)
+ * are represented in Activity instead and never fetched here. Unread state is owned by
+ * [com.revio.social.core.notices.NoticesUnreadController], not this ViewModel — the screen calls
+ * [com.revio.social.core.notices.NoticesUnreadViewModel.onNoticesOpened] on entry instead of
+ * exposing a manual "mark all read" action.
+ */
 @HiltViewModel
-class NotificationsViewModel @Inject constructor(
+class NoticesViewModel @Inject constructor(
     private val notificationRepository: NotificationRepository,
     private val connectivity: NetworkConnectivityManager,
     private val analyticsClient: AnalyticsClient? = null,
-    private val pendingDeepLink: PendingDeepLink? = null,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(NotificationsUiState())
-    val uiState: StateFlow<NotificationsUiState> = _uiState.asStateFlow()
+    private val _uiState = MutableStateFlow(NoticesUiState())
+    val uiState: StateFlow<NoticesUiState> = _uiState.asStateFlow()
 
     init {
         load()
@@ -52,13 +56,23 @@ class NotificationsViewModel @Inject constructor(
         if (_uiState.value.isRefreshing) return
         viewModelScope.launch {
             _uiState.update { it.copy(isRefreshing = true, errorMessage = null, isOffline = false) }
-            fetch()
+            fetch(reset = true)
         }
     }
 
     fun retry() {
         if (_uiState.value.isLoading) return
         load()
+    }
+
+    /** Infinite scroll: appends the next page if there is one and nothing is already in flight. */
+    fun loadMore() {
+        val state = _uiState.value
+        if (!state.hasMore || state.isLoadingMore || state.isLoading || state.isRefreshing) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingMore = true) }
+            fetch(reset = false)
+        }
     }
 
     fun markRead(id: UUID) {
@@ -72,7 +86,6 @@ class NotificationsViewModel @Inject constructor(
                         items = state.items.map {
                             if (it.id == id) it.copy(readAt = Instant.now()) else it
                         },
-                        unreadCount = (state.unreadCount - 1).coerceAtLeast(0),
                     )
                 }
                 is ApiResult.Error -> {
@@ -83,61 +96,13 @@ class NotificationsViewModel @Inject constructor(
         }
     }
 
-    fun markAllRead() {
-        if (_uiState.value.unreadCount == 0L) return
-
-        viewModelScope.launch {
-            when (val result = notificationRepository.markAllRead()) {
-                is ApiResult.Success -> _uiState.update { state ->
-                    state.copy(
-                        items = state.items.map { if (it.readAt == null) it.copy(readAt = Instant.now()) else it },
-                        unreadCount = 0,
-                    )
-                }
-                is ApiResult.Error -> {
-                    logActionResult("mark_all_read", result)
-                    _uiState.update { it.copy(actionErrorMessage = "Couldn't mark all as read") }
-                }
-            }
-        }
-    }
-
     fun clearActionError() {
         _uiState.update { it.copy(actionErrorMessage = null) }
     }
 
-    /**
-     * Tap routing (G12). A social row (LIKES/COMMENTS) with a live [NotificationDto.postId]
-     * buffers a [DeepLinkTarget] via [PendingDeepLink] — the same bridge a push tap uses — and
-     * triggers navigation to Profile, which reuses [com.revio.social.features.profile.dashboard.ProfileDashboardViewModel.openPostFromDeepLink]
-     * (2.6/2.7) to open the see-post overlay (and, for COMMENTS, the comments sheet). A
-     * moderation row keeps today's mark-read-only behavior. A tombstone row (social category,
-     * but the target post was deleted — `postId` is null) also just marks read, no navigation.
-     */
+    /** Notices are exclusively ACCOUNT-category moderation notices — a tap only ever marks read, no deep-link routing. */
     fun onNotificationClicked(notification: NotificationDto) {
         markRead(notification.id)
-
-        val destination = when (notification.category) {
-            NotificationCategory.LIKES -> DeepLinkDestination.LIKE
-            NotificationCategory.COMMENTS -> DeepLinkDestination.COMMENT
-            else -> return
-        }
-        val postId = notification.postId ?: return
-
-        viewModelScope.launch {
-            pendingDeepLink?.set(
-                DeepLinkTarget(
-                    destination = destination,
-                    postId = postId,
-                    openComments = destination == DeepLinkDestination.COMMENT,
-                )
-            )
-            _uiState.update { it.copy(navigateToProfile = true) }
-        }
-    }
-
-    fun consumeNavigateToProfile() {
-        _uiState.update { it.copy(navigateToProfile = false) }
     }
 
     private fun logActionResult(action: String, error: ApiResult.Error) {
@@ -156,29 +121,52 @@ class NotificationsViewModel @Inject constructor(
     private fun load() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null, isOffline = false) }
-            fetch()
+            fetch(reset = true)
         }
     }
 
-    private suspend fun fetch() {
-        when (val result = notificationRepository.getNotifications()) {
-            is ApiResult.Success -> _uiState.update {
-                it.copy(
-                    items = result.data.items,
-                    unreadCount = result.data.unreadCount,
+    /**
+     * Fetches a page of ACCOUNT notices. [reset] true replaces [NoticesUiState.items] with the
+     * first page; false appends the next page (using the current [NoticesUiState.nextCursor]) —
+     * no de-duplication logic is needed since a keyset cursor never repeats a row and
+     * `LazyColumn`'s `key = { it.id }` already guards the render.
+     */
+    private suspend fun fetch(reset: Boolean) {
+        val cursor = if (reset) null else _uiState.value.nextCursor
+        when (
+            val result = notificationRepository.getNotifications(
+                category = NotificationCategory.ACCOUNT,
+                cursorCreatedAt = cursor?.lastCreatedAt?.toString(),
+                cursorNotificationId = cursor?.lastNotificationId?.toString(),
+            )
+        ) {
+            is ApiResult.Success -> _uiState.update { state ->
+                // Defense in depth: the server already filters by category, but Notices must
+                // never render a non-ACCOUNT row even if a future server bug returns one.
+                val page = result.data.items.filter { item -> item.category == NotificationCategory.ACCOUNT }
+                state.copy(
+                    items = if (reset) page else state.items + page,
+                    nextCursor = result.data.nextCursor,
+                    hasMore = result.data.hasMore,
                     isLoading = false,
                     isRefreshing = false,
+                    isLoadingMore = false,
                     errorMessage = null,
                     isOffline = false,
                 )
             }
-            is ApiResult.Error -> _uiState.update {
-                it.copy(
-                    isLoading = false,
-                    isRefreshing = false,
-                    errorMessage = result.message,
-                    isOffline = result.isNetworkError,
-                )
+            is ApiResult.Error -> _uiState.update { state ->
+                if (reset) {
+                    state.copy(
+                        isLoading = false,
+                        isRefreshing = false,
+                        errorMessage = result.message,
+                        isOffline = result.isNetworkError,
+                    )
+                } else {
+                    // A load-more failure must never clear the already-visible list — just stop the spinner.
+                    state.copy(isLoadingMore = false)
+                }
             }
         }
     }

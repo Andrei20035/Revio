@@ -37,7 +37,7 @@ sealed class Screen(val route: String) {
     object Camera : Screen("camera")
     object Leaderboard : Screen("leaderboard")
     object Activity : Screen("activity")
-    object Notifications : Screen("notifications")
+    object Notices : Screen("notices")
     object AdminHome : Screen("admin")
     object AdminReports : Screen("admin/reports")
     object AdminUser : Screen("admin/user")
@@ -75,6 +75,7 @@ sealed class Screen(val route: String) {
     object PersonalInfo : Screen("personal_info")
     object ChangePassword : Screen("change_password")
     object DeleteAccount : Screen("delete_account")
+    object NotificationSettings : Screen("notification_settings")
     object PrivacyPolicy : Screen("privacy_policy")
     object TermsConditions : Screen("terms_conditions")
 

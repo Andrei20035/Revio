@@ -9,14 +9,19 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Exclusive, app-wide overlays, in fixed priority order (highest first): the guided tour outranks
- * the combined Early Spotter card (which only ever shows once the tour finishes), which outranks
- * the first-post feedback prompt.
+ * Exclusive, app-wide overlays, in fixed priority order (highest first): the blocking moderation
+ * notice dialog (step 2.2) outranks everything else — it's never suppressed, only ever the thing
+ * doing the blocking — then the guided tour outranks the combined Early Spotter card (which only
+ * ever shows once the tour finishes), which outranks the first-post feedback prompt, which
+ * outranks the notifications pre-prompt (step 2.1) — the fallback D card and the one-shot upgrade
+ * campaign, both driven by [com.revio.social.core.notifications.NotificationPrepromptController].
  */
 enum class ActiveOverlay {
+    Moderation,
     Tour,
     EarlySpotter,
     FirstPostFeedback,
+    NotificationPreprompt,
 }
 
 /**

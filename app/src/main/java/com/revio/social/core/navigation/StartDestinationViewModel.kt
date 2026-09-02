@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.revio.social.core.analytics.AnalyticsClient
 import com.revio.social.core.analytics.AnalyticsEvent
 import com.revio.social.core.analytics.AnalyticsParamValue
+import com.revio.social.core.notifications.NotificationPrepromptController
 import com.revio.social.core.tour.TourController
 import com.revio.social.data.local.cache.FeedCache
 import com.revio.social.data.local.preferences.TourStatus
@@ -30,6 +31,7 @@ class StartDestinationViewModel @Inject constructor(
     private val tourController: TourController? = null,
     private val feedCache: FeedCache? = null,
     private val analyticsClient: AnalyticsClient? = null,
+    private val notificationPrepromptController: NotificationPrepromptController? = null,
 ) : ViewModel() {
     private val _startDestination = MutableStateFlow<String?>(null)
     val startDestination = _startDestination.asStateFlow()
@@ -65,6 +67,12 @@ class StartDestinationViewModel @Inject constructor(
                         }
                         tourController.startIfArmed()
                     }
+                    // Fire-and-forget (step 1.2) — the only trigger point for a user who stays
+                    // logged in across an app update; see NotificationPrepromptController
+                    // .onSessionRestored. Never allowed to affect destination resolution: the
+                    // call itself is non-suspend (can't delay _startDestination), and runCatching
+                    // guards against a misbehaving controller throwing synchronously.
+                    runCatching { notificationPrepromptController?.onSessionRestored() }
                     logSessionRestoreResult(outcome = "success")
                     Screen.Feed.route
                 }

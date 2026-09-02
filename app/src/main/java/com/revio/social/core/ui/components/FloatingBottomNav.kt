@@ -92,6 +92,7 @@ fun FloatingBottomNav(
     onProfile: () -> Unit,
     hazeState: HazeState? = null,
     onSlotBounds: ((NavSlot, Rect) -> Unit)? = null,
+    activityHasDot: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val scale = (LocalConfiguration.current.screenWidthDp / ReferenceWidthDp).coerceIn(MinScale, MaxScale)
@@ -167,7 +168,11 @@ fun FloatingBottomNav(
             modifier = Modifier.reportBounds(NavSlot.Plus, onSlotBounds),
         )
         NavIcon(
-            res = if (selected == FeedNavItem.Activity) R.drawable.activity_selected else R.drawable.activity,
+            res = when {
+                selected == FeedNavItem.Activity -> R.drawable.activity_selected
+                activityHasDot -> R.drawable.activity_dot
+                else -> R.drawable.activity
+            },
             contentDescription = "Activity",
             size = (RefIconSize - 2.dp) * scale,
             onClick = onActivity,
