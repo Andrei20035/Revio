@@ -28,6 +28,7 @@ enum class NotificationCategory {
     COMMENTS,
     DISCOVERY,
     REMINDERS,
+    CHALLENGES,
 }
 
 @Serializable

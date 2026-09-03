@@ -72,4 +72,15 @@ class RevioMessagingServiceTest {
 
         assertEquals("account", resolved.channelId)
     }
+
+    @Test
+    fun `CHALLENGES category resolves to the challenges channel`() {
+        val resolved = resolveNotification(
+            payload = mapOf("title" to "🏁 New challenge is live", "category" to "CHALLENGES"),
+            category = "CHALLENGES",
+            fallbackTitle = "Revio",
+        )
+
+        assertEquals("challenges", resolved.channelId)
+    }
 }

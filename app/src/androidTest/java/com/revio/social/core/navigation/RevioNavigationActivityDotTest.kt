@@ -69,14 +69,14 @@ class RevioNavigationActivityDotTest {
     }
 
     @Test
-    fun `entering Activity via the tab does not crash and lands on Activity`() {
+    fun `entering_Activity_via_the_tab_does_not_crash_and_lands_on_Activity`() {
         tapNavSlot("Activity")
 
         assertCurrentRoute(Screen.Activity.route)
     }
 
     @Test
-    fun `tapping the Activity tab while already on Activity does not crash or renavigate`() {
+    fun `tapping_the_Activity_tab_while_already_on_Activity_does_not_crash_or_renavigate`() {
         tapNavSlot("Activity")
         assertCurrentRoute(Screen.Activity.route)
 
@@ -87,7 +87,7 @@ class RevioNavigationActivityDotTest {
     }
 
     @Test
-    fun `restoring the back stack into Activity via Feed does not crash`() {
+    fun `restoring_the_back_stack_into_Activity_via_Feed_does_not_crash`() {
         tapNavSlot("Activity")
         assertCurrentRoute(Screen.Activity.route)
 
@@ -101,7 +101,7 @@ class RevioNavigationActivityDotTest {
     }
 
     @Test
-    fun `tapping the bell from Activity opens Notices and back returns to Activity without crashing`() {
+    fun `tapping_the_bell_from_Activity_opens_Notices_and_back_returns_to_Activity_without_crashing`() {
         // Pas 8: the bell badge now reads from NoticesUnreadViewModel/NoticesUnreadController
         // instead of a per-screen NotificationsViewModel instance — this exercises that wiring
         // through real navigation, same no-crash guarantee as the Activity-tab tests above.
@@ -118,7 +118,7 @@ class RevioNavigationActivityDotTest {
     }
 
     @Test
-    fun `Feed Leaderboard and Profile still compose and navigate with the dot parameter wired in`() {
+    fun `Feed_Leaderboard_and_Profile_still_compose_and_navigate_with_the_dot_parameter_wired_in`() {
         tapNavSlot("Leaderboard")
         assertCurrentRoute(Screen.Leaderboard.route)
 

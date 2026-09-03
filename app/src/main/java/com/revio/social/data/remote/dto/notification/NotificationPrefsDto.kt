@@ -13,6 +13,7 @@ data class NotificationPrefsDto(
     val commentsEnabled: Boolean,
     val discoveryEnabled: Boolean,
     val remindersEnabled: Boolean,
+    val challengesEnabled: Boolean,
 )
 
 @Serializable
@@ -21,4 +22,5 @@ data class UpdateNotificationPrefsRequest(
     val commentsEnabled: Boolean? = null,
     val discoveryEnabled: Boolean? = null,
     val remindersEnabled: Boolean? = null,
+    val challengesEnabled: Boolean? = null,
 )

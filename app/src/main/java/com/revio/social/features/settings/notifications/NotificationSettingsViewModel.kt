@@ -24,6 +24,7 @@ private const val CHANNEL_LIKES = "likes"
 private const val CHANNEL_COMMENTS = "comments"
 private const val CHANNEL_DISCOVERY = "discovery"
 private const val CHANNEL_REMINDERS = "reminders"
+private const val CHANNEL_CHALLENGES = "challenges"
 
 /** Ev. push_settings_opened (§16, pas 7.2) — a CTA in this screen sent the user to Android Settings. */
 private const val EVENT_SETTINGS_OPENED = "push_settings_opened"
@@ -70,12 +71,14 @@ class NotificationSettingsViewModel @Inject constructor(
             val commentsBlocked = permissionState.isChannelBlocked(CHANNEL_COMMENTS)
             val discoveryBlocked = permissionState.isChannelBlocked(CHANNEL_DISCOVERY)
             val remindersBlocked = permissionState.isChannelBlocked(CHANNEL_REMINDERS)
+            val challengesBlocked = permissionState.isChannelBlocked(CHANNEL_CHALLENGES)
 
             val previous = _uiState.value
             logNewlyBlockedChannel("likes", wasBlocked = previous.likes.blockedByChannel, nowBlocked = likesBlocked)
             logNewlyBlockedChannel("comments", wasBlocked = previous.comments.blockedByChannel, nowBlocked = commentsBlocked)
             logNewlyBlockedChannel("discovery", wasBlocked = previous.discovery.blockedByChannel, nowBlocked = discoveryBlocked)
             logNewlyBlockedChannel("reminders", wasBlocked = previous.reminders.blockedByChannel, nowBlocked = remindersBlocked)
+            logNewlyBlockedChannel("challenges", wasBlocked = previous.challenges.blockedByChannel, nowBlocked = challengesBlocked)
 
             _uiState.update {
                 it.copy(
@@ -84,6 +87,7 @@ class NotificationSettingsViewModel @Inject constructor(
                     comments = it.comments.copy(blockedByChannel = commentsBlocked),
                     discovery = it.discovery.copy(blockedByChannel = discoveryBlocked),
                     reminders = it.reminders.copy(blockedByChannel = remindersBlocked),
+                    challenges = it.challenges.copy(blockedByChannel = challengesBlocked),
                 )
             }
         }
@@ -167,6 +171,14 @@ class NotificationSettingsViewModel @Inject constructor(
         rollback = { it.copy(reminders = it.reminders.copy(enabled = !enabled)) },
     )
 
+    fun setChallengesEnabled(enabled: Boolean) = updateCategory(
+        category = "challenges",
+        enabled = enabled,
+        request = UpdateNotificationPrefsRequest(challengesEnabled = enabled),
+        optimistic = { it.copy(challenges = it.challenges.copy(enabled = enabled)) },
+        rollback = { it.copy(challenges = it.challenges.copy(enabled = !enabled)) },
+    )
+
     private fun loadPreferences() {
         viewModelScope.launch {
             when (val result = notificationPrefsRepository.getPreferences()) {
@@ -177,6 +189,7 @@ class NotificationSettingsViewModel @Inject constructor(
                         comments = it.comments.copy(enabled = result.data.commentsEnabled),
                         discovery = it.discovery.copy(enabled = result.data.discoveryEnabled),
                         reminders = it.reminders.copy(enabled = result.data.remindersEnabled),
+                        challenges = it.challenges.copy(enabled = result.data.challengesEnabled),
                     )
                 }
                 is ApiResult.Error -> Unit

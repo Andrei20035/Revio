@@ -10,7 +10,11 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -23,6 +27,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 import java.util.UUID
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class NotificationPrepromptControllerTest {
 
     private val testUserId: UUID = UUID.randomUUID()
@@ -763,5 +768,38 @@ class NotificationPrepromptControllerTest {
         assertEquals("upgrade_campaign", surfaceOf("push_permission_requested"))
         assertEquals("upgrade_campaign", surfaceOf("push_permission_result"))
         assertEquals("upgrade_campaign", surfaceOf("push_settings_opened"))
+    }
+
+    // ── notifications pre-prompt bugfix plan, pas 4 — the exact reported regression: a
+    // StartDestinationViewModel-style call to onSessionRestored() fired immediately after
+    // construction (no clock advance in between, unlike every campaign test above, which
+    // advances the clock — or otherwise establishes the elapsed time — before calling
+    // onSessionRestored()) must still show the card once the cold-start grace elapses, instead
+    // of being rejected outright. Uses the dispatcher-injecting constructor (step 1.3) to drive
+    // the grace's `delay` with virtual time rather than a real 3-second wait. ─────────────────
+
+    @Test
+    fun `onSessionRestored fired immediately after construction shows the card once the cold-start grace elapses`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val controller = NotificationPrepromptController(
+            userPreferences = campaignPrefs(),
+            permissionState = campaignPermissionState(),
+            clock = Clock.fixed(fixedNow, ZoneOffset.UTC),
+            appOverlayCoordinator = AppOverlayCoordinator(),
+            analyticsClient = null,
+            dispatcher = dispatcher,
+        )
+
+        // No time passes between construction and this call — exactly the real
+        // StartDestinationViewModel sequence (see StartDestinationViewModel.kt).
+        controller.onSessionRestored()
+        runCurrent()
+
+        assertFalse(controller.uiState.value.visible)
+
+        advanceTimeBy(campaignColdStartGrace.toMillis() + 1)
+        runCurrent()
+
+        assertTrue(controller.uiState.value.visible)
     }
 }

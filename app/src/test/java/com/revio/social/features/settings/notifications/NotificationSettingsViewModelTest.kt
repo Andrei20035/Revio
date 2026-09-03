@@ -41,11 +41,13 @@ class NotificationSettingsViewModelTest {
         comments: Boolean = true,
         discovery: Boolean = true,
         reminders: Boolean = true,
+        challenges: Boolean = true,
     ) = NotificationPrefsDto(
         likesEnabled = likes,
         commentsEnabled = comments,
         discoveryEnabled = discovery,
         remindersEnabled = reminders,
+        challengesEnabled = challenges,
     )
 
     private fun createViewModel(
@@ -178,6 +180,46 @@ class NotificationSettingsViewModelTest {
 
         assertTrue(vm.uiState.value.likes.enabled)
         coVerify(exactly = 0) { notificationPrefsRepository.updatePreferences(any()) }
+    }
+
+    @Test
+    fun `toggling challenges sends an optimistic update and keeps it on success`() = runTest {
+        val vm = createViewModel()
+        advanceUntilIdle()
+        coEvery {
+            notificationPrefsRepository.updatePreferences(UpdateNotificationPrefsRequest(challengesEnabled = false))
+        } returns ApiResult.Success(prefsDto(challenges = false))
+
+        vm.setChallengesEnabled(false)
+
+        assertFalse(vm.uiState.value.challenges.enabled)
+        advanceUntilIdle()
+        assertFalse(vm.uiState.value.challenges.enabled)
+        coVerify(exactly = 1) {
+            notificationPrefsRepository.updatePreferences(UpdateNotificationPrefsRequest(challengesEnabled = false))
+        }
+    }
+
+    @Test
+    fun `toggling challenges rolls back on repository error`() = runTest {
+        val vm = createViewModel()
+        advanceUntilIdle()
+        coEvery {
+            notificationPrefsRepository.updatePreferences(UpdateNotificationPrefsRequest(challengesEnabled = false))
+        } returns ApiResult.Error("Network error")
+
+        vm.setChallengesEnabled(false)
+        advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.challenges.enabled)
+    }
+
+    @Test
+    fun `loaded preferences reflect challengesEnabled from the server`() = runTest {
+        val vm = createViewModel(prefsResult = ApiResult.Success(prefsDto(challenges = false)))
+        advanceUntilIdle()
+
+        assertFalse(vm.uiState.value.challenges.enabled)
     }
 
     @Test

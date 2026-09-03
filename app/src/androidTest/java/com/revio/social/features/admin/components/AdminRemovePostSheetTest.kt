@@ -339,7 +339,7 @@ class AdminRemovePostSheetTest {
     }
 
     @Test
-    fun `scrolling to the last reason and flinging past it keeps the sheet open and footer visible`() {
+    fun `scrolling_to_the_last_reason_and_flinging_past_it_keeps_the_sheet_open_and_footer_visible`() {
         var dismissed = false
         composeTestRule.setContent {
             AdminRemovePostSheet(
@@ -364,7 +364,7 @@ class AdminRemovePostSheetTest {
     }
 
     @Test
-    fun `footer stays visible and reachable with the OTHER field focused`() {
+    fun `footer_stays_visible_and_reachable_with_the_OTHER_field_focused`() {
         composeTestRule.setContent {
             AdminRemovePostSheet(
                 isSubmitting = false,

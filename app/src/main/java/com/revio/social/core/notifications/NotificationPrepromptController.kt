@@ -12,9 +12,11 @@ import java.time.Instant
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,6 +33,9 @@ private const val LIKES_CHANNEL_ID = "likes"
  * Minimum time since [NotificationPrepromptController] was created before the one-shot campaign
  * (step 1.3) may show — avoids racing [com.revio.social.RevioAppUI]'s cold-start spinner
  * (`start == null`), which is still resolving in the same window this controller is constructed.
+ * [NotificationPrepromptController.onSessionRestored] waits out whatever remains of this via
+ * [NotificationPrepromptController.checkAndShow]'s `initialDelay` rather than being rejected by
+ * it — see [NotificationPrepromptController.isEligibleForCampaign]'s doc.
  */
 private val CAMPAIGN_COLD_START_GRACE: Duration = Duration.ofSeconds(3)
 
@@ -73,7 +78,28 @@ class NotificationPrepromptController @Inject constructor(
     private val appOverlayCoordinator: AppOverlayCoordinator,
     private val analyticsClient: AnalyticsClient? = null,
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    // `var` so the secondary (test-only) constructor below can swap it out — Hilt's generated
+    // code always resolves every parameter of an `@Inject constructor` from the graph and ignores
+    // Kotlin default values, so a dispatcher can't be added there without a new binding. The
+    // secondary constructor keeps that out of Hilt's path entirely.
+    private var scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /**
+     * Test-only entry point: lets tests run the [CAMPAIGN_COLD_START_GRACE] delay (step 1.3) in
+     * [checkAndShow] against virtual time (e.g. a `TestDispatcher`/`StandardTestDispatcher`)
+     * instead of a real multi-second wait. Never invoked by Hilt — only the primary constructor
+     * carries `@Inject`.
+     */
+    constructor(
+        userPreferences: UserPreferences,
+        permissionState: NotificationPermissionState,
+        clock: Clock,
+        appOverlayCoordinator: AppOverlayCoordinator,
+        analyticsClient: AnalyticsClient?,
+        dispatcher: CoroutineDispatcher,
+    ) : this(userPreferences, permissionState, clock, appOverlayCoordinator, analyticsClient) {
+        scope = CoroutineScope(SupervisorJob() + dispatcher)
+    }
 
     // Proxy for "cold start" (step 1.3) — this controller is a singleton created once per
     // process, so the instant it's constructed is a reasonable approximation.
@@ -88,12 +114,30 @@ class NotificationPrepromptController @Inject constructor(
         appOverlayCoordinator.setActive(ActiveOverlay.NotificationPreprompt, value.visible)
     }
 
-    // In-memory guard — a given engagement observation only ever triggers an eligibility check
-    // once per process. Reset in [resetShowState] if the card ends up closing without [onShown]
-    // ever having fired for it (e.g. eligibility passed but no host ever actually composed the
-    // card) — otherwise that attempt would silently burn the single per-process check for
-    // something the user never saw.
+    // In-memory guard — a given trigger only ever turns into a shown card once per process.
+    // Unlike the old scheme, this is claimed only once [checkAndShow] actually reaches
+    // `visible = true` (see below) — an eligibility check that comes back ineligible, blocked by
+    // a higher overlay, or with no signed-in user must NOT burn the process's one attempt, since
+    // none of the other triggers ([onEngagementObserved]/[onLoginObserved]/[onSessionRestored])
+    // would otherwise ever get a chance to show the card in that process. Reset in
+    // [resetShowState] if the card ends up closing without [onShown] ever having fired for it
+    // (e.g. eligibility passed but no host ever actually composed the card) — that attempt still
+    // shouldn't cost the process its one check.
     private var checkedThisSession = false
+
+    // Reentrancy guard for [checkAndShow] itself — its eligibility check suspends, so without
+    // this two triggers racing in the same process could both pass the (still unclaimed)
+    // [checkedThisSession] check and each schedule a `pendingShow`. Only one [checkAndShow] may
+    // be actively evaluating at a time; cleared in the `finally` below regardless of outcome.
+    private var checkInFlight = false
+
+    // Guards [scheduleOverlayRetry] (step 2.1 follow-up) so a trigger deferred only by a
+    // higher-priority overlay gets re-evaluated once that overlay closes, instead of being lost
+    // for the rest of the process the way it would if it simply returned. Shared across surfaces
+    // — whichever trigger hits the blocked branch first claims the one retry; [checkedThisSession]
+    // itself is deliberately left unclaimed by that branch, so the retry reuses the normal
+    // [checkAndShow] path (and its own guards) rather than bypassing them.
+    private var overlayRetryPending = false
 
     private data class PendingShow(val userId: UUID, val surface: String)
 
@@ -138,7 +182,18 @@ class NotificationPrepromptController @Inject constructor(
      * process claims that session's single check.
      */
     fun onSessionRestored() {
-        checkAndShow(surface = SURFACE_UPGRADE_CAMPAIGN, isEligible = ::isEligibleForCampaign)
+        val elapsedSinceCreation = Duration.between(controllerCreatedAt, clock.instant())
+        val remainingGrace =
+            if (elapsedSinceCreation < CAMPAIGN_COLD_START_GRACE) {
+                CAMPAIGN_COLD_START_GRACE.minus(elapsedSinceCreation)
+            } else {
+                Duration.ZERO
+            }
+        checkAndShow(
+            surface = SURFACE_UPGRADE_CAMPAIGN,
+            initialDelay = remainingGrace,
+            isEligible = ::isEligibleForCampaign,
+        )
     }
 
     /**
@@ -147,23 +202,70 @@ class NotificationPrepromptController @Inject constructor(
      * (step 1.3) so [onSessionRestored] can use [isEligibleForCampaign] instead of the fallback D
      * card's own [isEligible]. Also checks [AppOverlayCoordinator.isBlockedBy] (step 2.1) right
      * before showing — something ranked above [ActiveOverlay.NotificationPreprompt] (tour, Early
-     * Spotter, first-post feedback) must never have this card drawn on top of it.
+     * Spotter, first-post feedback) must never have this card drawn on top of it. Deferred there,
+     * [scheduleOverlayRetry] takes over and re-runs this same check once the blocking overlay
+     * closes, so being blocked costs the trigger a retry rather than the rest of the process.
+     *
+     * [initialDelay] (step 1.3) is [onSessionRestored]'s way of waiting out the rest of
+     * [CAMPAIGN_COLD_START_GRACE] instead of being rejected by it — zero for every other caller,
+     * so [onLoginObserved]/[onEngagementObserved] stay instantaneous. Applied before [isEligible]
+     * and the overlay check run, so both read the real state at the moment the card is about to
+     * show rather than the moment the trigger fired.
      */
-    private fun checkAndShow(surface: String, isEligible: suspend (UUID) -> Boolean = ::isEligible) {
-        if (checkedThisSession) return
-        checkedThisSession = true
+    private fun checkAndShow(
+        surface: String,
+        initialDelay: Duration = Duration.ZERO,
+        isEligible: suspend (UUID) -> Boolean = ::isEligible,
+    ) {
+        if (checkedThisSession || checkInFlight) return
+        checkInFlight = true
         scope.launch {
-            val userId = userPreferences.userId.first() ?: return@launch
-            if (!isEligible(userId)) return@launch
-            if (appOverlayCoordinator.isBlockedBy(ActiveOverlay.NotificationPreprompt)) return@launch
-            pendingShow = PendingShow(userId, surface)
-            recordedThisShow = false
-            setUiState(
-                NotificationPrepromptUiState(
-                    visible = true,
-                    permissionPreviouslyRequested = userPreferences.notificationPermissionRequested(userId),
+            try {
+                if (!initialDelay.isZero) delay(initialDelay.toMillis())
+                val userId = userPreferences.userId.first() ?: return@launch
+                if (!isEligible(userId)) return@launch
+                if (appOverlayCoordinator.isBlockedBy(ActiveOverlay.NotificationPreprompt)) {
+                    scheduleOverlayRetry(surface, isEligible)
+                    return@launch
+                }
+                // Only claimed here, once a show is actually about to happen — see
+                // [checkedThisSession]'s doc for why an ineligible/blocked/no-user outcome must
+                // not reach this line.
+                checkedThisSession = true
+                pendingShow = PendingShow(userId, surface)
+                recordedThisShow = false
+                setUiState(
+                    NotificationPrepromptUiState(
+                        visible = true,
+                        permissionPreviouslyRequested = userPreferences.notificationPermissionRequested(userId),
+                    )
                 )
-            )
+            } finally {
+                checkInFlight = false
+            }
+        }
+    }
+
+    /**
+     * Re-evaluates a trigger that [checkAndShow] deferred solely because a higher-priority
+     * overlay ([AppOverlayCoordinator.isBlockedBy], step 2.1) was active — without this, a user
+     * who lands directly in the tour (or another overlay ranked above
+     * [ActiveOverlay.NotificationPreprompt]) at the moment [surface] fired would never see this
+     * card again in that process, since [checkedThisSession] is deliberately left unclaimed by
+     * that branch but nothing else ever retries it. Waits for the first
+     * [AppOverlayCoordinator.isBlockedByFlow] transition to `false` (blocking overlay closed),
+     * then re-runs [checkAndShow] for the same [surface]/[isEligible] — exactly once per process,
+     * guarded by [overlayRetryPending]. Re-entering [checkAndShow] means every one of its own
+     * guards ([checkedThisSession], [checkInFlight], [isEligible], the overlay check itself)
+     * applies again, so nothing here bypasses them.
+     */
+    private fun scheduleOverlayRetry(surface: String, isEligible: suspend (UUID) -> Boolean) {
+        if (overlayRetryPending) return
+        overlayRetryPending = true
+        scope.launch {
+            appOverlayCoordinator.isBlockedByFlow(ActiveOverlay.NotificationPreprompt).first { blocked -> !blocked }
+            overlayRetryPending = false
+            checkAndShow(surface = surface, isEligible = isEligible)
         }
     }
 
@@ -247,9 +349,11 @@ class NotificationPrepromptController @Inject constructor(
      *  - the campaign hasn't been shown to this user before ([UserPreferences
      *    .notificationCampaignV1Done]);
      *  - onboarding is complete — defensive: [onSessionRestored]'s caller already implies this,
-     *    but the gate stays explicit rather than assuming it;
-     *  - at least [CAMPAIGN_COLD_START_GRACE] has passed since this controller was created, so
-     *    the campaign never races the cold-start spinner.
+     *    but the gate stays explicit rather than assuming it.
+     *
+     * [CAMPAIGN_COLD_START_GRACE] is no longer checked here — [checkAndShow]'s `initialDelay`
+     * (step 1.3) now waits it out before this gate ever runs, so the campaign is deferred rather
+     * than rejected while racing the cold-start spinner.
      *
      * No app-overlay check here anymore — [checkAndShow] itself now gates every trigger, this one
      * included, on [AppOverlayCoordinator.isBlockedBy] (step 2.1) right before showing.
@@ -261,7 +365,6 @@ class NotificationPrepromptController @Inject constructor(
         if (permissionState.areNotificationsEnabled()) return false
         if (userPreferences.notificationCampaignV1Done(userId).first()) return false
         if (!userPreferences.onboardingCompleted.first()) return false
-        if (Duration.between(controllerCreatedAt, clock.instant()) < CAMPAIGN_COLD_START_GRACE) return false
         return true
     }
 

@@ -35,21 +35,21 @@ class CommentActivityCardTest {
     )
 
     @Test
-    fun `actorCount 1 shows the actual comment text`() {
+    fun `actorCount_1_shows_the_actual_comment_text`() {
         composeTestRule.setContent { CommentActivityCard(item(actorCount = 1)) }
 
         composeTestRule.onNodeWithText("charlotte_khan commented: \"Incredible spec, where did you find this?\"").assertExists()
     }
 
     @Test
-    fun `actorCount 2 joins the conversation copy, without the comment text`() {
+    fun `actorCount_2_joins_the_conversation_copy_without_the_comment_text`() {
         composeTestRule.setContent { CommentActivityCard(item(actorCount = 2)) }
 
         composeTestRule.onNodeWithText("charlotte_khan and 1 other joined the conversation on your BMW M4 spot").assertExists()
     }
 
     @Test
-    fun `actorCount 5 switches to the volume-style copy without a named actor`() {
+    fun `actorCount_5_switches_to_the_volume-style_copy_without_a_named_actor`() {
         composeTestRule.setContent { CommentActivityCard(item(actorCount = 5)) }
 
         composeTestRule.onNodeWithText("5 people commented on your BMW M4 spot").assertExists()

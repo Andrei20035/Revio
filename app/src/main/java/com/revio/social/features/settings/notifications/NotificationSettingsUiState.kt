@@ -25,6 +25,7 @@ data class NotificationSettingsUiState(
     val comments: NotificationCategoryUiState = NotificationCategoryUiState(),
     val discovery: NotificationCategoryUiState = NotificationCategoryUiState(),
     val reminders: NotificationCategoryUiState = NotificationCategoryUiState(),
+    val challenges: NotificationCategoryUiState = NotificationCategoryUiState(),
 ) {
     /** Switches stay disabled until prefs have loaded from the server, and while notifications aren't fully enabled at the OS level (states 1/2/5). */
     val switchesInteractive: Boolean

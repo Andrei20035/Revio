@@ -7,10 +7,12 @@ import android.os.Build
 import androidx.core.content.ContextCompat
 
 /**
- * The five push/inbox notification categories (push-notifications plan, §11), mapped 1:1 onto
- * Android notification channels so Settings → Notifications shows exactly the categories a user
- * can control. Importances mirror the per-category priorities from §8: comments and account are
- * the two a user shouldn't miss, discovery and reminders are the least intrusive.
+ * The push/inbox notification categories (push-notifications plan, §11; CHALLENGES added by the
+ * "challenge is live" work), mapped 1:1 onto Android notification channels so Settings →
+ * Notifications shows exactly the categories a user can control. Importances mirror the
+ * per-category priorities from §8: comments and account are the two a user shouldn't miss,
+ * discovery and reminders are the least intrusive; challenges sits at the default importance,
+ * same as likes.
  */
 private data class RevioNotificationChannel(
     val id: String,
@@ -43,6 +45,12 @@ private val CHANNELS = listOf(
         name = "Leaderboard & reminders",
         description = "Leaderboard updates and reminders to post",
         importance = NotificationManager.IMPORTANCE_LOW,
+    ),
+    RevioNotificationChannel(
+        id = "challenges",
+        name = "Challenges",
+        description = "New challenges going live",
+        importance = NotificationManager.IMPORTANCE_DEFAULT,
     ),
     RevioNotificationChannel(
         id = "account",

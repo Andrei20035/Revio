@@ -196,6 +196,13 @@ fun NotificationSettingsScreen(
                         onCheckedChange = viewModel::setRemindersEnabled,
                         onBlockedHintClick = { openChannelSettings("reminders") },
                     )
+                    NotificationCategoryRow(
+                        label = "Challenges",
+                        state = uiState.challenges,
+                        interactive = uiState.switchesInteractive,
+                        onCheckedChange = viewModel::setChallengesEnabled,
+                        onBlockedHintClick = { openChannelSettings("challenges") },
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(6.dp.actScaled()))

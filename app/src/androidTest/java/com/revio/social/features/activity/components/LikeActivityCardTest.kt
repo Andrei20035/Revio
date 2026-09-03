@@ -34,21 +34,21 @@ class LikeActivityCardTest {
     )
 
     @Test
-    fun `actorCount 1 shows the un-aggregated single-liker copy`() {
+    fun `actorCount_1_shows_the_un-aggregated_single-liker_copy`() {
         composeTestRule.setContent { LikeActivityCard(item(actorCount = 1)) }
 
         composeTestRule.onNodeWithText("tommy82 liked your Porsche GT3 spot").assertExists()
     }
 
     @Test
-    fun `actorCount 2 shows one other, singular`() {
+    fun `actorCount_2_shows_one_other_singular`() {
         composeTestRule.setContent { LikeActivityCard(item(actorCount = 2)) }
 
         composeTestRule.onNodeWithText("tommy82 and 1 other liked your Porsche GT3 spot").assertExists()
     }
 
     @Test
-    fun `actorCount 4 shows others, plural`() {
+    fun `actorCount_4_shows_others_plural`() {
         composeTestRule.setContent { LikeActivityCard(item(actorCount = 4)) }
 
         composeTestRule.onNodeWithText("tommy82 and 3 others liked your Porsche GT3 spot").assertExists()

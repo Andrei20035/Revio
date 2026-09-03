@@ -26,7 +26,7 @@ class FloatingBottomNavDotTest {
     val composeTestRule = createComposeRule()
 
     @Test
-    fun `activityHasDot renders a visually different Activity icon when the tab is not selected`() {
+    fun `activityHasDot_renders_a_visually_different_Activity_icon_when_the_tab_is_not_selected`() {
         composeTestRule.setContent {
             Column {
                 FloatingBottomNav(
@@ -61,7 +61,7 @@ class FloatingBottomNavDotTest {
     }
 
     @Test
-    fun `selected takes priority over activityHasDot on the Activity tab`() {
+    fun `selected_takes_priority_over_activityHasDot_on_the_Activity_tab`() {
         composeTestRule.setContent {
             Column {
                 FloatingBottomNav(
@@ -99,7 +99,7 @@ class FloatingBottomNavDotTest {
     }
 
     @Test
-    fun `activityHasDot does not change NavSlot Activity's reported bounds`() {
+    fun `activityHasDot_does_not_change_NavSlot_Activitys_reported_bounds`() {
         val boundsWithoutDot = mutableMapOf<NavSlot, Rect>()
         val boundsWithDot = mutableMapOf<NavSlot, Rect>()
 

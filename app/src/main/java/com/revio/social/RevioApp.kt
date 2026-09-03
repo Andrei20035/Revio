@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.revio.social.core.navigation.RevioNavigation
@@ -44,6 +45,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 /**
  * Applies an opt-in consent decision (docs/consent-decision.md) to both Firebase SDKs. Extracted
@@ -52,6 +54,20 @@ import kotlinx.coroutines.launch
 internal fun applyAnalyticsConsent(context: Context, granted: Boolean) {
     FirebaseCrashlytics.getInstance().setCrashlyticsCollectionEnabled(granted)
     FirebaseAnalytics.getInstance(context).setAnalyticsCollectionEnabled(granted)
+}
+
+/**
+ * Navigates to a challenge's public detail screen for a CHALLENGE deep link
+ * (push-notifications plan, "challenge is live" work) — same `popUpTo`/`launchSingleTop` shape as
+ * the existing FEED deep-link navigation and the tour's own cross-screen navigation just below,
+ * so a challenge landed on this way sits directly on top of Feed in the back stack and a repeat
+ * tap never pushes a second copy of the destination.
+ */
+private fun NavHostController.navigateToChallengeDetail(challengeId: UUID) {
+    navigate(Screen.ChallengeDetail.createRoute(challengeId)) {
+        popUpTo(Screen.Feed.route) { saveState = true }
+        launchSingleTop = true
+    }
 }
 
 @HiltAndroidApp
@@ -91,9 +107,12 @@ class RevioApp : Application() {
 @Composable
 fun RevioAppUI(
     modifier: Modifier = Modifier,
+    // Defaulted (not required, unlike RevioNavigation's own navController param) so the single
+    // production call site (MainActivity) is unaffected — tests inject a TestNavHostController
+    // here to assert on nav state directly, the same reason RevioNavigation takes one.
+    navController: NavHostController = rememberNavController(),
     sessionManager: SessionManager = androidx.hilt.navigation.compose.hiltViewModel<SessionHostViewModel>().sessionManager,
 ) {
-    val navController = rememberNavController()
     val context = LocalContext.current
     val startVm: StartDestinationViewModel = hiltViewModel()
     val start by startVm.startDestination.collectAsState()
@@ -119,32 +138,52 @@ fun RevioAppUI(
     }
 
     // Consumes a push tap buffered before the graph existed (cold start) or before login
-    // completed (delogat). Nothing to navigate here — a deep link that resolved straight to
-    // Feed is already the start destination or is where the post-login flow lands anyway; this
-    // only clears the buffer once that destination is actually reached (push-notifications
-    // plan, step 2.5).
+    // completed (delogat). For a FEED target there's nothing to navigate — Feed is already the
+    // start destination or is where the post-login flow lands anyway, so this only clears the
+    // buffer once that destination is actually reached (push-notifications plan, step 2.5). A
+    // CHALLENGE target is looked at and navigated *before* it could otherwise be silently
+    // discarded by this same buffer-clearing — landing on Feed at cold start must never eat a
+    // buffered challenge deep link (push-notifications plan, "challenge is live" work).
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     LaunchedEffect(start, currentBackStackEntry, pendingDeepLink) {
         if (start == null) return@LaunchedEffect
         if (currentBackStackEntry?.destination?.route == Screen.Feed.route) {
-            pendingDeepLink.consume()
+            val target = pendingDeepLink.consume()
+            if (target?.destination == DeepLinkDestination.CHALLENGE) {
+                target.challengeId?.let { challengeId ->
+                    navController.navigateToChallengeDetail(challengeId)
+                    pendingDeepLink.logDestinationReached(DeepLinkDestination.CHALLENGE.value, outcome = "ok")
+                }
+            }
         }
     }
 
-    // A push tapped while the app is already running elsewhere (singleTop -> onNewIntent):
-    // the graph already exists, so navigate explicitly. Guarded against firing before the graph
-    // exists (`start == null`) and against jumping to Feed while unauthenticated.
+    // A push tapped while the app is already running elsewhere (singleTop -> onNewIntent), or
+    // the same buffered target this effect's own subscription picks up right at cold start
+    // (PendingDeepLink.signal buffers one pending emission for a not-yet-collecting flow). The
+    // graph already exists by the time `start` is non-null, so this navigates explicitly.
+    // Guarded against firing before the graph exists and against jumping anywhere while
+    // unauthenticated.
     LaunchedEffect(pendingDeepLink, navController) {
         pendingDeepLink.signal.collect {
             if (start == null) return@collect
             val currentRoute = navController.currentDestination?.route
             if (currentRoute == Screen.Auth.route || currentRoute == Screen.Onboarding.route) return@collect
-            if (currentRoute == Screen.Feed.route) return@collect
-            if (pendingDeepLink.consume()?.destination == DeepLinkDestination.FEED) {
-                navController.navigate(Screen.Feed.route) {
-                    popUpTo(Screen.Feed.route) { saveState = true }
-                    launchSingleTop = true
-                    restoreState = true
+            when (val target = pendingDeepLink.consume()) {
+                null -> Unit
+                else -> when (target.destination) {
+                    DeepLinkDestination.FEED -> if (currentRoute != Screen.Feed.route) {
+                        navController.navigate(Screen.Feed.route) {
+                            popUpTo(Screen.Feed.route) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                    DeepLinkDestination.CHALLENGE -> target.challengeId?.let { challengeId ->
+                        navController.navigateToChallengeDetail(challengeId)
+                        pendingDeepLink.logDestinationReached(DeepLinkDestination.CHALLENGE.value, outcome = "ok")
+                    }
+                    DeepLinkDestination.LIKE, DeepLinkDestination.COMMENT -> Unit
                 }
             }
         }
