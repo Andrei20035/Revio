@@ -4,8 +4,8 @@ import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -13,6 +13,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -40,7 +42,6 @@ import com.revio.social.core.ui.overlay.DimOnlyDialogWindow
 import com.revio.social.core.ui.theme.Poppins
 import com.revio.social.features.auth.components.AuthModeSwitchText
 import com.revio.social.features.auth.components.EmailField
-import com.revio.social.features.auth.components.ForgotPasswordText
 import com.revio.social.features.auth.components.GoogleSignInButton
 import com.revio.social.features.auth.components.PasswordField
 import com.revio.social.features.auth.components.PrimaryActionButton
@@ -91,13 +92,13 @@ fun AuthScreen(
     }
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0),
         snackbarHost = {
             SnackbarHost(hostState = snackbarHostState) { data ->
                 CustomSnackbar(data.visuals.message)
             }
         }
     ) { padding ->
-        Log.d("PADDING", padding.toString())
             Box(modifier= Modifier
                 .fillMaxSize()
                 .padding(padding)
@@ -231,19 +232,31 @@ fun ScreenBackground(
                 )
             )
     ) {
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.Bottom,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            content()
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val minHeight = maxHeight
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .imePadding()
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Column(
+                    modifier = Modifier
+                        .heightIn(min = minHeight)
+                        .fillMaxWidth(),
+                    verticalArrangement = Arrangement.Bottom,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    content()
+                }
+            }
         }
     }
 }
 
 @Composable
 private fun LoginHeader() {
-    Spacer(modifier = Modifier.height(45.dp))
+    Spacer(modifier = Modifier.height(24.dp))
 
     GradientText(
         text = "Revio",
@@ -258,7 +271,7 @@ private fun LoginHeader() {
         fontWeight = FontWeight.Bold
     )
 
-    Spacer(modifier = Modifier.height(80.dp))
+    Spacer(modifier = Modifier.height(32.dp))
 }
 
 @Composable
@@ -267,16 +280,6 @@ private fun LoginCard(
     onAction: (AuthAction) -> Unit
 ) {
     var shouldShowConfirm by remember { mutableStateOf(false) }
-    var shouldShowForgot by remember { mutableStateOf(false) }
-
-    val cardHeight by animateDpAsState(
-        targetValue = if (uiState.isLoginMode) 480.dp else 620.dp,
-        animationSpec = tween(
-            durationMillis = 300,
-            easing = FastOutSlowInEasing
-        ),
-        label = "cardHeight"
-    )
 
     LaunchedEffect(uiState.isLoginMode) {
         if (!uiState.isLoginMode) {
@@ -287,19 +290,15 @@ private fun LoginCard(
         }
     }
 
-    LaunchedEffect(uiState.isLoginMode) {
-        if (uiState.isLoginMode) {
-            delay(260L)
-            shouldShowForgot = true
-        } else {
-            shouldShowForgot = false
-        }
-    }
-
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(cardHeight),
+            .animateContentSize(
+                animationSpec = tween(
+                    durationMillis = 300,
+                    easing = FastOutSlowInEasing
+                )
+            ),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
             containerColor = Color.White
@@ -309,17 +308,16 @@ private fun LoginCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(24.dp),
-            verticalArrangement = Arrangement.Bottom,
+            verticalArrangement = Arrangement.Top,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             LoginForm(
                 uiState = uiState,
                 shouldShowConfirm = shouldShowConfirm,
-                shouldShowForgot = shouldShowForgot,
                 onAction = onAction
             )
 
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.height(16.dp))
 
             LoginActions(
                 uiState = uiState,
@@ -338,7 +336,6 @@ private fun LoginCard(
 private fun LoginForm(
     uiState: AuthUiState,
     shouldShowConfirm: Boolean,
-    shouldShowForgot: Boolean,
     onAction: (AuthAction) -> Unit
 ) {
     EmailField(
@@ -369,14 +366,8 @@ private fun LoginForm(
         )
     }
 
-    AnimatedVisibility(
-        visible = shouldShowForgot,
-        enter = fadeIn(animationSpec = tween(200, easing = FastOutSlowInEasing)),
-        exit = fadeOut(animationSpec = tween(200, easing = FastOutSlowInEasing))
-    ) {
-        ForgotPasswordText(
-            onForgotPasswordClick = { onAction(AuthAction.ForgotPassword) }
-        )
+    if (uiState.isLoginMode) {
+        Spacer(modifier = Modifier.height(24.dp))
     }
 
     if (!uiState.isLoginMode) {
