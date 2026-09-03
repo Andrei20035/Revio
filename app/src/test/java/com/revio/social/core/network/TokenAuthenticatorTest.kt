@@ -3,16 +3,22 @@ package com.revio.social.core.network
 import com.revio.social.core.analytics.AnalyticsClient
 import com.revio.social.core.analytics.AnalyticsEvent
 import com.revio.social.core.analytics.AnalyticsParamValue
+import com.revio.social.core.analytics.CrashContext
 import com.revio.social.core.auth.SessionManager
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.revio.social.data.local.auth.AuthTokens
 import com.revio.social.data.local.auth.DeviceIdentity
 import com.revio.social.data.local.auth.TokenStore
 import com.revio.social.data.remote.api.AuthApi
 import com.revio.social.data.remote.dto.auth.AuthErrorCode
+import io.mockk.CapturingSlot
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkStatic
+import io.mockk.slot
+import io.mockk.unmockkStatic
 import io.mockk.verify
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
@@ -20,6 +26,8 @@ import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
+import org.junit.After
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
@@ -44,14 +52,25 @@ class TokenAuthenticatorTest {
     private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
     private val jsonMedia = "application/json".toMediaType()
 
+    private val crashlytics = mockk<FirebaseCrashlytics>(relaxed = true)
+
     @Before
     fun setup() {
+        mockkStatic(FirebaseCrashlytics::class)
+        every { FirebaseCrashlytics.getInstance() } returns crashlytics
+        CrashContext.resetBudgetForTests()
+
         tokenStore = mockk(relaxed = true)
         refreshApi = mockk()
         deviceIdentity = mockk(relaxed = true)
         sessionManager = mockk(relaxed = true)
         analyticsClient = mockk(relaxed = true)
         authenticator = TokenAuthenticator(tokenStore, refreshApi, deviceIdentity, sessionManager, json, analyticsClient)
+    }
+
+    @After
+    fun tearDown() {
+        unmockkStatic(FirebaseCrashlytics::class)
     }
 
     private fun errorBody(code: String, message: String = "err") =
@@ -272,6 +291,77 @@ class TokenAuthenticatorTest {
         authenticator.authenticate(null, response)
 
         coVerify(exactly = 1) { sessionManager.expire(any(), "SESSION_REVOKED") }
+        verify(exactly = 0) { analyticsClient.log(match { it.name == "token_refresh_result" }) }
+    }
+
+    // ----------------------------------------------------------------------
+    // pas 0 (docs/plans/avem-un-bug-android-mutable-sky.md) — the token_refresh_result breadcrumb
+    // must never leak the access/refresh token values themselves.
+    // ----------------------------------------------------------------------
+
+    @Test
+    fun `breadcrumb-ul de refresh reusit nu contine tokenul sau prefixul Bearer`() {
+        every { tokenStore.read() } returns AuthTokens("expired-token", "refresh-token")
+        every { deviceIdentity.id } returns "device-1"
+        coEvery { refreshApi.refresh(any()) } returns
+            RetrofitResponse.success(
+                com.revio.social.data.remote.dto.auth.AuthResponse(
+                    accessToken = "new-token",
+                    refreshToken = "new-refresh",
+                    scope = "FULL",
+                    onboardingStep = com.revio.social.data.remote.dto.auth.OnboardingStep.COMPLETED,
+                )
+            )
+
+        val original = responseWithCode("ACCESS_TOKEN_EXPIRED", httpCode = 401)
+        authenticator.authenticate(null, original)
+
+        val logged: CapturingSlot<String> = slot()
+        verify { crashlytics.log(capture(logged)) }
+        assertFalse(logged.captured.contains("Bearer", ignoreCase = true))
+        assertFalse(logged.captured.contains("new-token"))
+        assertFalse(logged.captured.contains("new-refresh"))
+        assertFalse(logged.captured.contains("expired-token"))
+        assertFalse(logged.captured.contains("refresh-token"))
+        assertFalse(logged.captured.contains("?"))
+    }
+
+    @Test
+    fun `breadcrumb-ul de refresh esuat cu cod terminal nu contine tokenul`() {
+        every { tokenStore.read() } returns AuthTokens("expired-token", "refresh-token")
+        every { deviceIdentity.id } returns "device-1"
+        coEvery { refreshApi.refresh(any()) } returns RetrofitResponse.error(401, errorBody("REFRESH_TOKEN_EXPIRED"))
+
+        val original = responseWithCode("ACCESS_TOKEN_EXPIRED", httpCode = 401)
+        authenticator.authenticate(null, original)
+
+        val logged: CapturingSlot<String> = slot()
+        verify { crashlytics.log(capture(logged)) }
+        assertFalse(logged.captured.contains("Bearer", ignoreCase = true))
+        assertFalse(logged.captured.contains("expired-token"))
+        assertFalse(logged.captured.contains("refresh-token"))
+        assertFalse(logged.captured.contains("?"))
+    }
+
+    // ----------------------------------------------------------------------
+    // pas 4 (docs/plans/avem-un-bug-android-mutable-sky.md) — a network failure during
+    // /auth/refresh must stay non-terminal: refreshApi is called regardless of connectivity
+    // (TokenAuthenticator never checks it directly — isolation is enforced one layer down, in
+    // NetworkModuleRefreshClientTest), and an IOException from it must never expire the session.
+    // ----------------------------------------------------------------------
+
+    @Test
+    fun `un IOException la refresh nu expira sesiunea si se propaga`() {
+        every { tokenStore.read() } returns AuthTokens("expired-token", "refresh-token")
+        every { deviceIdentity.id } returns "device-1"
+        coEvery { refreshApi.refresh(any()) } throws NoConnectivityException()
+
+        val original = responseWithCode("ACCESS_TOKEN_EXPIRED", httpCode = 401)
+
+        org.junit.Assert.assertThrows(NoConnectivityException::class.java) {
+            authenticator.authenticate(null, original)
+        }
+        coVerify(exactly = 0) { sessionManager.expire(any(), any()) }
         verify(exactly = 0) { analyticsClient.log(match { it.name == "token_refresh_result" }) }
     }
 }

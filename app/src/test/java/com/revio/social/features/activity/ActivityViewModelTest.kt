@@ -72,4 +72,39 @@ class ActivityViewModelTest {
 
         coVerify(exactly = 1) { repository.getActivity() }
     }
+
+    // ----------------------------------------------------------------------
+    // pas 3 (docs/plans/avem-un-bug-android-mutable-sky.md) — onResumed() retries a screen stuck
+    // in an error state without depending on any connectivity transition.
+    // ----------------------------------------------------------------------
+
+    @Test
+    fun `onResumed retries exactly once when the screen is in an error state`() = runTest {
+        coEvery { repository.getActivity() } returnsMany listOf(
+            ApiResult.Error("Server error"),
+            ApiResult.Success(successResult),
+        )
+        val vm = ActivityViewModel(repository, userRepository, connectivity)
+        advanceUntilIdle()
+        assertEquals("Server error", vm.uiState.value.errorMessage)
+
+        vm.onResumed()
+        advanceUntilIdle()
+
+        assertNull(vm.uiState.value.errorMessage)
+        assertEquals(42, vm.uiState.value.weeklySpotScore)
+        coVerify(exactly = 2) { repository.getActivity() }
+    }
+
+    @Test
+    fun `onResumed does not reload when there was no error`() = runTest {
+        coEvery { repository.getActivity() } returns ApiResult.Success(successResult)
+        val vm = ActivityViewModel(repository, userRepository, connectivity)
+        advanceUntilIdle()
+
+        vm.onResumed()
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { repository.getActivity() }
+    }
 }

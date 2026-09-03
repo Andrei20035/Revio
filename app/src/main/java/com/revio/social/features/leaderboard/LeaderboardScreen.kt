@@ -23,6 +23,8 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import com.revio.social.core.activitydot.ActivityDotViewModel
@@ -55,6 +57,12 @@ fun LeaderboardScreen(
     var slotBounds by remember { mutableStateOf(emptyMap<NavSlot, Rect>()) }
     val activityDotViewModel: ActivityDotViewModel = hiltViewModel()
     val activityHasDot by activityDotViewModel.hasUnseenActivity.collectAsStateWithLifecycle()
+
+    // pas 3 (docs/plans/avem-un-bug-android-mutable-sky.md) — retries a screen stuck in a
+    // network error without depending on a connectivity-transition event that might never fire.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        viewModel.onResumed()
+    }
 
     val onUserClick: (LeaderboardEntry) -> Unit = { entry ->
         if (entry.userId == uiState.currentUser?.entry?.userId) {

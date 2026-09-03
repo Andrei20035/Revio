@@ -41,6 +41,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import dev.chrisbanes.haze.HazeState
@@ -92,6 +94,12 @@ fun ActivityScreen(
     // destination — tab, deep link, or navigation restoration alike — not only a tab tap.
     LaunchedEffect(Unit) {
         activityDotViewModel.onActivityOpened()
+    }
+
+    // pas 3 (docs/plans/avem-un-bug-android-mutable-sky.md) — retries a screen stuck in a
+    // network error without depending on a connectivity-transition event that might never fire.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        viewModel.onResumed()
     }
 
     val goToLeaderboard = {

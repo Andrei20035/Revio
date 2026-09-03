@@ -168,4 +168,39 @@ class LeaderboardViewModelTest {
 
         coVerify(exactly = 1) { repository.getLeaderboard() }
     }
+
+    // ----------------------------------------------------------------------
+    // pas 3 (docs/plans/avem-un-bug-android-mutable-sky.md) — onResumed() retries a screen stuck
+    // in an error state without depending on any connectivity transition.
+    // ----------------------------------------------------------------------
+
+    @Test
+    fun `onResumed retries exactly once when the screen is in an error state`() = runTest {
+        coEvery { repository.getLeaderboard() } returnsMany listOf(
+            ApiResult.Error("Server error"),
+            ApiResult.Success(successResult),
+        )
+        val vm = LeaderboardViewModel(repository, userRepository, connectivity)
+        advanceUntilIdle()
+        assertEquals("Server error", vm.uiState.value.errorMessage)
+
+        vm.onResumed()
+        advanceUntilIdle()
+
+        assertNull(vm.uiState.value.errorMessage)
+        assertEquals(3, vm.uiState.value.podium.size)
+        coVerify(exactly = 2) { repository.getLeaderboard() }
+    }
+
+    @Test
+    fun `onResumed does not reload when there was no error`() = runTest {
+        coEvery { repository.getLeaderboard() } returns ApiResult.Success(successResult)
+        val vm = LeaderboardViewModel(repository, userRepository, connectivity)
+        advanceUntilIdle()
+
+        vm.onResumed()
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { repository.getLeaderboard() }
+    }
 }

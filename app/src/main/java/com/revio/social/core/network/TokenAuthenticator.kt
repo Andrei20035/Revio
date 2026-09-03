@@ -3,6 +3,7 @@ package com.revio.social.core.network
 import com.revio.social.core.analytics.AnalyticsClient
 import com.revio.social.core.analytics.AnalyticsEvent
 import com.revio.social.core.analytics.AnalyticsParamValue
+import com.revio.social.core.analytics.CrashContext
 import com.revio.social.core.auth.SessionManager
 import com.revio.social.data.local.auth.AuthTokens
 import com.revio.social.data.local.auth.DeviceIdentity
@@ -13,6 +14,7 @@ import com.revio.social.data.remote.dto.auth.AuthErrorResponse
 import com.revio.social.data.remote.dto.auth.RefreshRequest
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import java.io.IOException
 import okhttp3.Authenticator
 import okhttp3.Request
 import okhttp3.Response
@@ -55,8 +57,18 @@ class TokenAuthenticator @Inject constructor(
                     .build()
             }
 
-            val refreshResponse = runBlocking {
-                refreshApi.refresh(RefreshRequest(current.refreshToken, deviceIdentity.id))
+            val refreshResponse = try {
+                runBlocking {
+                    refreshApi.refresh(RefreshRequest(current.refreshToken, deviceIdentity.id))
+                }
+            } catch (e: IOException) {
+                // Observability only — behavior unchanged: this still propagates and must never
+                // trigger sessionManager.expire() (a network failure is not a terminal auth
+                // error). See docs/plans/avem-un-bug-android-mutable-sky.md, pas 0.
+                CrashContext.breadcrumb(
+                    "connectivity_token_refresh_io_exception type=${e::class.simpleName}"
+                )
+                throw e
             }
             if (!refreshResponse.isSuccessful) {
                 val refreshCode = refreshResponse.errorBody()?.string()?.let(::parseErrorCode)
@@ -84,6 +96,11 @@ class TokenAuthenticator @Inject constructor(
             failureCode?.let { put("failure_code", AnalyticsParamValue.StringValue(it)) }
         }
         analyticsClient?.log(AnalyticsEvent(name = EVENT_TOKEN_REFRESH_RESULT, params = params))
+        // No tokens — outcome and failure code only. See docs/plans/avem-un-bug-android-mutable-sky.md, pas 0.
+        CrashContext.breadcrumb(
+            "connectivity_token_refresh_result outcome=${if (success) "success" else "failure"}" +
+                (failureCode?.let { " failure_code=$it" } ?: "")
+        )
     }
 
     private fun parseErrorCode(response: Response): AuthErrorCode? =

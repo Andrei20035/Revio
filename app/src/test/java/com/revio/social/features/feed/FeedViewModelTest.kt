@@ -1721,4 +1721,74 @@ class FeedViewModelTest {
         // Simulates a restart reading straight from the cache — the post must not revive.
         assertTrue(feedCache.observePosts().first().none { it.id == removed.id })
     }
+
+    // ----------------------------------------------------------------------
+    // pas 3 (docs/plans/avem-un-bug-android-mutable-sky.md) — onResumed() retries a feed stuck
+    // in a network-error state without depending on any connectivity transition.
+    // ----------------------------------------------------------------------
+
+    @Test
+    fun `onResumed din NoInternet declanseaza exact un load si arata postarile`() = runTest {
+        val vm = createViewModel()
+        advanceUntilIdle()
+        assertEquals(FeedContent.NoInternet, vm.uiState.value.content)
+
+        val result = feedResult(posts = listOf(post()))
+        networkAvailable.value = true
+        coEvery { postRepository.getFeedPosts(limit = 15, cursor = null) } returns ApiResult.Success(result)
+
+        vm.onResumed()
+        advanceUntilIdle()
+
+        assertEquals(FeedContent.Posts, vm.uiState.value.content)
+        coVerify(exactly = 1) { postRepository.getFeedPosts(limit = 15, cursor = null) }
+    }
+
+    @Test
+    fun `onResumed cu loadMoreError declanseaza exact un load si il curata`() = runTest {
+        val cachedPost = post()
+        feedImagePrefetcher.cachedUrls += cachedPost.imageUrl
+        feedCache.replaceWithFirstPage(
+            page = feedResult(posts = listOf(cachedPost), hasMore = true),
+            ownerUserId = ownerUserId,
+            syncedAt = Instant.now(),
+        )
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        // Same setup as "footer retry offline" — the first tap is what actually produces the
+        // OfflineRetry state (load() sets loadMoreError after the offline pre-flight check).
+        vm.onFooterRetry()
+        advanceUntilIdle()
+        assertEquals(FeedFooterState.OfflineRetry, vm.uiState.value.footer)
+
+        val cursor = feedCache.readMeta()?.nextCursor
+        networkAvailable.value = true
+        coEvery { postRepository.getFeedPosts(limit = 15, cursor = cursor) } returns
+            ApiResult.Success(feedResult(posts = listOf(post()), hasMore = false))
+
+        vm.onResumed()
+        advanceUntilIdle()
+
+        assertEquals(FeedFooterState.CaughtUp, vm.uiState.value.footer)
+        coVerify(exactly = 1) { postRepository.getFeedPosts(limit = 15, cursor = cursor) }
+    }
+
+    @Test
+    fun `onResumed nu face nimic cand feedul nu e in eroare`() = runTest {
+        feedCache.replaceWithFirstPage(
+            page = feedResult(posts = listOf(post()), hasMore = false),
+            ownerUserId = ownerUserId,
+            syncedAt = Instant.now(),
+        )
+        networkAvailable.value = true
+        internetValidated.value = true
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        vm.onResumed()
+        advanceUntilIdle()
+
+        coVerify(exactly = 0) { postRepository.getFeedPosts(any(), any()) }
+    }
 }

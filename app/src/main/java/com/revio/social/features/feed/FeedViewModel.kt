@@ -252,6 +252,27 @@ class FeedViewModel @Inject constructor(
         withTimeoutOrNull(OWNER_ID_WAIT.toMillis()) { userPreferences.userId.filterNotNull().firstOrNull() }
 
     /**
+     * Called when the screen returns to the foreground (pas 3,
+     * docs/plans/avem-un-bug-android-mutable-sky.md) — retries a screen already stuck in a
+     * network-error state without waiting for a connectivity-transition event that, after a
+     * stale-cache edge case, might never arrive. Deliberately narrower than [onReconnected]: no
+     * [maybeSyncSilently] freshness sync here, since that isn't an error-recovery retry. Reuses
+     * the same guards as the transition-driven path — [loadFirstPage]/[loadNextPage] already
+     * no-op or coalesce against a load in flight — so this never duplicates one.
+     */
+    fun onResumed() {
+        val state = _uiState.value
+        when {
+            state.content is FeedContent.NoInternet -> loadFirstPage()
+
+            state.loadMoreError != null && state.hasMore && state.feedPosts.isNotEmpty() -> {
+                _uiState.update { it.copy(loadMoreError = null) }
+                loadNextPage()
+            }
+        }
+    }
+
+    /**
      * Reacts to a validated reconnect. Auto-retry is only ever mandatory for the empty
      * no-internet state; a stuck load-more retries because the user is already waiting at the
      * bottom of the list; anything else is a best-effort, non-disruptive freshness sync.
@@ -548,6 +569,28 @@ class FeedViewModel @Inject constructor(
      * which prevents double-tap double-counting and duplicate backend calls.
      */
     fun onLikeToggle(postId: UUID) {
+        submitLikeToggle(postId)
+    }
+
+    /**
+     * Like [postId] from a double-tap-on-image gesture. Unlike [onLikeToggle], this never
+     * unlikes: if the post is already liked, it's a no-op on the network and the caller (the UI)
+     * is expected to still play its heart-burst feedback animation.
+     */
+    fun onDoubleTapLike(postId: UUID) {
+        val current = _uiState.value.feedPosts.firstOrNull { it.id == postId } ?: return
+        if (current.likedByCurrentUser) return
+        submitLikeToggle(postId)
+    }
+
+    /**
+     * Shared implementation backing [onLikeToggle] and [onDoubleTapLike]. Updates the UI
+     * optimistically, then reconciles with the server's authoritative count/state. On failure
+     * the optimistic change is reverted and a message is surfaced. Taps while a toggle is
+     * already in flight for the post are ignored, which prevents double-tap double-counting and
+     * duplicate backend calls.
+     */
+    private fun submitLikeToggle(postId: UUID) {
         val current = _uiState.value.feedPosts.firstOrNull { it.id == postId } ?: return
         if (postId in _uiState.value.likeInFlight) return
 

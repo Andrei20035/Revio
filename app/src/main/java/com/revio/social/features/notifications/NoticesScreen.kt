@@ -45,6 +45,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.navigation.NavController
 import com.revio.social.core.notices.NoticesUnreadViewModel
 import com.revio.social.core.ui.components.AppScreenBackground
@@ -79,6 +81,12 @@ fun NoticesScreen(
     // bell badge optimistically.
     LaunchedEffect(Unit) {
         noticesUnreadViewModel.onNoticesOpened()
+    }
+
+    // pas 3 (docs/plans/avem-un-bug-android-mutable-sky.md) — retries a screen stuck in a
+    // network error without depending on a connectivity-transition event that might never fire.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        viewModel.onResumed()
     }
 
     LaunchedEffect(uiState.actionErrorMessage) {

@@ -65,6 +65,18 @@ class NoticesViewModel @Inject constructor(
         load()
     }
 
+    /**
+     * Called when the screen returns to the foreground (pas 3,
+     * docs/plans/avem-un-bug-android-mutable-sky.md) — retries a screen already stuck in a
+     * network-error state without depending on the [connectivity] `false -> true` transition
+     * this class's own `onReconnected()` collector reacts to, which might never arrive after a
+     * stale-cache edge case. Reuses [retry]'s own `isLoading` guard, so this never duplicates a
+     * load already in flight.
+     */
+    fun onResumed() {
+        if (_uiState.value.errorMessage != null) retry()
+    }
+
     /** Infinite scroll: appends the next page if there is one and nothing is already in flight. */
     fun loadMore() {
         val state = _uiState.value

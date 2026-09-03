@@ -10,8 +10,10 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.Box
@@ -20,9 +22,11 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.navigationBars
@@ -104,6 +108,7 @@ import com.revio.social.features.challenge.ChallengeViewModel
 import com.revio.social.features.challenge.components.ChallengeCard
 import com.revio.social.features.feed.components.CarLocationRow
 import com.revio.social.features.feed.components.CommentsSheet
+import com.revio.social.features.feed.components.DoubleTapLikeBurst
 import com.revio.social.features.feed.components.FeedPostSkeleton
 import com.revio.social.features.feed.components.PostOptionsMenu
 import com.revio.social.features.feed.components.SubmitReportDialog
@@ -229,6 +234,12 @@ fun FeedScreen(
     // boundary, or past endsAt entirely) and kicks a coalesced refresh — see ChallengeViewModel.
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         challengeViewModel.onResumed()
+    }
+
+    // pas 3 (docs/plans/avem-un-bug-android-mutable-sky.md) — retries a feed stuck in a network
+    // error without depending on a connectivity-transition event that might never fire again.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        viewModel.onResumed()
     }
 
     // A brand-new signup arms the tour but never passes through StartDestinationViewModel's
@@ -509,6 +520,7 @@ fun FeedScreen(
                             FeedPostCard(
                                 post = post,
                                 onLikeToggle = { viewModel.onLikeToggle(post.id) },
+                                onImageDoubleTap = { viewModel.onDoubleTapLike(post.id) },
                                 onOpenComments = { viewModel.openComments(post.id) },
                                 onShare = { sharePost(context, post) },
                                 onReportReasonSelected = { reason ->
@@ -552,7 +564,9 @@ internal fun FeedPostCard(
     onAuthorClick: () -> Unit,
     isAdmin: Boolean = false,
     onRemovePostAdminClick: () -> Unit = {},
+    onImageDoubleTap: () -> Unit = {},
 ) {
+    var likeBurstTrigger by remember(post.id) { mutableIntStateOf(0) }
     Column(modifier = Modifier.fillMaxWidth()) {
         // ---- Header: avatar · username · car (+ location) · more ----
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -591,7 +605,21 @@ internal fun FeedPostCard(
                 .aspectRatio(375f / 468f)
                 .shadow(elevation = 12.dp, shape = RoundedCornerShape(imageCorner), clip = false)
                 .clip(RoundedCornerShape(imageCorner))
-                .background(ImagePlaceholder),
+                .background(ImagePlaceholder)
+                .pointerInput(post.id) {
+                    detectTapGestures(onDoubleTap = {
+                        likeBurstTrigger++
+                        onImageDoubleTap()
+                    })
+                }
+                .semantics {
+                    customActions = listOf(
+                        CustomAccessibilityAction("Like") {
+                            onImageDoubleTap()
+                            true
+                        },
+                    )
+                },
         ) {
             AsyncImage(
                 model = ImageRequest.Builder(LocalContext.current)
@@ -605,6 +633,7 @@ internal fun FeedPostCard(
                 error = painterResource(R.drawable.post_placeholder),
                 fallback = painterResource(R.drawable.post_placeholder),
             )
+            DoubleTapLikeBurst(trigger = likeBurstTrigger, modifier = Modifier.matchParentSize())
         }
 
         Spacer(modifier = Modifier.height(RefImageBottomSpacing.scaledV()))

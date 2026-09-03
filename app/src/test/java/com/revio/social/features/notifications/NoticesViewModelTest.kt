@@ -311,4 +311,39 @@ class NoticesViewModelTest {
         assertEquals(listOf(n1), vm.uiState.value.items)
         assertEquals(false, vm.uiState.value.isLoadingMore)
     }
+
+    // ----------------------------------------------------------------------
+    // pas 3 (docs/plans/avem-un-bug-android-mutable-sky.md) — onResumed() retries a screen stuck
+    // in an error state without depending on any connectivity transition.
+    // ----------------------------------------------------------------------
+
+    @Test
+    fun `onResumed retries exactly once when the screen is in an error state`() = runTest {
+        coEvery { repository.getNotifications(category = NotificationCategory.ACCOUNT) } returnsMany listOf(
+            ApiResult.Error("Server error"),
+            ApiResult.Success(NotificationListResponseDto(unreadCount = 0, items = emptyList())),
+        )
+        val vm = NoticesViewModel(repository, connectivity)
+        advanceUntilIdle()
+        assertEquals("Server error", vm.uiState.value.errorMessage)
+
+        vm.onResumed()
+        advanceUntilIdle()
+
+        assertNull(vm.uiState.value.errorMessage)
+        coVerify(exactly = 2) { repository.getNotifications(category = NotificationCategory.ACCOUNT) }
+    }
+
+    @Test
+    fun `onResumed does not reload when there was no error`() = runTest {
+        coEvery { repository.getNotifications(category = NotificationCategory.ACCOUNT) } returns
+            ApiResult.Success(NotificationListResponseDto(unreadCount = 0, items = emptyList()))
+        val vm = NoticesViewModel(repository, connectivity)
+        advanceUntilIdle()
+
+        vm.onResumed()
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { repository.getNotifications(category = NotificationCategory.ACCOUNT) }
+    }
 }

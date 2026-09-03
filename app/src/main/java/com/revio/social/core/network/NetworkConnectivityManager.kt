@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
+import com.revio.social.core.analytics.CrashContext
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -48,22 +49,35 @@ class NetworkConnectivityManager @Inject constructor(
     val connectionType: StateFlow<String?> = _connectionType.asStateFlow()
 
     init {
-        refresh()
+        refresh(source = "init")
 
         // Tracks the network the system actually routes through, matching the semantics of
         // `activeNetwork` used below — a capability-filtered request would instead fire for
         // every matching network, not just the one in active use.
         connectivityManager.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) = refresh()
+            override fun onAvailable(network: Network) = refresh(source = "onAvailable")
 
-            override fun onLost(network: Network) = refresh()
+            override fun onLost(network: Network) = refresh(source = "onLost")
 
             // The only callback where the INTERNET -> VALIDATED transition surfaces.
-            override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) = refresh()
+            override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) =
+                refresh(source = "onCapabilitiesChanged")
         })
     }
 
-    private fun refresh() {
+    /**
+     * Re-reads [ConnectivityManager.getActiveNetwork] / capabilities synchronously and updates
+     * the cached state. Public so callers outside this class can force a re-check: [source]
+     * `"resume"`, called on app foreground (pas 1, docs/plans/avem-un-bug-android-mutable-sky.md),
+     * to correct a cached value left stale by a missed/delayed system callback while the process
+     * was backgrounded; and [source] `"interceptor"` (pas 2), called from
+     * [NetworkConnectivityInterceptor] before it trusts a cached `false` enough to reject a
+     * request. (pas 0's [source]-tagged breadcrumb below covers the other, callback-driven
+     * sources: "init", "onAvailable", "onLost", "onCapabilitiesChanged".) Idempotent and cheap
+     * (two binder calls); the [MutableStateFlow]s below don't re-emit when the value is
+     * unchanged, so a call with no real change triggers no extra retries downstream.
+     */
+    fun refresh(source: String) {
         val network = connectivityManager.activeNetwork
         val capabilities = network?.let { connectivityManager.getNetworkCapabilities(it) }
 
@@ -79,5 +93,11 @@ class NetworkConnectivityManager @Inject constructor(
             capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "ethernet"
             else -> "other"
         }
+
+        // No tokens, no user data, no query strings — see the [source] doc comment above.
+        CrashContext.breadcrumb(
+            "connectivity_refresh source=$source activeNetwork=${network != null} " +
+                "hasInternet=$hasInternet isValidated=$isValidated transport=${_connectionType.value}"
+        )
     }
 }

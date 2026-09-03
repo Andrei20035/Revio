@@ -122,30 +122,45 @@ object NetworkModule {
             .build()
     }
 
+    /**
+     * `/auth/refresh` never mounts [NetworkConnectivityInterceptor] (pas 4,
+     * docs/plans/avem-un-bug-android-mutable-sky.md) — it is [TokenAuthenticator]'s only path
+     * back to a working session, so it must never be blocked by a connectivity check of its own,
+     * cached or otherwise. A refresh attempt made while genuinely offline still fails with a
+     * real [java.io.IOException] from OkHttp itself, which [TokenAuthenticator] already treats
+     * as non-terminal (never calls `sessionManager.expire()` for it).
+     */
     @Provides
     @Singleton
     @Named("refresh")
     fun provideRefreshAuthApi(
         @Named("requestId") requestIdInterceptor: Interceptor,
         loggingInterceptor: HttpLoggingInterceptor,
-        networkConnectivityInterceptor: NetworkConnectivityInterceptor,
         json: Json,
     ): AuthApi {
-        val rawClient = OkHttpClient.Builder()
-            .addInterceptor(networkConnectivityInterceptor)
-            .addInterceptor(requestIdInterceptor)
-            .addInterceptor(loggingInterceptor)
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
-            .build()
         return Retrofit.Builder()
             .baseUrl(BuildConfig.API_BASE_URL)
-            .client(rawClient)
+            .client(buildRefreshOkHttpClient(requestIdInterceptor, loggingInterceptor))
             .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .build()
             .create(AuthApi::class.java)
     }
+
+    /**
+     * Extracted from [provideRefreshAuthApi] so pas 4's guarantee — no
+     * [NetworkConnectivityInterceptor] on this client — is directly testable (asserting on
+     * [OkHttpClient.interceptors]) without needing a real network call.
+     */
+    internal fun buildRefreshOkHttpClient(
+        requestIdInterceptor: Interceptor,
+        loggingInterceptor: HttpLoggingInterceptor,
+    ): OkHttpClient = OkHttpClient.Builder()
+        .addInterceptor(requestIdInterceptor)
+        .addInterceptor(loggingInterceptor)
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .build()
 
 
     @Provides

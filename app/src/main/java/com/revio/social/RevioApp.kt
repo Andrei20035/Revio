@@ -15,6 +15,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.platform.LocalContext
 import android.widget.Toast
 import com.revio.social.core.auth.SessionManager
+import com.revio.social.core.network.NetworkConnectivityManager
 import com.revio.social.core.notifications.DeepLinkDestination
 import com.revio.social.core.notifications.PendingDeepLink
 import com.revio.social.core.notifications.PushTokenRegistrar
@@ -121,6 +122,19 @@ fun RevioAppUI(
     val pushTokenRegistrar = hiltViewModel<PushTokenHostViewModel>().pushTokenRegistrar
     val pendingDeepLink = hiltViewModel<PendingDeepLinkHostViewModel>().pendingDeepLink
     val notificationPrepromptViewModel: NotificationPrepromptViewModel = hiltViewModel()
+    val connectivity = hiltViewModel<ConnectivityHostViewModel>().networkConnectivityManager
+
+    // Corrects a connectivity value left stale by a missed/delayed system callback while the
+    // process was backgrounded (pas 1, docs/plans/avem-un-bug-android-mutable-sky.md) — without
+    // this, NetworkConnectivityInterceptor and every onReconnected()/onValidatedReconnect()
+    // consumer could keep acting on a "false" that no longer reflects reality. Kept as its own
+    // effect, ordered first, so the foreground requests below always see a freshly-checked value
+    // rather than racing the check. refresh() itself logs the pas-0 breadcrumb (source="resume"),
+    // and its underlying MutableStateFlows don't re-emit on an unchanged value, so a resume with
+    // no real change triggers no extra retries downstream.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        connectivity.refresh(source = "resume")
+    }
 
     // Re-sends the FCM token on every foreground so timezone/locale/appVersion stay current on
     // the server row (push-notifications plan, step 2.4) — an upsert, so this never duplicates
@@ -250,6 +264,11 @@ fun RevioAppUI(
 @dagger.hilt.android.lifecycle.HiltViewModel
 class SessionHostViewModel @Inject constructor(
     val sessionManager: SessionManager,
+) : androidx.lifecycle.ViewModel()
+
+@dagger.hilt.android.lifecycle.HiltViewModel
+class ConnectivityHostViewModel @Inject constructor(
+    val networkConnectivityManager: NetworkConnectivityManager,
 ) : androidx.lifecycle.ViewModel()
 
 @dagger.hilt.android.lifecycle.HiltViewModel
