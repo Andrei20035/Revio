@@ -1,8 +1,6 @@
 package com.revio.social.features.challenge
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -25,14 +22,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -43,9 +35,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.revio.social.core.ui.components.StateMessage
 import com.revio.social.data.model.EffectiveChallengeStatus
+import com.revio.social.data.model.ParticipantState
 import com.revio.social.data.model.RewardState
 import com.revio.social.features.challenge.components.ChallengeAccent
 import com.revio.social.features.challenge.components.ChallengeContributionRow
+import com.revio.social.features.challenge.components.ChallengeCtaButton
 import com.revio.social.features.challenge.components.ChallengeGold
 import com.revio.social.features.challenge.components.CardBackground
 import com.revio.social.features.challenge.components.ContinuousProgressBar
@@ -58,7 +52,6 @@ import java.util.Locale
 
 private val ScreenBackground = Color(0xFF05081D)
 private val TextMuted = Color(0xFF707070)
-private val CtaTextColor = Color(0xFF00161F)
 private val PeriodFormatter: DateTimeFormatter =
     DateTimeFormatter.ofPattern("EEE d MMM, HH:mm", Locale.ENGLISH)
 
@@ -145,11 +138,18 @@ fun ChallengeDetailContent(
     // "Reward revoked" line in the REWARD card below, so it doesn't also get the checkmark badge.
     val isCompleted = !isRevoked && state.contributionCount >= state.requiredPosts
     val filledCount = minOf(state.contributionCount, state.requiredPosts)
+    // Same derivation as ChallengeCard's isCompletedPending — see the plan's §6 pas 5, aligning
+    // the eyebrow's vocabulary with the CTA/card across surfaces.
+    val isCompletedPending = !isGranted && (
+        state.participantState == ParticipantState.COMPLETED_PENDING ||
+            (state.participantState == ParticipantState.UNKNOWN && filledCount >= state.requiredPosts)
+        )
     val accent = if (isGranted) ChallengeGold else ChallengeAccent
     val timeLabel = state.remaining.label()
 
     val eyebrowText = when {
         isGranted -> "COMPLETED"
+        isCompletedPending -> "GOAL REACHED"
         state.effectiveStatus == EffectiveChallengeStatus.SCHEDULED ->
             "STARTS ${state.startsAt.atZone(ZoneId.systemDefault()).format(PeriodFormatter)}"
         state.effectiveStatus == EffectiveChallengeStatus.ENDED -> "ENDED"
@@ -276,32 +276,17 @@ fun ChallengeDetailContent(
             )
         }
 
-        if (state.effectiveStatus == EffectiveChallengeStatus.ACTIVE) {
-            Spacer(modifier = Modifier.height(16.dp))
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(ChallengeAccent)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        role = Role.Button,
-                        onClickLabel = "Start a camera spot",
-                        onClick = onSpotNow,
-                    )
-                    .semantics(mergeDescendants = true) {},
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = "Spot now",
-                    color = CtaTextColor,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-        }
+        Spacer(modifier = Modifier.height(16.dp))
+        ChallengeCtaButton(
+            cta = challengeCta(
+                effectiveStatus = state.effectiveStatus,
+                participantState = state.participantState,
+                rewardState = state.rewardState,
+                contributionCount = state.contributionCount,
+                requiredPosts = state.requiredPosts,
+            ),
+            onClick = onSpotNow,
+        )
 
         Spacer(modifier = Modifier.height(20.dp))
 

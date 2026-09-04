@@ -1,5 +1,6 @@
 package com.revio.social.features.challenge
 
+import com.revio.social.data.model.EffectiveChallengeStatus
 import com.revio.social.data.model.ParticipantState
 import com.revio.social.data.model.RewardState
 import java.time.Duration
@@ -88,6 +89,10 @@ sealed interface ChallengeUiState {
         /** The server-derived participation state, e.g. distinguishing "threshold reached,
          * reward pending" from plain in-progress. See the plan's §7.2. */
         val participantState: ParticipantState = ParticipantState.UNKNOWN,
+        /** The challenge's server-derived lifecycle state (active/scheduled/ended/cancelled) —
+         * see the plan's §5/§6. Defaults to [EffectiveChallengeStatus.ACTIVE] for existing
+         * call sites that don't set it explicitly. */
+        val effectiveStatus: EffectiveChallengeStatus = EffectiveChallengeStatus.ACTIVE,
         val endsAt: Instant,
         val remaining: RemainingTime,
         /** True when the most recent refresh failed and this is stale data from an earlier one. */

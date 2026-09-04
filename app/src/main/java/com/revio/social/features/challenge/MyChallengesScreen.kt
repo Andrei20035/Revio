@@ -50,14 +50,17 @@ private val SectionLabelColor = Color(0xFF707070)
 
 /** [ChallengeCard] needs a live [ChallengeUiState.Active], not a history row — this converts the
  * caller's active [ChallengeHistoryItem] into the same shape the Feed card renders, so the two
- * stay visually identical without duplicating the card. */
-private fun ChallengeHistoryItem.toActiveCardState(now: Instant): ChallengeUiState.Active = ChallengeUiState.Active(
+ * stay visually identical without duplicating the card. Visibility is `internal` (not `private`)
+ * so it's directly unit-testable — see `MyChallengesScreenStateTest`. */
+internal fun ChallengeHistoryItem.toActiveCardState(now: Instant): ChallengeUiState.Active = ChallengeUiState.Active(
     challengeId = challenge.id,
     titleLine = "Spot ${challenge.requiredPosts} ${challenge.targetFamilyBrand} ${challenge.targetFamilyName}",
     contributionCount = progress.contributionCount,
     requiredPosts = challenge.requiredPosts,
     rewardPoints = challenge.rewardPoints,
     rewardState = progress.rewardState,
+    participantState = progress.participantState,
+    effectiveStatus = effectiveStatus,
     endsAt = challenge.endsAt,
     remaining = remainingTimeAt(now, challenge.endsAt),
     isStale = false,

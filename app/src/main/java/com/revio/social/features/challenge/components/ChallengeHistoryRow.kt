@@ -33,8 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.revio.social.data.model.ChallengeHistoryItem
 import com.revio.social.data.model.EffectiveChallengeStatus
-import com.revio.social.data.model.ParticipantState
-import com.revio.social.data.model.RewardState
+import com.revio.social.features.challenge.challengeHistoryStatus
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -56,16 +55,16 @@ fun ChallengeHistoryRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val isGranted = item.progress.rewardState == RewardState.GRANTED
-    val isRevoked = !isGranted &&
-        item.progress.rewardState == RewardState.NONE &&
-        item.effectiveStatus == EffectiveChallengeStatus.ENDED &&
-        item.progress.contributionCount >= item.challenge.requiredPosts
-    // Threshold reached but the finalization job hasn't granted (or revoked) the reward yet —
-    // the server is the authority here (see the plan's §7.2); an older server that doesn't send
-    // participantState at all just never shows this branch and falls through to the status below.
-    val isCompletedPending = !isGranted && !isRevoked &&
-        item.progress.participantState == ParticipantState.COMPLETED_PENDING
+    val status = challengeHistoryStatus(
+        effectiveStatus = item.effectiveStatus,
+        participantState = item.progress.participantState,
+        rewardState = item.progress.rewardState,
+        contributionCount = item.progress.contributionCount,
+        requiredPosts = item.challenge.requiredPosts,
+    )
+    val isGranted = status.isGranted
+    val isRevoked = status.isRevoked
+    val isCompletedPending = status.isCompletedPending
 
     val accent = if (isGranted) {
         ChallengeGold

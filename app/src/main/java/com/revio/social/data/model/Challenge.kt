@@ -19,6 +19,10 @@ data class Challenge(
     val rewardPoints: Int,
     val startsAt: Instant,
     val endsAt: Instant,
+    /** The challenge's own server-derived lifecycle state — see the plan's §6 pas 4b. Only
+     * `GET /challenges/{id}` populates this on the wire so far; [EffectiveChallengeStatus.UNKNOWN]
+     * covers both an older server and any other response shape that doesn't send it. */
+    val effectiveStatus: EffectiveChallengeStatus = EffectiveChallengeStatus.UNKNOWN,
 )
 
 /** Whether [now] falls inside this challenge's window — the client-side "is it active" check. */

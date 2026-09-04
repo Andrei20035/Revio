@@ -2,6 +2,7 @@ package com.revio.social.features.challenge
 
 import com.revio.social.data.model.ChallengeContribution
 import com.revio.social.data.model.EffectiveChallengeStatus
+import com.revio.social.data.model.ParticipantState
 import com.revio.social.data.model.RewardState
 import java.time.Instant
 import java.util.UUID
@@ -32,6 +33,9 @@ sealed interface ChallengeDetailUiState {
         val requiredPosts: Int,
         val rewardPoints: Int,
         val rewardState: RewardState,
+        /** The server-derived participation state — see the plan's §7.2 and
+         * [ChallengeUiState.Active.participantState] on the Feed card. */
+        val participantState: ParticipantState = ParticipantState.UNKNOWN,
         val remaining: RemainingTime,
         val contributions: List<ChallengeContribution>,
         /** True when the most recent refresh failed and this is stale data from an earlier one. */

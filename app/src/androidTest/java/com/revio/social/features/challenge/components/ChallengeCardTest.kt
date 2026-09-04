@@ -1,12 +1,15 @@
 package com.revio.social.features.challenge.components
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.revio.social.data.model.EffectiveChallengeStatus
 import com.revio.social.data.model.ParticipantState
 import com.revio.social.data.model.RewardState
 import com.revio.social.features.challenge.ChallengeUiState
@@ -35,6 +38,7 @@ class ChallengeCardTest {
         rewardPoints: Int = 300,
         rewardState: RewardState = RewardState.NONE,
         participantState: ParticipantState = ParticipantState.UNKNOWN,
+        effectiveStatus: EffectiveChallengeStatus = EffectiveChallengeStatus.ACTIVE,
         remaining: RemainingTime = RemainingTime.Days(2),
         titleLine: String = "Spot 5 Volkswagen Golf",
     ) = ChallengeUiState.Active(
@@ -45,6 +49,7 @@ class ChallengeCardTest {
         rewardPoints = rewardPoints,
         rewardState = rewardState,
         participantState = participantState,
+        effectiveStatus = effectiveStatus,
         endsAt = Instant.parse("2026-08-09T00:00:00Z"),
         remaining = remaining,
     )
@@ -75,7 +80,7 @@ class ChallengeCardTest {
         composeTestRule.onNodeWithText("3 of 5 spotted").assertIsDisplayed()
         composeTestRule.onNodeWithText("300 pts").assertIsDisplayed()
         composeTestRule.onNodeWithText("CHALLENGE · 2 days remaining").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Spot now").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Spot again").assertIsDisplayed()
     }
 
     @Test
@@ -100,7 +105,23 @@ class ChallengeCardTest {
 
         composeTestRule.onNodeWithText("CHALLENGE · 2 days remaining").assertIsDisplayed()
         composeTestRule.onNodeWithText("3 of 5 spotted").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Spot again").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Spot again").assertIsEnabled()
+    }
+
+    @Test
+    fun `stare_-_Activ_niciun_post_inca`() {
+        setCardContent(
+            activeState(
+                contributionCount = 0,
+                requiredPosts = 5,
+                remaining = RemainingTime.Days(2),
+            ),
+        )
+
+        composeTestRule.onNodeWithText("0 of 5 spotted").assertIsDisplayed()
         composeTestRule.onNodeWithText("Spot now").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Spot now").assertIsEnabled()
     }
 
     @Test
@@ -115,7 +136,8 @@ class ChallengeCardTest {
 
         composeTestRule.onNodeWithText("CHALLENGE · 6h 12m remaining").assertIsDisplayed()
         composeTestRule.onNodeWithText("4 of 5 — one more to go").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Spot now").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Spot again").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Spot again").assertIsEnabled()
     }
 
     @Test
@@ -130,9 +152,10 @@ class ChallengeCardTest {
             ),
         )
 
-        composeTestRule.onNodeWithText("CHALLENGE · COMPLETE ✓").assertIsDisplayed()
+        composeTestRule.onNodeWithText("CHALLENGE · GOAL REACHED").assertIsDisplayed()
         composeTestRule.onNodeWithText("5 of 5 · 300 pts when it ends").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Spot again").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Goal reached").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Goal reached").assertIsNotEnabled()
         // Nu mai arata copy-ul normal de progres o data ce pragul e atins.
         composeTestRule.onNodeWithText("5 of 5 spotted").assertDoesNotExist()
     }
@@ -148,9 +171,10 @@ class ChallengeCardTest {
             ),
         )
 
-        composeTestRule.onNodeWithText("CHALLENGE · COMPLETE ✓").assertIsDisplayed()
+        composeTestRule.onNodeWithText("CHALLENGE · COMPLETED").assertIsDisplayed()
         composeTestRule.onNodeWithText("+300 pts earned").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Spot again").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Completed").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Completed").assertIsNotEnabled()
         // Nu mai arata copy-ul normal de progres o data ce challenge-ul e complet.
         composeTestRule.onNodeWithText("5 of 5 spotted").assertDoesNotExist()
     }
@@ -167,8 +191,42 @@ class ChallengeCardTest {
             ),
         )
 
-        composeTestRule.onNodeWithText("CHALLENGE · COMPLETE ✓").assertIsDisplayed()
+        composeTestRule.onNodeWithText("CHALLENGE · GOAL REACHED").assertIsDisplayed()
         composeTestRule.onNodeWithText("5 of 5 · 300 pts when it ends").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Goal reached").assertIsNotEnabled()
+    }
+
+    @Test
+    fun `stare_-_Programat_inca_neinceput`() {
+        setCardContent(
+            activeState(
+                contributionCount = 0,
+                requiredPosts = 5,
+                participantState = ParticipantState.NOT_STARTED,
+                effectiveStatus = EffectiveChallengeStatus.SCHEDULED,
+            ),
+        )
+
+        composeTestRule.onNodeWithText("Not started yet").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Not started yet").assertIsNotEnabled()
+    }
+
+    @Test
+    fun tap_pe_CTA_dezactivat_nu_declanseaza_onSpotNow() {
+        var spotNowClicks = 0
+        setCardContent(
+            activeState(
+                contributionCount = 5,
+                requiredPosts = 5,
+                participantState = ParticipantState.COMPLETED_PENDING,
+            ),
+            onSpotNow = { spotNowClicks++ },
+        )
+
+        composeTestRule.onNodeWithText("Goal reached").performClick()
+        composeTestRule.waitForIdle()
+
+        assertEquals(0, spotNowClicks)
     }
 
     @Test
@@ -181,7 +239,7 @@ class ChallengeCardTest {
             onSpotNow = { spotNowClicks++ },
         )
 
-        composeTestRule.onNodeWithText("Spot now").performClick()
+        composeTestRule.onNodeWithText("Spot again").performClick()
         composeTestRule.waitForIdle()
 
         assertEquals(0, cardClicks)

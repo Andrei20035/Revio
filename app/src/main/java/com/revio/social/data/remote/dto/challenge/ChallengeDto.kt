@@ -17,7 +17,9 @@ import kotlinx.serialization.Serializable
 import java.time.Instant
 import java.util.UUID
 
-/** Network shape of a challenge's public config. Mirrors the server's `ChallengeDTO`. */
+/** Network shape of a challenge's public config. Mirrors the server's `ChallengeDTO`.
+ * [effectiveStatus] is a free string on the wire, null both for a client-unrecognized value and
+ * for an older server that doesn't send the field at all — see the plan's §6 pas 4b. */
 @Serializable
 data class ChallengeDto(
     @Serializable(with = UUIDSerializer::class)
@@ -32,6 +34,7 @@ data class ChallengeDto(
     val startsAt: Instant,
     @Serializable(with = InstantSerializer::class)
     val endsAt: Instant,
+    val effectiveStatus: String? = null,
 )
 
 /** Mirrors the server's `ChallengeProgressDTO`. [rewardState] and [participantState] are free
@@ -110,6 +113,13 @@ fun ChallengeDto.toDomain(): Challenge = Challenge(
     rewardPoints = rewardPoints,
     startsAt = startsAt,
     endsAt = endsAt,
+    effectiveStatus = when (effectiveStatus?.uppercase()) {
+        "ACTIVE" -> EffectiveChallengeStatus.ACTIVE
+        "ENDED" -> EffectiveChallengeStatus.ENDED
+        "SCHEDULED" -> EffectiveChallengeStatus.SCHEDULED
+        "CANCELLED" -> EffectiveChallengeStatus.CANCELLED
+        else -> EffectiveChallengeStatus.UNKNOWN
+    },
 )
 
 fun ChallengeProgressDto.toDomain(): ChallengeProgress = ChallengeProgress(

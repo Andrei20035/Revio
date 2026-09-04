@@ -33,9 +33,8 @@ import com.revio.social.data.model.ParticipantState
 import com.revio.social.data.model.RewardState
 import com.revio.social.features.challenge.ChallengeUiState
 import com.revio.social.features.challenge.RemainingTime
+import com.revio.social.features.challenge.challengeCta
 import com.revio.social.features.challenge.label
-
-private val CtaTextColor = Color(0xFF00161F)
 
 private val RefCardCornerRadius = 20.dp
 private val RefCardPadding = 16.dp
@@ -50,9 +49,6 @@ private val RefPointsFontSize = 13.sp
 private val RefCaptionTopSpacing = 8.dp
 private val RefCaptionFontSize = 12.sp
 private val RefCtaTopSpacing = 16.dp
-private val RefCtaHeight = 48.dp
-private val RefCtaCornerRadius = 14.dp
-private val RefCtaFontSize = 15.sp
 
 /**
  * Compact weekend-challenge card for the top of the Feed. Purely presentational: [state] must
@@ -88,6 +84,14 @@ fun ChallengeCard(
     val isOneAway = !isGranted && !isCompletedPending && filledCount == state.requiredPosts - 1
     val isComplete = isGranted || isCompletedPending
 
+    val cta = challengeCta(
+        effectiveStatus = state.effectiveStatus,
+        participantState = state.participantState,
+        rewardState = state.rewardState,
+        contributionCount = state.contributionCount,
+        requiredPosts = state.requiredPosts,
+    )
+
     val accent = if (isGranted) ChallengeGold else ChallengeAccent
     val timeLabel = state.remaining.label()
     val isUrgent = (state.remaining as? RemainingTime.HoursMinutes)?.let { it.hours < URGENT_THRESHOLD_HOURS } ?: false
@@ -98,7 +102,6 @@ fun ChallengeCard(
         isOneAway -> "$filledCount of ${state.requiredPosts} — one more to go"
         else -> "$filledCount of ${state.requiredPosts} spotted"
     }
-    val ctaLabel = if (isComplete) "Spot again" else "Spot now"
 
     val aggregateDescription = buildString {
         append("Challenge: ${state.titleLine}. ")
@@ -133,7 +136,11 @@ fun ChallengeCard(
                     contentDescription = aggregateDescription
                 },
             ) {
-                val eyebrowSuffix = if (isComplete) "COMPLETE ✓" else timeLabel.orEmpty()
+                val eyebrowSuffix = when {
+                    isGranted -> "COMPLETED"
+                    isCompletedPending -> "GOAL REACHED"
+                    else -> timeLabel.orEmpty()
+                }
                 Text(
                     text = if (eyebrowSuffix.isEmpty()) "CHALLENGE" else "CHALLENGE · $eyebrowSuffix",
                     color = if (!isComplete && isUrgent) ChallengeGold else Color.White.copy(alpha = 0.64f),
@@ -190,29 +197,7 @@ fun ChallengeCard(
 
             Spacer(modifier = Modifier.height(RefCtaTopSpacing.scaled()))
 
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(RefCtaHeight.scaled())
-                    .clip(RoundedCornerShape(RefCtaCornerRadius.scaled()))
-                    .background(ChallengeAccent)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        role = Role.Button,
-                        onClickLabel = "Start a camera spot",
-                        onClick = onSpotNow,
-                    )
-                    .semantics(mergeDescendants = true) {},
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = ctaLabel,
-                    color = CtaTextColor,
-                    fontSize = RefCtaFontSize.scaledText(),
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
+            ChallengeCtaButton(cta = cta, onClick = onSpotNow)
         }
     }
 }

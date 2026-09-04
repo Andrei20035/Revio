@@ -1,5 +1,6 @@
 package com.revio.social.data.remote.dto.challenge
 
+import com.revio.social.data.model.EffectiveChallengeStatus
 import com.revio.social.data.model.ParticipantState
 import com.revio.social.data.model.RewardState
 import kotlinx.serialization.json.Json
@@ -85,6 +86,56 @@ class ChallengeDtoTest {
         """.trimIndent()
         val dto = json.decodeFromString<CurrentChallengeDto>(jsonNoDescription)
         assertNull(dto.toDomain().challenge?.description)
+    }
+
+    @Test
+    fun `effectiveStatus ACTIVE pe ChallengeDto se mapeaza la EffectiveChallengeStatus ACTIVE`() {
+        val dto = ChallengeDto(
+            id = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            title = "Weekend Golf Hunt",
+            targetFamilyBrand = "Volkswagen",
+            targetFamilyName = "Golf",
+            requiredPosts = 5,
+            rewardPoints = 300,
+            startsAt = Instant.parse("2026-08-07T00:00:00Z"),
+            endsAt = Instant.parse("2026-08-09T00:00:00Z"),
+            effectiveStatus = "ACTIVE",
+        )
+        assertEquals(EffectiveChallengeStatus.ACTIVE, dto.toDomain().effectiveStatus)
+    }
+
+    @Test
+    fun `effectiveStatus necunoscut pe ChallengeDto se mapeaza la EffectiveChallengeStatus UNKNOWN, nu crapa`() {
+        val dto = ChallengeDto(
+            id = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            title = "Weekend Golf Hunt",
+            targetFamilyBrand = "Volkswagen",
+            targetFamilyName = "Golf",
+            requiredPosts = 5,
+            rewardPoints = 300,
+            startsAt = Instant.parse("2026-08-07T00:00:00Z"),
+            endsAt = Instant.parse("2026-08-09T00:00:00Z"),
+            effectiveStatus = "SOMETHING_NEW",
+        )
+        assertEquals(EffectiveChallengeStatus.UNKNOWN, dto.toDomain().effectiveStatus)
+    }
+
+    @Test
+    fun `effectiveStatus absent din raspunsul unui server vechi se mapeaza la EffectiveChallengeStatus UNKNOWN`() {
+        val jsonWithoutEffectiveStatus = """
+            {
+                "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                "title": "Weekend Golf Hunt",
+                "targetFamilyBrand": "Volkswagen",
+                "targetFamilyName": "Golf",
+                "requiredPosts": 5,
+                "rewardPoints": 300,
+                "startsAt": "2026-08-07T00:00:00Z",
+                "endsAt": "2026-08-09T00:00:00Z"
+            }
+        """.trimIndent()
+        val dto = json.decodeFromString<ChallengeDto>(jsonWithoutEffectiveStatus)
+        assertEquals(EffectiveChallengeStatus.UNKNOWN, dto.toDomain().effectiveStatus)
     }
 
     @Test
