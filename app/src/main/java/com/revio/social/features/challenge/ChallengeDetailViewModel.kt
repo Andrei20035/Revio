@@ -4,11 +4,13 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.revio.social.core.feedback.PostCreationSignal
+import com.revio.social.core.feedback.PostRemovalSignal
 import com.revio.social.core.navigation.Screen
 import com.revio.social.core.network.ApiResult
 import com.revio.social.data.model.Challenge
 import com.revio.social.data.model.ChallengeProgressDetail
 import com.revio.social.data.model.EffectiveChallengeStatus
+import com.revio.social.data.model.ParticipantState
 import com.revio.social.data.repository.ChallengeRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.Clock
@@ -48,6 +50,7 @@ class ChallengeDetailViewModel @Inject constructor(
     private val challengeRepository: ChallengeRepository,
     private val clock: Clock,
     private val postCreationSignal: PostCreationSignal,
+    private val postRemovalSignal: PostRemovalSignal,
 ) : ViewModel() {
 
     private val challengeId: UUID? = savedStateHandle.get<String>(Screen.ChallengeDetail.ARG_CHALLENGE_ID)
@@ -61,6 +64,10 @@ class ChallengeDetailViewModel @Inject constructor(
     // Guards against PostCreationSignal's replay = 1 — see ChallengeViewModel's identical guard.
     private var lastHandledPostId: UUID? = null
 
+    // Guards against handling the same removal event twice — see MyChallengesEntryViewModel's
+    // identical guard on PostRemovalSignal.
+    private var lastHandledRemovedPostId: UUID? = null
+
     init {
         val id = challengeId
         if (id == null) {
@@ -69,6 +76,7 @@ class ChallengeDetailViewModel @Inject constructor(
             refresh()
             observeCountdown()
             observePostCreation()
+            observePostRemoval()
         }
     }
 
@@ -77,6 +85,19 @@ class ChallengeDetailViewModel @Inject constructor(
             postCreationSignal.events.collect { event ->
                 if (event.postId != lastHandledPostId) {
                     lastHandledPostId = event.postId
+                    refresh()
+                }
+            }
+        }
+    }
+
+    /** A post shown in [ChallengeDetailUiState.Content.contributions] may have been deleted by
+     * its author or removed by moderation — re-fetch so the count and list stay authoritative. */
+    private fun observePostRemoval() {
+        viewModelScope.launch {
+            postRemovalSignal.events.collect { event ->
+                if (event.postId != lastHandledRemovedPostId) {
+                    lastHandledRemovedPostId = event.postId
                     refresh()
                 }
             }
@@ -156,10 +177,20 @@ class ChallengeDetailViewModel @Inject constructor(
 
     private fun toContent(challenge: Challenge, progressDetail: ChallengeProgressDetail): ChallengeDetailUiState.Content {
         val now = clock.instant()
-        val effectiveStatus = when {
-            now.isBefore(challenge.startsAt) -> EffectiveChallengeStatus.SCHEDULED
-            now.isBefore(challenge.endsAt) -> EffectiveChallengeStatus.ACTIVE
-            else -> EffectiveChallengeStatus.ENDED
+        val participantState = progressDetail.progress.participantState
+        // Prefer the server's own lifecycle status (plan's pas 4b) once it sends one. An older
+        // server that doesn't yet (challenge.effectiveStatus == UNKNOWN) falls back to deriving
+        // it from startsAt/endsAt — which can never produce CANCELLED on its own, so
+        // participantState == CANCELLED is that fallback's own transitional patch (plan's §4/§8.5).
+        val effectiveStatus = if (challenge.effectiveStatus != EffectiveChallengeStatus.UNKNOWN) {
+            challenge.effectiveStatus
+        } else {
+            when {
+                participantState == ParticipantState.CANCELLED -> EffectiveChallengeStatus.CANCELLED
+                now.isBefore(challenge.startsAt) -> EffectiveChallengeStatus.SCHEDULED
+                now.isBefore(challenge.endsAt) -> EffectiveChallengeStatus.ACTIVE
+                else -> EffectiveChallengeStatus.ENDED
+            }
         }
 
         return ChallengeDetailUiState.Content(
@@ -173,6 +204,7 @@ class ChallengeDetailViewModel @Inject constructor(
             requiredPosts = challenge.requiredPosts,
             rewardPoints = challenge.rewardPoints,
             rewardState = progressDetail.progress.rewardState,
+            participantState = participantState,
             remaining = remainingTimeAt(now, challenge.endsAt),
             contributions = progressDetail.contributions,
             isStale = false,

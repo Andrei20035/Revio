@@ -3,6 +3,7 @@ package com.revio.social.features.profile.dashboard
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.revio.social.core.feedback.PostCreationSignal
+import com.revio.social.core.feedback.PostRemovalSignal
 import com.revio.social.core.network.ApiResult
 import com.revio.social.data.model.EffectiveChallengeStatus
 import com.revio.social.data.model.MyChallenges
@@ -68,6 +69,7 @@ class MyChallengesEntryViewModel @Inject constructor(
     private val challengeRepository: ChallengeRepository,
     private val clock: Clock,
     private val postCreationSignal: PostCreationSignal,
+    private val postRemovalSignal: PostRemovalSignal,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<MyChallengesEntryUiState>(MyChallengesEntryUiState.Loading)
@@ -78,10 +80,16 @@ class MyChallengesEntryViewModel @Inject constructor(
     // Guards against PostCreationSignal's replay = 1 — see ChallengeViewModel's identical guard.
     private var lastHandledPostId: UUID? = null
 
+    // Guards against handling the same removal event twice — PostRemovalSignal has no replay,
+    // but the underlying SharedFlow's extraBufferCapacity could otherwise still deliver a
+    // buffered duplicate to a slow collector.
+    private var lastHandledRemovedPostId: UUID? = null
+
     init {
         refresh()
         observeCountdown()
         observePostCreation()
+        observePostRemoval()
     }
 
     private fun observePostCreation() {
@@ -89,6 +97,20 @@ class MyChallengesEntryViewModel @Inject constructor(
             postCreationSignal.events.collect { event ->
                 if (event.postId != lastHandledPostId) {
                     lastHandledPostId = event.postId
+                    refresh()
+                }
+            }
+        }
+    }
+
+    /** A post that contributed to the active challenge may have been deleted by its author or
+     * removed by moderation — either way `/challenges/me` is the source of truth for the new
+     * contribution count, so just re-fetch. */
+    private fun observePostRemoval() {
+        viewModelScope.launch {
+            postRemovalSignal.events.collect { event ->
+                if (event.postId != lastHandledRemovedPostId) {
+                    lastHandledRemovedPostId = event.postId
                     refresh()
                 }
             }

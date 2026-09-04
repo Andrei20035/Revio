@@ -4,10 +4,14 @@ import androidx.lifecycle.ViewModelStore
 import com.revio.social.MainDispatcherRule
 import com.revio.social.core.feedback.PostCreatedEvent
 import com.revio.social.core.feedback.PostCreationSignal
+import com.revio.social.core.feedback.PostRemovalReason
+import com.revio.social.core.feedback.PostRemovalSignal
+import com.revio.social.core.feedback.PostRemovedEvent
 import com.revio.social.core.network.ApiResult
 import com.revio.social.data.model.Challenge
 import com.revio.social.data.model.ChallengeProgress
 import com.revio.social.data.model.CurrentChallenge
+import com.revio.social.data.model.EffectiveChallengeStatus
 import com.revio.social.data.model.ParticipantState
 import com.revio.social.data.model.RewardState
 import com.revio.social.data.repository.ChallengeRepository
@@ -73,6 +77,7 @@ class ChallengeViewModelTest {
     private lateinit var challengeRepository: ChallengeRepository
     private lateinit var clock: MutableClock
     private lateinit var postCreationSignal: PostCreationSignal
+    private lateinit var postRemovalSignal: PostRemovalSignal
 
     private val now = Instant.parse("2026-08-07T12:00:00Z")
 
@@ -81,6 +86,7 @@ class ChallengeViewModelTest {
         challengeRepository = mockk()
         clock = MutableClock(now)
         postCreationSignal = PostCreationSignal()
+        postRemovalSignal = PostRemovalSignal()
     }
 
     private fun challenge(
@@ -108,7 +114,7 @@ class ChallengeViewModelTest {
         coEvery { challengeRepository.getCurrentChallenge() } returns
             ApiResult.Success(CurrentChallenge(activeChallenge, progress))
 
-        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal)
+        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal, postRemovalSignal)
 
         val state = viewModel.uiState.value
         assertTrue(state is ChallengeUiState.Active)
@@ -119,6 +125,7 @@ class ChallengeViewModelTest {
         assertEquals(5, state.requiredPosts)
         assertEquals(300, state.rewardPoints)
         assertEquals(RewardState.NONE, state.rewardState)
+        assertEquals(EffectiveChallengeStatus.ACTIVE, state.effectiveStatus)
         assertEquals(false, state.isStale)
     }
 
@@ -133,7 +140,7 @@ class ChallengeViewModelTest {
         coEvery { challengeRepository.getCurrentChallenge() } returns
             ApiResult.Success(CurrentChallenge(activeChallenge, progress))
 
-        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal)
+        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal, postRemovalSignal)
 
         val state = viewModel.uiState.value
         assertTrue(state is ChallengeUiState.Active)
@@ -149,7 +156,7 @@ class ChallengeViewModelTest {
         coEvery { challengeRepository.getCurrentChallenge() } returns
             ApiResult.Success(CurrentChallenge(activeChallenge, progress))
 
-        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal)
+        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal, postRemovalSignal)
 
         val state = viewModel.uiState.value as ChallengeUiState.Active
         assertEquals(ParticipantState.UNKNOWN, state.participantState)
@@ -160,7 +167,7 @@ class ChallengeViewModelTest {
         coEvery { challengeRepository.getCurrentChallenge() } returns
             ApiResult.Success(CurrentChallenge(challenge = null, progress = null))
 
-        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal)
+        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal, postRemovalSignal)
 
         assertEquals(ChallengeUiState.Hidden, viewModel.uiState.value)
     }
@@ -181,7 +188,7 @@ class ChallengeViewModelTest {
         coEvery { challengeRepository.getCurrentChallenge() } returns
             ApiResult.Success(CurrentChallenge(futureChallenge, progress))
 
-        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal)
+        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal, postRemovalSignal)
 
         val state = viewModel.uiState.value
         assertTrue(state is ChallengeUiState.Active)
@@ -189,6 +196,7 @@ class ChallengeViewModelTest {
         assertEquals(futureChallenge.id, state.challengeId)
         assertEquals(0, state.contributionCount)
         assertEquals(ParticipantState.NOT_STARTED, state.participantState)
+        assertEquals(EffectiveChallengeStatus.SCHEDULED, state.effectiveStatus)
     }
 
     @Test
@@ -197,7 +205,7 @@ class ChallengeViewModelTest {
         coEvery { challengeRepository.getCurrentChallenge() } returns
             ApiResult.Success(CurrentChallenge(endedChallenge, ChallengeProgress(5, RewardState.GRANTED)))
 
-        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal)
+        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal, postRemovalSignal)
 
         assertEquals(ChallengeUiState.Hidden, viewModel.uiState.value)
     }
@@ -206,7 +214,7 @@ class ChallengeViewModelTest {
     fun `eroare la incarcarea initiala, fara date anterioare - Hidden`() {
         coEvery { challengeRepository.getCurrentChallenge() } returns ApiResult.Error("boom")
 
-        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal)
+        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal, postRemovalSignal)
 
         assertEquals(ChallengeUiState.Hidden, viewModel.uiState.value)
     }
@@ -218,7 +226,7 @@ class ChallengeViewModelTest {
         coEvery { challengeRepository.getCurrentChallenge() } returns
             ApiResult.Success(CurrentChallenge(activeChallenge, progress))
 
-        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal)
+        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal, postRemovalSignal)
         val activeState = viewModel.uiState.value as ChallengeUiState.Active
 
         // Trece fereastra de coalescing (5s) ca al doilea refresh sa nu fie ignorat.
@@ -241,7 +249,7 @@ class ChallengeViewModelTest {
         coEvery { challengeRepository.getCurrentChallenge() } returns
             ApiResult.Success(CurrentChallenge(activeChallenge, ChallengeProgress(0, RewardState.NONE)))
 
-        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal)
+        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal, postRemovalSignal)
         // init() a facut deja un apel; astea doua sunt "in fereastra" fata de acel apel.
         viewModel.refresh()
         viewModel.refresh()
@@ -255,7 +263,7 @@ class ChallengeViewModelTest {
         coEvery { challengeRepository.getCurrentChallenge() } returns
             ApiResult.Success(CurrentChallenge(activeChallenge, ChallengeProgress(0, RewardState.NONE)))
 
-        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal)
+        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal, postRemovalSignal)
         // Fara sa avanseze ceasul: un refresh normal ar fi ignorat, pull-to-refresh nu.
         viewModel.refresh(ChallengeRefreshTrigger.PullToRefresh)
 
@@ -275,7 +283,7 @@ class ChallengeViewModelTest {
         coEvery { challengeRepository.getCurrentChallenge() } returns
             ApiResult.Success(CurrentChallenge(activeChallenge, ChallengeProgress(0, RewardState.NONE)))
 
-        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal)
+        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal, postRemovalSignal)
         val store = ViewModelStore().apply { put("challenge", viewModel) }
         try {
             // NU advanceUntilIdle(): tickerul se re-programeaza la infinit (while(true) { emit; delay }),
@@ -308,7 +316,7 @@ class ChallengeViewModelTest {
         coEvery { challengeRepository.getCurrentChallenge() } returns
             ApiResult.Success(CurrentChallenge(activeChallenge, ChallengeProgress(0, RewardState.NONE)))
 
-        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal)
+        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal, postRemovalSignal)
         val store = ViewModelStore().apply { put("challenge", viewModel) }
         try {
             runCurrent()
@@ -334,7 +342,7 @@ class ChallengeViewModelTest {
         coEvery { challengeRepository.getCurrentChallenge() } returns
             ApiResult.Success(CurrentChallenge(challenge = null, progress = null))
 
-        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal)
+        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal, postRemovalSignal)
         val store = ViewModelStore().apply { put("challenge", viewModel) }
         try {
             advanceUntilIdle()
@@ -364,7 +372,7 @@ class ChallengeViewModelTest {
         coEvery { challengeRepository.getCurrentChallenge() } returns
             ApiResult.Success(CurrentChallenge(activeChallenge, ChallengeProgress(0, RewardState.NONE)))
 
-        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal)
+        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal, postRemovalSignal)
         val store = ViewModelStore().apply { put("challenge", viewModel) }
         try {
             runCurrent()
@@ -390,7 +398,7 @@ class ChallengeViewModelTest {
         coEvery { challengeRepository.getCurrentChallenge() } returns
             ApiResult.Success(CurrentChallenge(activeChallenge, ChallengeProgress(0, RewardState.NONE)))
 
-        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal)
+        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal, postRemovalSignal)
         val store = ViewModelStore().apply { put("challenge", viewModel) }
         try {
             runCurrent()
@@ -427,7 +435,7 @@ class ChallengeViewModelTest {
         // oricat de vechi.
         postCreationSignal.emit(PostCreatedEvent(UUID.randomUUID(), 900L, 0, null))
 
-        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal)
+        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal, postRemovalSignal)
         val store = ViewModelStore().apply { put("challenge", viewModel) }
         try {
             runCurrent()
@@ -450,7 +458,7 @@ class ChallengeViewModelTest {
         coEvery { challengeRepository.getCurrentChallenge() } returns
             ApiResult.Success(CurrentChallenge(activeChallenge, progress))
 
-        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal)
+        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal, postRemovalSignal)
         val store = ViewModelStore().apply { put("challenge", viewModel) }
         try {
             runCurrent()
@@ -467,6 +475,65 @@ class ChallengeViewModelTest {
             assertEquals(true, state.isStale)
             assertEquals(activeState.challengeId, state.challengeId)
             assertEquals(activeState.contributionCount, state.contributionCount)
+        } finally {
+            store.clear()
+        }
+    }
+
+    // ---- Sincronizare dupa stergere/moderare (pas 4) ----
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `PostRemovedEvent in interiorul ferestrei de coalescing - refresh nu este suprimat`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val activeChallenge = challenge(startsAt = now.minusSeconds(3600), endsAt = now.plusSeconds(3600))
+        coEvery { challengeRepository.getCurrentChallenge() } returns
+            ApiResult.Success(CurrentChallenge(activeChallenge, ChallengeProgress(3, RewardState.NONE)))
+
+        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal, postRemovalSignal)
+        val store = ViewModelStore().apply { put("challenge", viewModel) }
+        try {
+            runCurrent()
+            coVerify(exactly = 1) { challengeRepository.getCurrentChallenge() }
+
+            // No clock advance — still inside the 5s coalescing window. A removal must still
+            // trigger a refresh (PullToRefresh bypass), unlike an ordinary `refresh()` call.
+            coEvery { challengeRepository.getCurrentChallenge() } returns
+                ApiResult.Success(CurrentChallenge(activeChallenge, ChallengeProgress(2, RewardState.NONE)))
+            postRemovalSignal.emit(PostRemovedEvent(UUID.randomUUID(), PostRemovalReason.SelfDelete))
+            runCurrent()
+
+            coVerify(exactly = 2) { challengeRepository.getCurrentChallenge() }
+            val state = viewModel.uiState.value as ChallengeUiState.Active
+            assertEquals(2, state.contributionCount)
+        } finally {
+            store.clear()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `acelasi postId sters emis de doua ori - un singur refresh suplimentar`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val activeChallenge = challenge(startsAt = now.minusSeconds(3600), endsAt = now.plusSeconds(3600))
+        coEvery { challengeRepository.getCurrentChallenge() } returns
+            ApiResult.Success(CurrentChallenge(activeChallenge, ChallengeProgress(3, RewardState.NONE)))
+
+        val viewModel = ChallengeViewModel(challengeRepository, clock, postCreationSignal, postRemovalSignal)
+        val store = ViewModelStore().apply { put("challenge", viewModel) }
+        try {
+            runCurrent()
+            coVerify(exactly = 1) { challengeRepository.getCurrentChallenge() }
+
+            val removedPostId = UUID.randomUUID()
+            postRemovalSignal.emit(PostRemovedEvent(removedPostId, PostRemovalReason.Moderation))
+            runCurrent()
+            coVerify(exactly = 2) { challengeRepository.getCurrentChallenge() }
+
+            postRemovalSignal.emit(PostRemovedEvent(removedPostId, PostRemovalReason.Moderation))
+            runCurrent()
+
+            coVerify(exactly = 2) { challengeRepository.getCurrentChallenge() }
         } finally {
             store.clear()
         }

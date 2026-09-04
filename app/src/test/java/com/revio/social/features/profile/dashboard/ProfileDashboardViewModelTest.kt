@@ -14,6 +14,9 @@ import com.revio.social.data.repository.CommentRepository
 import com.revio.social.data.repository.LikeRepository
 import com.revio.social.data.repository.PostRepository
 import com.revio.social.data.repository.UserRepository
+import com.revio.social.core.feedback.PostRemovalReason
+import com.revio.social.core.feedback.PostRemovalSignal
+import com.revio.social.core.feedback.PostRemovedEvent
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -47,6 +50,7 @@ class ProfileDashboardViewModelTest {
     private val likeRepository: LikeRepository = mockk(relaxed = true)
     private val commentRepository: CommentRepository = mockk(relaxed = true)
     private val userPreferences: UserPreferences = mockk()
+    private val postRemovalSignal: PostRemovalSignal = mockk(relaxed = true)
 
     private val currentUserId = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
     private val foreignUserId = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
@@ -120,6 +124,7 @@ class ProfileDashboardViewModelTest {
         likeRepository = likeRepository,
         commentRepository = commentRepository,
         userPreferences = userPreferences,
+        postRemovalSignal = postRemovalSignal,
     )
 
     // ── Owner flow ────────────────────────────────────────────────────────────
@@ -942,5 +947,68 @@ class ProfileDashboardViewModelTest {
         advanceUntilIdle()
 
         assertEquals(2L, vm.uiState.value.posts.single { it.id == postId }.commentCount)
+    }
+
+    // ── PostRemovalSignal ─────────────────────────────────────────────────────
+
+    @Test
+    fun `confirmDeletePost cu succes emite PostRemovedEvent SelfDelete`() = runTest {
+        val postId = UUID.randomUUID()
+        val post = feedPost(id = postId, userId = currentUserId)
+        coEvery { userRepository.getCurrentUser() } returns ApiResult.Success(currentUser())
+        coEvery { postRepository.getUserPosts(currentUserId, any(), any()) } returns
+            ApiResult.Success(FeedResult(posts = listOf(post), nextCursor = null, hasMore = false))
+        coEvery { postRepository.deletePost(postId) } returns ApiResult.Success(Unit)
+        coEvery { postRepository.getPostDetail(postId) } returns ApiResult.Success(post)
+
+        val vm = buildVm(ownerSavedStateHandle())
+        advanceUntilIdle()
+
+        vm.onPostClick(postId)
+        vm.confirmDeletePost()
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) {
+            postRemovalSignal.emit(PostRemovedEvent(postId, PostRemovalReason.SelfDelete))
+        }
+    }
+
+    @Test
+    fun `confirmDeletePost esuat nu emite PostRemovedEvent`() = runTest {
+        val postId = UUID.randomUUID()
+        val post = feedPost(id = postId, userId = currentUserId)
+        coEvery { userRepository.getCurrentUser() } returns ApiResult.Success(currentUser())
+        coEvery { postRepository.getUserPosts(currentUserId, any(), any()) } returns
+            ApiResult.Success(FeedResult(posts = listOf(post), nextCursor = null, hasMore = false))
+        coEvery { postRepository.deletePost(postId) } returns ApiResult.Error("boom")
+        coEvery { postRepository.getPostDetail(postId) } returns ApiResult.Success(post)
+
+        val vm = buildVm(ownerSavedStateHandle())
+        advanceUntilIdle()
+
+        vm.onPostClick(postId)
+        vm.confirmDeletePost()
+        advanceUntilIdle()
+
+        coVerify(exactly = 0) { postRemovalSignal.emit(any()) }
+    }
+
+    @Test
+    fun `onPostRemovedByAdmin emite PostRemovedEvent Moderation`() = runTest {
+        val postId = UUID.randomUUID()
+        val post = feedPost(id = postId, userId = currentUserId)
+        coEvery { userRepository.getCurrentUser() } returns ApiResult.Success(currentUser())
+        coEvery { postRepository.getUserPosts(currentUserId, any(), any()) } returns
+            ApiResult.Success(FeedResult(posts = listOf(post), nextCursor = null, hasMore = false))
+
+        val vm = buildVm(ownerSavedStateHandle())
+        advanceUntilIdle()
+
+        vm.onPostRemovedByAdmin(postId)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) {
+            postRemovalSignal.emit(PostRemovedEvent(postId, PostRemovalReason.Moderation))
+        }
     }
 }

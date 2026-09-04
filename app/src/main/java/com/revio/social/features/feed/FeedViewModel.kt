@@ -5,6 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.revio.social.core.analytics.AnalyticsClient
 import com.revio.social.core.analytics.AnalyticsEvent
 import com.revio.social.core.analytics.AnalyticsParamValue
+import com.revio.social.core.feedback.PostRemovalReason
+import com.revio.social.core.feedback.PostRemovalSignal
+import com.revio.social.core.feedback.PostRemovedEvent
 import com.revio.social.core.network.ApiResult
 import com.revio.social.core.network.ERROR_CODE_NETWORK
 import com.revio.social.core.network.NetworkConnectivityManager
@@ -72,6 +75,7 @@ class FeedViewModel @Inject constructor(
     private val connectivity: NetworkConnectivityManager,
     private val userPreferences: UserPreferences,
     private val feedImagePrefetcher: FeedImagePrefetcher,
+    private val postRemovalSignal: PostRemovalSignal,
     private val analyticsClient: AnalyticsClient? = null,
 ) : ViewModel() {
 
@@ -340,6 +344,7 @@ class FeedViewModel @Inject constructor(
         viewModelScope.launch {
             feedCache.deletePost(postId)
             imageGate.removePost(postId)
+            postRemovalSignal.emit(PostRemovedEvent(postId, PostRemovalReason.Moderation))
             refresh(force = true)
         }
     }

@@ -6,9 +6,11 @@ import com.revio.social.core.analytics.AnalyticsClient
 import com.revio.social.core.analytics.AnalyticsEvent
 import com.revio.social.core.analytics.AnalyticsParamValue
 import com.revio.social.core.feedback.PostCreationSignal
+import com.revio.social.core.feedback.PostRemovalSignal
 import com.revio.social.core.network.ApiResult
 import com.revio.social.data.model.Challenge
 import com.revio.social.data.model.ChallengeProgress
+import com.revio.social.data.model.EffectiveChallengeStatus
 import com.revio.social.data.model.ParticipantState
 import com.revio.social.data.model.RewardState
 import com.revio.social.data.repository.ChallengeRepository
@@ -60,6 +62,7 @@ class ChallengeViewModel @Inject constructor(
     private val challengeRepository: ChallengeRepository,
     private val clock: Clock,
     private val postCreationSignal: PostCreationSignal,
+    private val postRemovalSignal: PostRemovalSignal,
     private val analyticsClient: AnalyticsClient? = null,
 ) : ViewModel() {
 
@@ -74,10 +77,15 @@ class ChallengeViewModel @Inject constructor(
     // other repeat of the same postId) rather than treating it as a brand-new upload.
     private var lastHandledPostId: UUID? = null
 
+    // Guards against handling the same removal event twice — see MyChallengesEntryViewModel's
+    // identical guard on PostRemovalSignal.
+    private var lastHandledRemovedPostId: UUID? = null
+
     init {
         refresh(ChallengeRefreshTrigger.Initial)
         observeCountdown()
         observePostCreation()
+        observePostRemoval()
     }
 
     /**
@@ -93,6 +101,23 @@ class ChallengeViewModel @Inject constructor(
                 if (event.postId != lastHandledPostId) {
                     lastHandledPostId = event.postId
                     refresh()
+                }
+            }
+        }
+    }
+
+    /**
+     * A post that contributed to the active challenge may have been deleted by its author or
+     * removed by moderation. `PullToRefresh` bypasses the coalescing window here — a removal
+     * within 5s of a prior successful load would otherwise be silently swallowed, leaving the
+     * card showing a contribution count the server no longer agrees with.
+     */
+    private fun observePostRemoval() {
+        viewModelScope.launch {
+            postRemovalSignal.events.collect { event ->
+                if (event.postId != lastHandledRemovedPostId) {
+                    lastHandledRemovedPostId = event.postId
+                    refresh(ChallengeRefreshTrigger.PullToRefresh)
                 }
             }
         }
@@ -188,6 +213,12 @@ class ChallengeViewModel @Inject constructor(
         // instead of being filtered out client-side.
         if (challenge == null || !now.isBefore(challenge.endsAt)) return ChallengeUiState.Hidden
 
+        val effectiveStatus = if (now.isBefore(challenge.startsAt)) {
+            EffectiveChallengeStatus.SCHEDULED
+        } else {
+            EffectiveChallengeStatus.ACTIVE
+        }
+
         return ChallengeUiState.Active(
             challengeId = challenge.id,
             titleLine = "Spot ${challenge.requiredPosts} ${challenge.targetFamilyBrand} ${challenge.targetFamilyName}",
@@ -196,6 +227,7 @@ class ChallengeViewModel @Inject constructor(
             rewardPoints = challenge.rewardPoints,
             rewardState = progress?.rewardState ?: RewardState.NONE,
             participantState = progress?.participantState ?: ParticipantState.UNKNOWN,
+            effectiveStatus = effectiveStatus,
             endsAt = challenge.endsAt,
             remaining = remainingTimeAt(now, challenge.endsAt),
             isStale = false,

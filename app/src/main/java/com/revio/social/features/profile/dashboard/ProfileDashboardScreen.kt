@@ -57,6 +57,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import coil3.compose.AsyncImage
@@ -119,6 +121,13 @@ fun ProfileDashboardScreen(
     val activityDotViewModel: ActivityDotViewModel = hiltViewModel()
     val activityHasDot by activityDotViewModel.hasUnseenActivity.collectAsStateWithLifecycle()
 
+    // Hoisted out of the "My Challenges" grid item so ON_RESUME and pull-to-refresh below can
+    // reach it directly — same NavBackStackEntry scope either way. Instantiated unconditionally
+    // (cheap, no network call in its constructor) even though the card itself only renders for
+    // uiState.isOwnProfile — the effects that drive it are what stay gated on that flag.
+    val challengesEntryViewModel: MyChallengesEntryViewModel = hiltViewModel()
+    val challengesEntryState by challengesEntryViewModel.uiState.collectAsState()
+
     // Admin-only "Remove post" action, reachable from the see-post overlay's options menu.
     val adminViewModel: AdminViewModel = hiltViewModel()
     val adminRemovePostState by adminViewModel.removePostState.collectAsState()
@@ -151,6 +160,17 @@ fun ProfileDashboardScreen(
                     viewModel.refresh()
                 }
             }
+    }
+
+    // Safety net for the "My Challenges" card: PostRemovalSignal already covers a delete/removal
+    // while this screen is visible, but a post can also be deleted or moderated away from
+    // another screen entirely (e.g. the Feed) — this catches that case on return, and doubles as
+    // the retry path for a refresh that failed while backgrounded. Own-profile only, same as the
+    // card itself.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        if (uiState.isOwnProfile) {
+            challengesEntryViewModel.refresh()
+        }
     }
 
     // Retry any images that failed to load, once per screen entry — never for already-succeeded ones.
@@ -281,7 +301,12 @@ fun ProfileDashboardScreen(
 
         PullToRefreshBox(
             isRefreshing = uiState.isRefreshing,
-            onRefresh = { viewModel.refresh() },
+            onRefresh = {
+                viewModel.refresh()
+                if (uiState.isOwnProfile) {
+                    challengesEntryViewModel.refresh()
+                }
+            },
             modifier = Modifier.fillMaxSize().hazeSource(hazeState),
         ) {
         LazyVerticalGrid(
@@ -310,8 +335,6 @@ fun ProfileDashboardScreen(
             // ── My Challenges entry point — own profile only ─────────────
             if (uiState.isOwnProfile) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    val challengesEntryViewModel: MyChallengesEntryViewModel = hiltViewModel()
-                    val challengesEntryState by challengesEntryViewModel.uiState.collectAsState()
                     MyChallengesEntryCard(
                         state = challengesEntryState,
                         onClick = { navController.navigate(Screen.MyChallenges.route) },

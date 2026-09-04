@@ -3,6 +3,7 @@ package com.revio.social.features.challenge
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.revio.social.core.feedback.PostCreationSignal
+import com.revio.social.core.feedback.PostRemovalSignal
 import com.revio.social.core.network.ApiResult
 import com.revio.social.data.model.ChallengeSummary
 import com.revio.social.data.model.EffectiveChallengeStatus
@@ -32,6 +33,7 @@ private const val PAGE_SIZE = 20
 class MyChallengesViewModel @Inject constructor(
     private val challengeRepository: ChallengeRepository,
     private val postCreationSignal: PostCreationSignal,
+    private val postRemovalSignal: PostRemovalSignal,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<MyChallengesUiState>(MyChallengesUiState.Loading)
@@ -46,9 +48,14 @@ class MyChallengesViewModel @Inject constructor(
     // Guards against PostCreationSignal's replay = 1 — see ChallengeViewModel's identical guard.
     private var lastHandledPostId: UUID? = null
 
+    // Guards against handling the same removal event twice — see MyChallengesEntryViewModel's
+    // identical guard on PostRemovalSignal.
+    private var lastHandledRemovedPostId: UUID? = null
+
     init {
         refresh()
         observePostCreation()
+        observePostRemoval()
     }
 
     private fun observePostCreation() {
@@ -56,6 +63,19 @@ class MyChallengesViewModel @Inject constructor(
             postCreationSignal.events.collect { event ->
                 if (event.postId != lastHandledPostId) {
                     lastHandledPostId = event.postId
+                    refresh()
+                }
+            }
+        }
+    }
+
+    /** A post that contributed to a listed challenge may have been deleted by its author or
+     * removed by moderation — re-fetch so the summary and per-challenge counts stay authoritative. */
+    private fun observePostRemoval() {
+        viewModelScope.launch {
+            postRemovalSignal.events.collect { event ->
+                if (event.postId != lastHandledRemovedPostId) {
+                    lastHandledRemovedPostId = event.postId
                     refresh()
                 }
             }

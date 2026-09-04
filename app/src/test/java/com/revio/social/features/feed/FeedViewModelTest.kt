@@ -4,6 +4,9 @@ import com.revio.social.MainDispatcherRule
 import com.revio.social.core.analytics.AnalyticsClient
 import com.revio.social.core.analytics.AnalyticsEvent
 import com.revio.social.core.analytics.AnalyticsParamValue
+import com.revio.social.core.feedback.PostRemovalReason
+import com.revio.social.core.feedback.PostRemovalSignal
+import com.revio.social.core.feedback.PostRemovedEvent
 import com.revio.social.core.network.ApiResult
 import com.revio.social.core.network.ERROR_CODE_NETWORK
 import com.revio.social.core.network.NETWORK_ERROR_MESSAGE
@@ -78,6 +81,7 @@ class FeedViewModelTest {
     private lateinit var connectivity: NetworkConnectivityManager
     private lateinit var userPreferences: UserPreferences
     private lateinit var feedImagePrefetcher: FakeFeedImagePrefetcher
+    private lateinit var postRemovalSignal: PostRemovalSignal
     private lateinit var analyticsClient: AnalyticsClient
 
     @Before
@@ -101,6 +105,7 @@ class FeedViewModelTest {
             every { userId } returns flowOf(ownerUserId)
         }
         feedImagePrefetcher = FakeFeedImagePrefetcher()
+        postRemovalSignal = mockk(relaxed = true)
         analyticsClient = mockk(relaxed = true)
     }
 
@@ -114,6 +119,7 @@ class FeedViewModelTest {
         connectivity = connectivity,
         userPreferences = userPreferences,
         feedImagePrefetcher = feedImagePrefetcher,
+        postRemovalSignal = postRemovalSignal,
         analyticsClient = analyticsClient,
     )
 
@@ -1720,6 +1726,26 @@ class FeedViewModelTest {
 
         // Simulates a restart reading straight from the cache — the post must not revive.
         assertTrue(feedCache.observePosts().first().none { it.id == removed.id })
+    }
+
+    @Test
+    fun `onPostRemovedByAdmin emite PostRemovedEvent Moderation pe PostRemovalSignal`() = runTest {
+        val removed = post()
+        feedCache.replaceWithFirstPage(
+            page = feedResult(posts = listOf(removed), hasMore = false),
+            ownerUserId = ownerUserId,
+            syncedAt = Instant.now(),
+        )
+
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        vm.onPostRemovedByAdmin(removed.id)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) {
+            postRemovalSignal.emit(PostRemovedEvent(removed.id, PostRemovalReason.Moderation))
+        }
     }
 
     // ----------------------------------------------------------------------

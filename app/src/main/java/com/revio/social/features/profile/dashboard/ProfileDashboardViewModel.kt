@@ -6,6 +6,9 @@ import androidx.lifecycle.viewModelScope
 import com.revio.social.core.analytics.AnalyticsClient
 import com.revio.social.core.analytics.AnalyticsEvent
 import com.revio.social.core.analytics.AnalyticsParamValue
+import com.revio.social.core.feedback.PostRemovalReason
+import com.revio.social.core.feedback.PostRemovalSignal
+import com.revio.social.core.feedback.PostRemovedEvent
 import com.revio.social.core.navigation.Screen
 import com.revio.social.core.network.ApiResult
 import com.revio.social.core.notifications.PendingDeepLink
@@ -42,6 +45,7 @@ class ProfileDashboardViewModel @Inject constructor(
     private val likeRepository: LikeRepository,
     private val commentRepository: CommentRepository,
     private val userPreferences: UserPreferences,
+    private val postRemovalSignal: PostRemovalSignal,
     private val analyticsClient: AnalyticsClient? = null,
     private val pendingDeepLink: PendingDeepLink? = null,
 ) : ViewModel() {
@@ -417,6 +421,7 @@ class ProfileDashboardViewModel @Inject constructor(
                             postDetailFetchedAt = state.postDetailFetchedAt - postId,
                         )
                     }
+                    postRemovalSignal.emit(PostRemovedEvent(postId, PostRemovalReason.SelfDelete))
                     refreshUser()
                 }
                 is ApiResult.Error -> _uiState.update {
@@ -447,6 +452,7 @@ class ProfileDashboardViewModel @Inject constructor(
                 postDetailFetchedAt = state.postDetailFetchedAt - postId,
             )
         }
+        viewModelScope.launch { postRemovalSignal.emit(PostRemovedEvent(postId, PostRemovalReason.Moderation)) }
         refresh()
     }
 
